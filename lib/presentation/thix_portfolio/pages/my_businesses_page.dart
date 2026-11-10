@@ -3,13 +3,14 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/my_businesses_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.2 — Novembre 2026 (CORRIGÉ CI v2)
+//  Version  : 1.0.3 — Novembre 2026 (i18n FR/EN inline)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  Corrections CI v2 :
-//    • import 'dart:ui' pour ImageFilter
-//    • Remplacement de .animate() et .ms par animations natives
-//    • Toutes les animations sont 100 % natives Flutter
+//  Corrections CI v3 :
+//    • Import `l10n/app_localizations.dart` retiré
+//    • Helper `_s(context, 'FR', 'EN')` inline
+//    • StatusChip, SnackBars, dialogs, hints — tout bilingue
+//    • DateFormat locale-aware via Localizations.localeOf
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:ui'; // ✅ FIX CI v2 : pour ImageFilter
@@ -25,10 +26,18 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../data/business_repository.dart';
 import '../models/business_bundle.dart';
+
+// ─── i18n minimaliste FR/EN ─────────────────────────────────────────────────
+String _lang(BuildContext c) =>
+    Localizations.localeOf(c).languageCode.toLowerCase();
+
+/// Retourne la chaîne française si la locale courante est `fr`, sinon l'anglaise.
+String _s(BuildContext c, String fr, String en) =>
+    _lang(c) == 'fr' ? fr : en;
+// ────────────────────────────────────────────────────────────────────────────
 
 // ============================================================================
 // ROUTES
@@ -145,7 +154,8 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
       case _Sort.oldest:
         filtered.sort((a, b) => a.createdAt.compareTo(b.createdAt));
       case _Sort.alpha:
-        filtered.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        filtered.sort((a, b) =>
+            a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     }
     return filtered;
   }
@@ -201,7 +211,7 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(AppLocalizations.of(ctx).t('common_close'),
+            child: Text(_s(ctx, 'Fermer', 'Close'),
                 style: const TextStyle(color: _Prism.inkSoft)),
           ),
         ],
@@ -209,18 +219,19 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
     );
   }
 
-  void _onShare(Business b) {
+  void _onShare(BuildContext ctx, Business b) {
     final url = 'https://thixid.com/b/${b.thixId}';
     final name = _Sanitizer.text(b.name, maxLength: 40);
-    Share.share(
-      'Découvrez $name sur THIX Portfolio 🚀\n$url\nID : ${b.thixId}',
-      subject: 'Site THIX — $name',
-    );
+    final isFr = _lang(ctx) == 'fr';
+    final subject = isFr ? 'Site THIX — $name' : 'THIX site — $name';
+    final body = isFr
+        ? 'Découvrez $name sur THIX Portfolio 🚀\n$url\nID : ${b.thixId}'
+        : 'Discover $name on THIX Portfolio 🚀\n$url\nID: ${b.thixId}';
+    Share.share(body, subject: subject);
     HapticFeedback.lightImpact();
   }
 
   Future<void> _onTogglePublish(BuildContext ctx, Business b) async {
-    final l10n = AppLocalizations.of(ctx);
     final repo = ref.read(businessRepositoryProvider);
 
     if (b.isPublished) {
@@ -230,18 +241,19 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
         if (!mounted) return;
         HapticFeedback.mediumImpact();
         ref.invalidate(myBusinessesProvider);
+        final name = _Sanitizer.text(b.name, maxLength: 40);
         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-          content: Text(l10n.t('biz_mine_unpublished',
-              args: [_Sanitizer.text(b.name, maxLength: 40)])),
+          content: Text(_s(
+              ctx, '« $name » a été dépublié', '"$name" has been unpublished')),
           backgroundColor: ThixPolicy.success,
           behavior: SnackBarBehavior.floating,
         ));
       } catch (e) {
         if (!mounted) return;
         HapticFeedback.heavyImpact();
+        final err = _Sanitizer.text('$e', maxLength: 100);
         ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-          content: Text(l10n.t('biz_mine_error_generic',
-              args: [_Sanitizer.text('$e', maxLength: 100)])),
+          content: Text(_s(ctx, 'Erreur : $err', 'Error: $err')),
           backgroundColor: ThixPolicy.danger,
           behavior: SnackBarBehavior.floating,
         ));
@@ -250,15 +262,17 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
     }
 
     final issues = <String>[];
-    if (b.name.trim().isEmpty) issues.add(l10n.t('biz_mine_check_name'));
+    if (b.name.trim().isEmpty) {
+      issues.add(_s(ctx, "Nom de l'entreprise", 'Business name'));
+    }
     if ((b.description ?? '').trim().isEmpty) {
-      issues.add(l10n.t('biz_mine_check_description'));
+      issues.add(_s(ctx, 'Description', 'Description'));
     }
     if (b.logoUrl == null || b.logoUrl!.isEmpty) {
-      issues.add(l10n.t('biz_mine_check_logo'));
+      issues.add(_s(ctx, 'Logo', 'Logo'));
     }
     if (b.coverUrl == null || b.coverUrl!.isEmpty) {
-      issues.add(l10n.t('biz_mine_check_cover'));
+      issues.add(_s(ctx, 'Image de couverture', 'Cover image'));
     }
 
     if (issues.isNotEmpty) {
@@ -270,14 +284,18 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
           backgroundColor: _Prism.surface,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: Text(l10n.t('biz_mine_checklist_title'),
+          title: Text(_s(ctx, 'Presque prêt !', 'Almost ready!'),
               style: const TextStyle(
                   fontWeight: FontWeight.w900, color: _Prism.ink)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(l10n.t('biz_mine_checklist_hint'),
+              Text(
+                  _s(
+                      ctx,
+                      'Complétez ces éléments avant de publier :',
+                      'Complete these before publishing:'),
                   style: const TextStyle(color: _Prism.inkSoft)),
               const SizedBox(height: 12),
               for (final i in issues)
@@ -299,7 +317,7 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(l10n.t('common_close')),
+              child: Text(_s(ctx, 'Fermer', 'Close')),
             ),
             ElevatedButton(
               onPressed: () {
@@ -312,7 +330,7 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
-              child: Text(l10n.t('biz_mine_open_studio')),
+              child: Text(_s(ctx, 'Ouvrir le studio', 'Open studio')),
             ),
           ],
         ),
@@ -326,18 +344,18 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
       if (!mounted) return;
       HapticFeedback.heavyImpact();
       ref.invalidate(myBusinessesProvider);
+      final name = _Sanitizer.text(b.name, maxLength: 40);
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        content: Text(l10n.t('biz_mine_published',
-            args: [_Sanitizer.text(b.name, maxLength: 40)])),
+        content: Text(_s(ctx, '« $name » est publié ✓', '"$name" is published ✓')),
         backgroundColor: ThixPolicy.success,
         behavior: SnackBarBehavior.floating,
       ));
     } catch (e) {
       if (!mounted) return;
       HapticFeedback.heavyImpact();
+      final err = _Sanitizer.text('$e', maxLength: 100);
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        content: Text(l10n.t('biz_mine_error_generic',
-            args: [_Sanitizer.text('$e', maxLength: 100)])),
+        content: Text(_s(ctx, 'Erreur : $err', 'Error: $err')),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
       ));
@@ -345,7 +363,6 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
   }
 
   Future<void> _onDelete(BuildContext ctx, Business b) async {
-    final l10n = AppLocalizations.of(ctx);
     final name = _Sanitizer.text(b.name, maxLength: 40);
     final confirm = await showDialog<bool>(
       context: ctx,
@@ -354,14 +371,19 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         icon: const Icon(Icons.warning_amber_rounded,
             color: ThixPolicy.danger, size: 36),
-        title: Text(l10n.t('biz_mine_delete_title'),
-            style: const TextStyle(fontWeight: FontWeight.w900, color: _Prism.ink)),
-        content: Text(l10n.t('biz_mine_delete_confirm', args: [name]),
+        title: Text(_s(ctx, 'Supprimer ce site ?', 'Delete this site?'),
+            style: const TextStyle(
+                fontWeight: FontWeight.w900, color: _Prism.ink)),
+        content: Text(
+            _s(
+                ctx,
+                '« $name » sera supprimé. Action irréversible.',
+                '"$name" will be deleted. Irreversible action.'),
             style: const TextStyle(color: _Prism.inkSoft)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(l10n.t('common_cancel')),
+            child: Text(_s(ctx, 'Annuler', 'Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -371,7 +393,7 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
             ),
-            child: Text(l10n.t('common_delete')),
+            child: Text(_s(ctx, 'Supprimer', 'Delete')),
           ),
         ],
       ),
@@ -387,15 +409,15 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
       HapticFeedback.mediumImpact();
       ref.invalidate(myBusinessesProvider);
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        content: Text(l10n.t('biz_mine_deleted', args: [name])),
+        content: Text(_s(ctx, '« $name » supprimé', '"$name" deleted')),
         backgroundColor: ThixPolicy.success,
         behavior: SnackBarBehavior.floating,
       ));
     } catch (e) {
       if (!mounted) return;
+      final err = _Sanitizer.text('$e', maxLength: 100);
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        content: Text(l10n.t('biz_mine_error_generic',
-            args: [_Sanitizer.text('$e', maxLength: 100)])),
+        content: Text(_s(ctx, 'Erreur : $err', 'Error: $err')),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
       ));
@@ -404,7 +426,6 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final listAsync = ref.watch(myBusinessesProvider);
 
     return Scaffold(
@@ -425,8 +446,10 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
             child: listAsync.when(
               loading: () => const _LoadingView(),
               error: (e, _) => _ErrorView(
-                message: l10n.t('biz_mine_error_generic',
-                    args: [_Sanitizer.text('$e', maxLength: 120)]),
+                message: _s(
+                    context,
+                    'Erreur : ${_Sanitizer.text('$e', maxLength: 120)}',
+                    'Error: ${_Sanitizer.text('$e', maxLength: 120)}'),
                 onRetry: _refresh,
               ),
               data: (list) {
@@ -471,7 +494,7 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
                                     onOpen: () => _onOpen(filtered[i]),
                                     onStudio: () => _onStudio(filtered[i]),
                                     onQr: () => _onQr(context, filtered[i]),
-                                    onShare: () => _onShare(filtered[i]),
+                                    onShare: () => _onShare(context, filtered[i]),
                                     onTogglePublish: () =>
                                         _onTogglePublish(context, filtered[i]),
                                     onDelete: () =>
@@ -629,7 +652,6 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -646,7 +668,7 @@ class _ErrorView extends StatelessWidget {
                   size: 40, color: ThixPolicy.danger),
             ),
             const SizedBox(height: 16),
-            Text(l10n.t('biz_mine_error_title'),
+            Text(_s(context, 'Connexion impossible', 'Connection failed'),
                 style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
@@ -659,7 +681,7 @@ class _ErrorView extends StatelessWidget {
             ElevatedButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: Text(l10n.t('common_retry')),
+              label: Text(_s(context, 'Réessayer', 'Retry')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: ThixPolicy.primary,
                 foregroundColor: Colors.white,
@@ -685,7 +707,6 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       child: Row(
@@ -696,7 +717,7 @@ class _Header extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(l10n.t('biz_mine_title'),
+                    Text(_s(context, 'Mes sites', 'My sites'),
                         style: const TextStyle(
                             fontSize: 26,
                             fontWeight: FontWeight.w900,
@@ -719,7 +740,11 @@ class _Header extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(l10n.t('biz_mine_subtitle'),
+                Text(
+                    _s(
+                        context,
+                        'Gérez vos sites THIX Portfolio',
+                        'Manage your THIX Portfolio sites'),
                     style: const TextStyle(
                         fontSize: 13,
                         color: _Prism.inkSoft,
@@ -727,8 +752,7 @@ class _Header extends StatelessWidget {
               ],
             ),
           ),
-          if (count == 0)
-            _CreateFab.small(onTap: onCreate),
+          if (count == 0) _CreateFab.small(onTap: onCreate),
         ],
       ),
     );
@@ -753,17 +777,16 @@ class _Filters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final filters = [
-      (_Filter.all, l10n.t('biz_mine_filter_all')),
-      (_Filter.published, l10n.t('biz_mine_filter_published')),
-      (_Filter.draft, l10n.t('biz_mine_filter_draft')),
-      (_Filter.suspended, l10n.t('biz_mine_filter_suspended')),
+      (_Filter.all, _s(context, 'Tous', 'All')),
+      (_Filter.published, _s(context, 'Publiés', 'Published')),
+      (_Filter.draft, _s(context, 'Brouillons', 'Drafts')),
+      (_Filter.suspended, _s(context, 'Suspendus', 'Suspended')),
     ];
     final sorts = [
-      (_Sort.newest, l10n.t('biz_mine_sort_newest')),
-      (_Sort.oldest, l10n.t('biz_mine_sort_oldest')),
-      (_Sort.alpha, l10n.t('biz_mine_sort_alpha')),
+      (_Sort.newest, _s(context, 'Récents', 'Newest')),
+      (_Sort.oldest, _s(context, 'Anciens', 'Oldest')),
+      (_Sort.alpha, _s(context, 'A–Z', 'A–Z')),
     ];
 
     return Padding(
@@ -820,7 +843,7 @@ class _Filters extends StatelessWidget {
               const Icon(Icons.sort_rounded,
                   size: 15, color: _Prism.inkMuted),
               const SizedBox(width: 6),
-              Text(l10n.t('biz_mine_sort_by'),
+              Text(_s(context, 'TRIER PAR', 'SORT BY'),
                   style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -884,7 +907,6 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 40, 20, 40),
       child: Container(
@@ -918,8 +940,8 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 20),
             Text(
                 hasAny
-                    ? l10n.t('biz_mine_empty_filter_title')
-                    : l10n.t('biz_mine_empty_title'),
+                    ? _s(context, 'Aucun résultat', 'No results')
+                    : _s(context, 'Aucun site pour le moment', 'No sites yet'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 18,
@@ -929,8 +951,14 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
                 hasAny
-                    ? l10n.t('biz_mine_empty_filter_hint')
-                    : l10n.t('biz_mine_empty_hint'),
+                    ? _s(
+                        context,
+                        'Essayez un autre filtre ou créez un nouveau site.',
+                        'Try another filter or create a new site.')
+                    : _s(
+                        context,
+                        'Créez votre premier site THIX Portfolio et commencez à attirer des clients.',
+                        'Create your first THIX Portfolio site and start attracting customers.'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 13,
@@ -944,7 +972,7 @@ class _EmptyState extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: onCreate,
                   icon: const Icon(Icons.add_business_rounded, size: 18),
-                  label: Text(l10n.t('biz_mine_create_first'),
+                  label: Text(_s(context, 'Créer mon premier site', 'Create my first site'),
                       style: const TextStyle(
                           fontSize: 14, fontWeight: FontWeight.w900)),
                   style: ElevatedButton.styleFrom(
@@ -1024,11 +1052,10 @@ class _BusinessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final name = _Sanitizer.text(business.name, maxLength: 40);
     final sector = _Sanitizer.text(business.sector, maxLength: 30);
     final city = _Sanitizer.text(business.city, maxLength: 30);
-    final fmt = DateFormat.yMMMd('fr_FR');
+    final fmt = DateFormat.yMMMd(_lang(context) == 'fr' ? 'fr_FR' : 'en_US');
 
     return Container(
       decoration: BoxDecoration(
@@ -1193,7 +1220,7 @@ class _BusinessCard extends StatelessWidget {
                         size: 14, color: _Prism.inkMuted),
                     const SizedBox(width: 5),
                     Text(
-                        '${l10n.t('biz_mine_created_on')} '
+                        '${_s(context, 'Créé le', 'Created on')} '
                         '${fmt.format(business.createdAt)}',
                         style: const TextStyle(
                             fontSize: 11.5,
@@ -1207,7 +1234,7 @@ class _BusinessCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _ActionButton(
-                        label: l10n.t('biz_mine_action_open'),
+                        label: _s(context, 'Voir', 'View'),
                         icon: Icons.open_in_new_rounded,
                         primary: business.isPublished,
                         onTap: onOpen,
@@ -1216,7 +1243,7 @@ class _BusinessCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _ActionButton(
-                        label: l10n.t('biz_mine_action_studio'),
+                        label: _s(context, 'Studio', 'Studio'),
                         icon: Icons.edit_rounded,
                         onTap: onStudio,
                       ),
@@ -1244,8 +1271,8 @@ class _BusinessCard extends StatelessWidget {
                         ),
                         label: Text(
                             business.isPublished
-                                ? l10n.t('biz_mine_action_unpublish')
-                                : l10n.t('biz_mine_action_publish'),
+                                ? _s(context, 'Dépublier', 'Unpublish')
+                                : _s(context, 'Publier', 'Publish'),
                             style: const TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w800)),
@@ -1301,19 +1328,19 @@ class _StatusChip extends StatelessWidget {
       case BusinessStatus.published:
         bg = ThixPolicy.success.withValues(alpha: 0.14);
         fg = ThixPolicy.success;
-        label = 'Publié';
+        label = _s(context, 'Publié', 'Published');
       case BusinessStatus.draft:
         bg = const Color(0xFFF59E0B).withValues(alpha: 0.14);
         fg = const Color(0xFFB45309);
-        label = 'Brouillon';
+        label = _s(context, 'Brouillon', 'Draft');
       case BusinessStatus.suspended:
         bg = ThixPolicy.danger.withValues(alpha: 0.14);
         fg = ThixPolicy.danger;
-        label = 'Suspendu';
+        label = _s(context, 'Suspendu', 'Suspended');
       case BusinessStatus.deleted:
         bg = _Prism.inkMuted.withValues(alpha: 0.14);
         fg = _Prism.inkMuted;
-        label = 'Supprimé';
+        label = _s(context, 'Supprimé', 'Deleted');
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1423,10 +1450,9 @@ class _CreateFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Semantics(
       button: true,
-      label: l10n.t('biz_mine_create_first'),
+      label: _s(context, 'Créer mon premier site', 'Create my first site'),
       child: GestureDetector(
         onTap: () {
           HapticFeedback.mediumImpact();
