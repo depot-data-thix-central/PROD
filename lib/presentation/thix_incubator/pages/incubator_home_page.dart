@@ -2,7 +2,7 @@
 // FICHIER : lib/presentation/thix_incubator/pages/incubator_home_page.dart
 // Module  : thix_incubator — Route : /incubator
 // Stack   : Riverpod moderne — 100% data-driven (Supabase)
-// Design  : conforme maquette SONATHIX v1.0 (disposition + icônes + couleurs)
+// Design  : conforme maquette SONATHIX v1.0
 // ============================================================================
 
 import 'dart:async';
@@ -167,7 +167,7 @@ class _IncubatorHomePageState extends ConsumerState<IncubatorHomePage> {
 }
 
 // ============================================================================
-// 1. HEADER NAVY — logo fusée + titre + recherche / notif / avatar
+// 1. HEADER NAVY — ConsumerWidget (Riverpod)
 // ============================================================================
 class _TopHeader extends ConsumerWidget {
   const _TopHeader();
@@ -224,6 +224,7 @@ class _TopHeader extends ConsumerWidget {
     );
   }
 }
+
 class _HeaderIcon extends StatelessWidget {
   const _HeaderIcon({required this.icon, required this.onTap, this.badge});
   final IconData icon;
@@ -265,7 +266,7 @@ class _HeaderIcon extends StatelessWidget {
 }
 
 // ============================================================================
-// 2. BARRE BLANCHE FLOTTANTE — menu | trophée + marque | pill verte | dots
+// 2. BARRE BLANCHE FLOTTANTE
 // ============================================================================
 class _BrandBar extends StatelessWidget {
   const _BrandBar();
@@ -344,7 +345,7 @@ class _BrandBar extends StatelessWidget {
 }
 
 // ============================================================================
-// 3. HERO BANNER — texte + CTA or | image + dots carousel
+// 3. HERO BANNER
 // ============================================================================
 class _HeroBanner extends StatefulWidget {
   const _HeroBanner({
@@ -403,7 +404,6 @@ class _HeroBannerState extends State<_HeroBanner> {
         height: 300,
         child: Stack(
           children: [
-            // ── Image droite (carousel des covers programmes) ──
             Positioned(
               right: 0,
               top: 0,
@@ -418,7 +418,6 @@ class _HeroBannerState extends State<_HeroBanner> {
                       itemBuilder: (_, i) => _HeroImage(program: programs[i]),
                     ),
             ),
-            // Dégradé de fusion
             Positioned(
               right: 100,
               top: 0,
@@ -426,18 +425,17 @@ class _HeroBannerState extends State<_HeroBanner> {
               width: 90,
               child: IgnorePointer(
                 child: Container(
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
                         IncubatorColors.institutionalBlue,
-                        IncubatorColors.institutionalBlue.withValues(alpha: 0),
+                        Color(0x00092C78),
                       ],
                     ),
                   ),
                 ),
               ),
             ),
-            // ── Contenu gauche ──
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 30, 180, 24),
               child: Column(
@@ -503,7 +501,6 @@ class _HeroBannerState extends State<_HeroBanner> {
                 ],
               ),
             ),
-            // ── Dots carousel ──
             if (programs.length > 1)
               Positioned(
                 right: 14,
@@ -558,7 +555,7 @@ class _HeroFallbackArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -609,9 +606,8 @@ class _HeroFallbackArt extends StatelessWidget {
 }
 
 // ============================================================================
-// 4. TITRE DE SECTION (barre bleue + titre + lien optionnel)
+// 4. TITRE DE SECTION — ✅ CORRECTION CONST
 // ============================================================================
-// ✅ VERSION CORRIGÉE (sans const sur le Container problématique)
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.title, this.linkLabel, this.onLink});
   final String title;
@@ -624,7 +620,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
       child: Row(
         children: [
-          // ✅ PAS DE CONST ICI — BorderRadius.circular(2) n'est pas const-constructible
+          // ⚠️ PAS DE CONST SUR CE CONTAINER (BorderRadius.circular non-const)
           Container(
             width: 4,
             height: 18,
@@ -665,7 +661,7 @@ class _SectionTitle extends StatelessWidget {
 }
 
 // ============================================================================
-// 5. MON ESPACE DE PROGRESSION — 4 stats avec séparateurs verticaux
+// 5. MON ESPACE DE PROGRESSION
 // ============================================================================
 class _ProgressStats extends StatelessWidget {
   const _ProgressStats({required this.state});
@@ -692,14 +688,8 @@ class _ProgressStats extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Row(
               children: [
-                Container(
-                  width: 4,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: IncubatorColors.electricBlue,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+                // ⚠️ PAS DE CONST ICI non plus
+                _BarBlue(),
                 SizedBox(width: 8),
                 Text('Mon espace de progression',
                     style: TextStyle(
@@ -754,6 +744,22 @@ class _ProgressStats extends StatelessWidget {
       );
 }
 
+// Helper const pour la barre bleue de titre (évite le const invalid)
+class _BarBlue extends StatelessWidget {
+  const _BarBlue();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 4,
+      height: 18,
+      decoration: BoxDecoration(
+        color: IncubatorColors.electricBlue,
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+}
+
 class _StatCell extends StatelessWidget {
   const _StatCell({
     required this.icon,
@@ -791,7 +797,7 @@ class _StatCell extends StatelessWidget {
 }
 
 // ============================================================================
-// 6. PROGRAMMES DISPONIBLES — carte horizontale image + badge + CTA
+// 6. PROGRAMMES DISPONIBLES
 // ============================================================================
 class _ProgramsSection extends StatelessWidget {
   const _ProgramsSection({required this.state});
@@ -859,7 +865,6 @@ class _ProgramCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Image gauche + badge ──
             SizedBox(
               width: 165,
               child: Stack(
@@ -903,7 +908,6 @@ class _ProgramCard extends StatelessWidget {
                 ],
               ),
             ),
-            // ── Contenu droit ──
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -1017,7 +1021,7 @@ class _CoverFallback extends StatelessWidget {
 }
 
 // ============================================================================
-// 7. ACCÈS RAPIDES — rail horizontal 7 tuiles
+// 7. ACCÈS RAPIDES
 // ============================================================================
 class _QuickAccessRail extends StatelessWidget {
   const _QuickAccessRail();
@@ -1086,7 +1090,7 @@ class _QuickAccessRail extends StatelessWidget {
 }
 
 // ============================================================================
-// 8. ACTIVITÉ RÉCENTE — ligne icône verte + pill or + horodatage
+// 8. ACTIVITÉ RÉCENTE
 // ============================================================================
 class _ActivitySection extends StatelessWidget {
   const _ActivitySection({required this.state});
@@ -1218,7 +1222,7 @@ class _ActivityRow extends StatelessWidget {
 }
 
 // ============================================================================
-// 9. PARCOURS DE VOTRE PROJET — carte navy + stepper 6 étapes
+// 9. PARCOURS DE VOTRE PROJET
 // ============================================================================
 class _JourneyCard extends StatelessWidget {
   const _JourneyCard({required this.state});
@@ -1373,7 +1377,7 @@ class _JourneyCard extends StatelessWidget {
 }
 
 // ============================================================================
-// 10. BANNIÈRE PROMO — bleu / or en diagonale + trophée
+// 10. BANNIÈRE PROMO
 // ============================================================================
 class _PromoBanner extends StatelessWidget {
   const _PromoBanner();
@@ -1392,11 +1396,9 @@ class _PromoBanner extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Zone or diagonale à droite
           Positioned.fill(
             child: CustomPaint(painter: _GoldDiagonalPainter()),
           ),
-          // Contenu droite (sur or)
           Positioned(
             right: 18,
             top: 0,
@@ -1422,7 +1424,6 @@ class _PromoBanner extends StatelessWidget {
               ),
             ),
           ),
-          // Contenu gauche (sur bleu)
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 0, 130, 0),
             child: Row(
@@ -1479,7 +1480,7 @@ class _GoldDiagonalPainter extends CustomPainter {
 }
 
 // ============================================================================
-// 11. BOTTOM NAV — 5 onglets, actif bleu + underline
+// 11. BOTTOM NAV
 // ============================================================================
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.currentIndex});
