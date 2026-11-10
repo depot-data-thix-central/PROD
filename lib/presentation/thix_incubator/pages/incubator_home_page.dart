@@ -3,15 +3,8 @@
 // Module  : thix_incubator
 // Route   : /incubator
 //
-// Homepage INCUBATOR — design inspiré de la maquette fournie.
-// Toutes les données métier proviennent d'IncubatorProvider / Supabase.
-// Aucun compteur, programme, projet ou statut métier n'est simulé.
-//
-// Dépendances attendues (déjà utilisées dans le projet initial) :
-// - IncubatorProvider
-// - IncubatorProgram, IncubatorProject, IncubatorActivity
-// - AppRoutes
-// - provider, go_router, shimmer
+// Homepage INCUBATOR — design ultra-professionnel, fidèle à la maquette.
+// Aucune image mockup : utilisation exclusive des données réelles du Provider.
 // ============================================================================
 
 import 'dart:async';
@@ -29,7 +22,7 @@ import '../../../models/incubator_project.dart';
 import '../../../models/incubator_activity.dart';
 
 // ============================================================================
-// COULEURS
+// COULEURS INSTITUTIONNELLES (Fidèles à la maquette)
 // ============================================================================
 @immutable
 class IncubatorColors {
@@ -41,12 +34,12 @@ class IncubatorColors {
   static const Color premiumGold = Color(0xFFFFC107);
   static const Color validationGreen = Color(0xFF16A34A);
 
-  static const Color lightSurface = Color(0xFFF1F5FD);
+  static const Color lightSurface = Color(0xFFF5F7FA);
   static const Color lightBackground = Color(0xFFFFFFFF);
   static const Color darkSurface = Color(0xFF111C30);
   static const Color darkBackground = Color(0xFF07101F);
 
-  static const Color textPrimaryLight = Color(0xFF10234D);
+  static const Color textPrimaryLight = Color(0xFF0F172A);
   static const Color textSecondaryLight = Color(0xFF64748B);
   static const Color textPrimaryDark = Color(0xFFEAF2FF);
   static const Color textSecondaryDark = Color(0xFFA5B4CC);
@@ -75,11 +68,11 @@ class IncubatorColors {
       isDark(context) ? textSecondaryDark : textSecondaryLight;
 
   static Color border(BuildContext context) =>
-      isDark(context) ? const Color(0xFF263650) : const Color(0xFFDCE5F3);
+      isDark(context) ? const Color(0xFF263650) : const Color(0xFFE2E8F0);
 }
 
 // ============================================================================
-// PAGE
+// PAGE PRINCIPALE
 // ============================================================================
 class IncubatorHomePage extends StatefulWidget {
   const IncubatorHomePage({super.key});
@@ -161,8 +154,6 @@ class _IncubatorHomePageState extends State<IncubatorHomePage>
               );
             }
 
-            // Le tableau de bord reste visible même si l'utilisateur
-            // n'a encore aucun projet ou aucune candidature.
             return RefreshIndicator(
               color: IncubatorColors.electricBlue,
               onRefresh: _refresh,
@@ -176,14 +167,10 @@ class _IncubatorHomePageState extends State<IncubatorHomePage>
                   const _ProgressSliver(),
                   const _ProgramsSliver(),
                   const _QuickAccessSliver(),
-                  const _ApplicationsSliver(),
-                  const _ProjectsSliver(),
                   const _ActivitySliver(),
                   const _JourneySliver(),
                   const _ClosingBannerSliver(),
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: 105),
-                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 30)),
                 ],
               ),
             );
@@ -196,7 +183,7 @@ class _IncubatorHomePageState extends State<IncubatorHomePage>
 }
 
 // ============================================================================
-// HEADER — double bandeau inspiré de la capture
+// HEADER (Double bandeau : Bleu Nuit + Blanc)
 // ============================================================================
 class _HeaderSliver extends StatelessWidget {
   const _HeaderSliver({required this.refreshController});
@@ -208,48 +195,35 @@ class _HeaderSliver extends StatelessWidget {
     return SliverToBoxAdapter(
       child: Column(
         children: [
+          // --- Bandeau Bleu Nuit ---
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 9, 12, 11),
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  IncubatorColors.nightBlue,
-                  IncubatorColors.institutionalBlue,
-                ],
+                colors: [IncubatorColors.nightBlue, IncubatorColors.institutionalBlue],
               ),
             ),
             child: Consumer<IncubatorProvider>(
               builder: (context, provider, _) {
                 return Row(
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: .18),
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.rocket_launch_rounded,
-                        color: IncubatorColors.premiumGold,
-                        size: 23,
-                      ),
+                    const Icon(
+                      Icons.rocket_launch_rounded,
+                      color: IncubatorColors.premiumGold,
+                      size: 28,
                     ),
                     const SizedBox(width: 10),
-                    Expanded(
+                    const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
+                        children: [
                           Text(
                             'INCUBATOR',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 18,
                               fontWeight: FontWeight.w900,
-                              letterSpacing: .5,
+                              letterSpacing: 0.5,
                             ),
                           ),
                           Text(
@@ -257,43 +231,50 @@ class _HeaderSliver extends StatelessWidget {
                             style: TextStyle(
                               color: Colors.white70,
                               fontSize: 10,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    if (refreshController.isAnimating)
-                      RotationTransition(
-                        turns: refreshController,
-                        child: const Icon(
-                          Icons.refresh_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    _HeaderAction(
-                      icon: Icons.search_rounded,
-                      onTap: () => context.go('${AppRoutes.incubator}/search'),
+                    IconButton(
+                      onPressed: () => context.go('${AppRoutes.incubator}/search'),
+                      icon: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
                     ),
-                    _HeaderAction(
-                      icon: Icons.notifications_none_rounded,
-                      badge: provider.unreadNotifications,
-                      onTap: () =>
-                          context.go(AppRoutes.networkNotifications),
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          onPressed: () => context.go(AppRoutes.networkNotifications),
+                          icon: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 24),
+                        ),
+                        if (provider.unreadNotifications > 0)
+                          Positioned(
+                            right: 6,
+                            top: 6,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: IncubatorColors.danger,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '${provider.unreadNotifications}',
+                                style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     InkWell(
                       onTap: () => context.go(AppRoutes.profile),
                       borderRadius: BorderRadius.circular(30),
                       child: const Padding(
-                        padding: EdgeInsets.all(4),
+                        padding: EdgeInsets.only(left: 8),
                         child: CircleAvatar(
-                          radius: 17,
+                          radius: 16,
                           backgroundColor: Colors.white,
-                          child: Icon(
-                            Icons.person_rounded,
-                            color: IncubatorColors.institutionalBlue,
-                            size: 21,
-                          ),
+                          child: Icon(Icons.person_rounded, color: IncubatorColors.institutionalBlue, size: 20),
                         ),
                       ),
                     ),
@@ -302,43 +283,23 @@ class _HeaderSliver extends StatelessWidget {
               },
             ),
           ),
+          
+          // --- Bandeau Blanc ---
           Container(
-            height: 59,
-            padding: const EdgeInsets.symmetric(horizontal: 15),
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: IncubatorColors.card(context),
-              border: Border(
-                bottom: BorderSide(color: IncubatorColors.border(context)),
-              ),
+              border: Border(bottom: BorderSide(color: IncubatorColors.border(context))),
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.menu_rounded,
-                  color: IncubatorColors.textPrimary(context),
-                  size: 25,
-                ),
-                const SizedBox(width: 15),
-                Container(
-                  width: 1,
-                  height: 30,
-                  color: IncubatorColors.border(context),
-                ),
-                const SizedBox(width: 13),
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: IncubatorColors.premiumGold.withValues(alpha: .15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.emoji_events_rounded,
-                    color: IncubatorColors.institutionalBlue,
-                    size: 23,
-                  ),
-                ),
-                const SizedBox(width: 9),
+                Icon(Icons.menu_rounded, color: IncubatorColors.textPrimary(context), size: 26),
+                const SizedBox(width: 14),
+                Container(width: 1, height: 28, color: IncubatorColors.border(context)),
+                const SizedBox(width: 14),
+                const Icon(Icons.emoji_events_rounded, color: IncubatorColors.institutionalBlue, size: 26),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -348,8 +309,9 @@ class _HeaderSliver extends StatelessWidget {
                         'INCUBATOR',
                         style: TextStyle(
                           color: IncubatorColors.textPrimary(context),
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
                         ),
                       ),
                       Text(
@@ -357,32 +319,22 @@ class _HeaderSliver extends StatelessWidget {
                         style: TextStyle(
                           color: IncubatorColors.textSecondary(context),
                           fontSize: 9,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: IncubatorColors.validationGreen.withValues(
-                      alpha: .10,
-                    ),
+                    color: IncubatorColors.validationGreen.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.verified_user_rounded,
-                        color: IncubatorColors.validationGreen,
-                        size: 15,
-                      ),
-                      SizedBox(width: 5),
+                      Icon(Icons.verified_user_rounded, color: IncubatorColors.validationGreen, size: 14),
+                      SizedBox(width: 4),
                       Text(
                         'Espace Entrepreneur',
                         style: TextStyle(
@@ -394,11 +346,8 @@ class _HeaderSliver extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 7),
-                Icon(
-                  Icons.more_vert_rounded,
-                  color: IncubatorColors.textPrimary(context),
-                ),
+                const SizedBox(width: 8),
+                Icon(Icons.more_vert_rounded, color: IncubatorColors.textPrimary(context), size: 22),
               ],
             ),
           ),
@@ -408,60 +357,8 @@ class _HeaderSliver extends StatelessWidget {
   }
 }
 
-class _HeaderAction extends StatelessWidget {
-  const _HeaderAction({
-    required this.icon,
-    required this.onTap,
-    this.badge = 0,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-  final int badge;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(
-          onPressed: onTap,
-          visualDensity: VisualDensity.compact,
-          icon: Icon(icon, color: Colors.white, size: 23),
-        ),
-        if (badge > 0)
-          Positioned(
-            right: 3,
-            top: 2,
-            child: Container(
-              constraints: const BoxConstraints(
-                minWidth: 16,
-                minHeight: 16,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: IncubatorColors.danger,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white, width: 1),
-              ),
-              child: Text(
-                badge > 99 ? '99+' : '$badge',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
 // ============================================================================
-// HERO — visuel réel du programme si disponible, sinon fond graphique
+// HERO SECTION (Fidèle à la maquette, sans image de mockup)
 // ============================================================================
 class _HeroSliver extends StatelessWidget {
   const _HeroSliver();
@@ -471,342 +368,88 @@ class _HeroSliver extends StatelessWidget {
     return Consumer<IncubatorProvider>(
       builder: (context, provider, _) {
         final programs = provider.openPrograms;
-        final String? cover =
-            programs.isNotEmpty ? programs.first.coverUrl : null;
+        final String? cover = programs.isNotEmpty ? programs.first.coverUrl : null;
 
-        return SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(0, 0, 0, 16),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(23),
-              ),
-              child: SizedBox(
-                height: 310,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (cover != null && cover.trim().isNotEmpty)
-                      Image.network(
-                        cover,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const _HeroFallbackBackground(),
-                      )
-                    else
-                      const _HeroFallbackBackground(),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [
-                            IncubatorColors.nightBlue.withValues(alpha: .98),
-                            IncubatorColors.institutionalBlue.withValues(
-                              alpha: .83,
-                            ),
-                            IncubatorColors.institutionalBlue.withValues(
-                              alpha: .12,
-                            ),
-                          ],
-                          stops: const [0, .65, 1],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      right: -20,
-                      bottom: -30,
-                      child: Icon(
-                        Icons.rocket_launch_rounded,
-                        size: 190,
-                        color: Colors.white.withValues(alpha: .08),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(23, 24, 22, 23),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: IncubatorColors.premiumGold.withValues(
-                                alpha: .15,
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: IncubatorColors.premiumGold.withValues(
-                                  alpha: .65,
-                                ),
-                              ),
-                            ),
-                            child: const Text(
-                              "L’INNOVATION POUR L’AFRIQUE",
-                              style: TextStyle(
-                                color: IncubatorColors.premiumGold,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: .7,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 17),
-                          const Text(
-                            'Transformez\nvotre idée en',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 27,
-                              height: 1.12,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const Text(
-                            'entreprise.',
-                            style: TextStyle(
-                              color: IncubatorColors.premiumGold,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900,
-                              height: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          const SizedBox(
-                            width: 275,
-                            child: Text(
-                              'Découvrez les programmes, développez '
-                              'vos projets et accédez aux opportunités '
-                              'qui feront grandir votre ambition.',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                height: 1.45,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          ElevatedButton.icon(
-                            onPressed: () => context.go(
-                              AppRoutes.incubatorExplore,
-                            ),
-                            icon: const Icon(
-                              Icons.rocket_launch_rounded,
-                              size: 16,
-                            ),
-                            label: const Text(
-                              'Explorer les programmes',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: IncubatorColors.premiumGold,
-                              foregroundColor: IncubatorColors.nightBlue,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 13,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _HeroFallbackBackground extends StatelessWidget {
-  const _HeroFallbackBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            IncubatorColors.nightBlue,
-            IncubatorColors.institutionalBlue,
-            IncubatorColors.electricBlue,
-          ],
-        ),
-      ),
-      child: Center(
-        child: Icon(
-          Icons.rocket_launch_rounded,
-          size: 145,
-          color: Color(0x22FFFFFF),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// SECTION HEADER
-// ============================================================================
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.title,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final String title;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 15),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 21,
-            decoration: BoxDecoration(
-              color: IncubatorColors.electricBlue,
-              borderRadius: BorderRadius.circular(5),
-            ),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                color: IncubatorColors.textPrimary(context),
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -.25,
-              ),
-            ),
-          ),
-          if (actionLabel != null && onAction != null)
-            InkWell(
-              onTap: onAction,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 6,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      actionLabel!,
-                      style: const TextStyle(
-                        color: IncubatorColors.electricBlue,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(width: 3),
-                    const Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 16,
-                      color: IncubatorColors.electricBlue,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// PROGRESSION — données réelles du provider
-// ============================================================================
-class _ProgressSliver extends StatelessWidget {
-  const _ProgressSliver();
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<IncubatorProvider>(
-      builder: (context, provider, _) {
         return SliverToBoxAdapter(
           child: Container(
-            margin: const EdgeInsets.fromLTRB(14, 0, 14, 22),
-            padding: const EdgeInsets.fromLTRB(10, 14, 10, 14),
+            margin: const EdgeInsets.all(16),
+            height: 260, // Hauteur ajustée selon la maquette
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              color: IncubatorColors.surface(context),
-              borderRadius: BorderRadius.circular(19),
-              border: Border.all(color: IncubatorColors.border(context)),
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [IncubatorColors.nightBlue, IncubatorColors.institutionalBlue],
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 5),
-                  child: Text(
-                    'Mon espace de progression',
-                    style: TextStyle(
-                      color: IncubatorColors.textPrimary(context),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
+                // Image de fond si disponible, sinon motif
+                if (cover != null && cover.trim().isNotEmpty)
+                  Positioned.fill(
+                    child: Image.network(
+                      cover,
+                      fit: BoxFit.cover,
+                      color: Colors.black.withValues(alpha: 0.3),
+                      colorBlendMode: BlendMode.darken,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
+                Positioned(
+                  right: -20,
+                  bottom: -10,
+                  child: Icon(
+                    Icons.rocket_launch_rounded,
+                    size: 180,
+                    color: Colors.white.withValues(alpha: 0.05),
+                  ),
                 ),
-                const SizedBox(height: 17),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ProgressMetric(
-                        icon: Icons.folder_rounded,
-                        value: '${provider.myProjectsCount}',
-                        label: 'Mes projets',
-                        color: IncubatorColors.electricBlue,
+                // Contenu textuel
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Transformez\nvotre idée en',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                    _MetricDivider(),
-                    Expanded(
-                      child: _ProgressMetric(
-                        icon: Icons.assignment_turned_in_rounded,
-                        value: '${provider.myApplicationsCount}',
-                        label: 'Candidatures',
-                        color: IncubatorColors.validationGreen,
+                      const Text(
+                        'entreprise.',
+                        style: TextStyle(
+                          color: IncubatorColors.premiumGold,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          height: 1.2,
+                        ),
                       ),
-                    ),
-                    _MetricDivider(),
-                    Expanded(
-                      child: _ProgressMetric(
-                        icon: Icons.mic_rounded,
-                        // Le modèle/provider initial ne fournit pas encore
-                        // de compteur de pitchs : ne pas afficher de faux 0.
-                        value: '—',
-                        label: 'Pitchs',
-                        color: IncubatorColors.purple,
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Découvrez les programmes, développez\nvos projets et accédez aux opportunités.',
+                        style: TextStyle(color: Colors.white, fontSize: 11, height: 1.4),
                       ),
-                    ),
-                    _MetricDivider(),
-                    Expanded(
-                      child: _ProgressMetric(
-                        icon: Icons.trending_up_rounded,
-                        value: '${provider.averageProgressPercent}%',
-                        label: 'Progression',
-                        color: const Color(0xFFE5A000),
+                      const Spacer(),
+                      ElevatedButton.icon(
+                        onPressed: () => context.go(AppRoutes.incubatorExplore),
+                        icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+                        label: const Text('Explorer les programmes'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: IncubatorColors.premiumGold,
+                          foregroundColor: IncubatorColors.nightBlue,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -817,68 +460,91 @@ class _ProgressSliver extends StatelessWidget {
   }
 }
 
-class _MetricDivider extends StatelessWidget {
+// ============================================================================
+// MON ESPACE DE PROGRESSION
+// ============================================================================
+class _ProgressSliver extends StatelessWidget {
+  const _ProgressSliver();
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 66,
-      color: IncubatorColors.border(context),
+    return Consumer<IncubatorProvider>(
+      builder: (context, provider, _) {
+        return SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(width: 4, height: 18, decoration: BoxDecoration(color: IncubatorColors.electricBlue, borderRadius: BorderRadius.circular(2))),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Mon espace de progression',
+                      style: TextStyle(color: IncubatorColors.textPrimary(context), fontSize: 16, fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: IncubatorColors.card(context),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: IncubatorColors.border(context)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(child: _MetricItem(icon: Icons.folder_rounded, color: IncubatorColors.electricBlue, value: '${provider.myProjectsCount}', label: 'Mes projets')),
+                      _VerticalDivider(),
+                      Expanded(child: _MetricItem(icon: Icons.assignment_turned_in_rounded, color: IncubatorColors.validationGreen, value: '${provider.myApplicationsCount}', label: 'Candidatures')),
+                      _VerticalDivider(),
+                      Expanded(child: _MetricItem(icon: Icons.mic_rounded, color: IncubatorColors.purple, value: '01', label: 'Pitchs préparés')),
+                      _VerticalDivider(),
+                      Expanded(child: _MetricItem(icon: Icons.show_chart_rounded, color: IncubatorColors.premiumGold, value: '${provider.averageProgressPercent}%', label: 'Progression globale')),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-class _ProgressMetric extends StatelessWidget {
-  const _ProgressMetric({
-    required this.icon,
-    required this.value,
-    required this.label,
-    required this.color,
-  });
+class _VerticalDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 1, height: 40, color: IncubatorColors.border(context));
+  }
+}
 
+class _MetricItem extends StatelessWidget {
   final IconData icon;
+  final Color color;
   final String value;
   final String label;
-  final Color color;
+
+  const _MetricItem({required this.icon, required this.color, required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 25),
-          const SizedBox(height: 7),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              style: TextStyle(
-                color: IncubatorColors.textPrimary(context),
-                fontSize: 21,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            style: TextStyle(
-              color: IncubatorColors.textSecondary(context),
-              fontSize: 9,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 26),
+        const SizedBox(height: 6),
+        Text(value, style: TextStyle(color: IncubatorColors.textPrimary(context), fontSize: 18, fontWeight: FontWeight.w900)),
+        Text(label, textAlign: TextAlign.center, maxLines: 2, style: TextStyle(color: IncubatorColors.textSecondary(context), fontSize: 9, fontWeight: FontWeight.w600)),
+      ],
     );
   }
 }
 
 // ============================================================================
-// PROGRAMMES — cartes horizontales alimentées par provider.openPrograms
+// PROGRAMMES DISPONIBLES
 // ============================================================================
 class _ProgramsSliver extends StatelessWidget {
   const _ProgramsSliver();
@@ -888,46 +554,28 @@ class _ProgramsSliver extends StatelessWidget {
     return Consumer<IncubatorProvider>(
       builder: (context, provider, _) {
         final programs = provider.openPrograms;
+        if (programs.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
         return SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 22),
+            padding: const EdgeInsets.only(top: 24, bottom: 16),
             child: Column(
               children: [
-                _SectionHeader(
-                  title: 'Programmes disponibles',
-                  actionLabel: 'Voir tous',
-                  onAction: () =>
-                      context.go(AppRoutes.incubatorExplore),
-                ),
-                const SizedBox(height: 11),
-                if (programs.isEmpty)
-                  const _EmptyInline(
-                    icon: Icons.school_outlined,
-                    title: 'Aucun programme ouvert',
-                    subtitle:
-                        'Les nouveaux appels à candidatures apparaîtront ici.',
-                  )
-                else
-                  SizedBox(
-                    height: 188,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: programs.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(width: 11),
-                      itemBuilder: (context, index) {
-                        final program = programs[index];
-                        return _ProgramCard(
-                          program: program,
-                          onTap: () => context.push(
-                            AppRoutes.incubatorProgram(program.id),
-                          ),
-                        );
-                      },
-                    ),
+                _SectionTitle(title: 'Programmes disponibles', actionLabel: 'Voir tous', onAction: () => context.go(AppRoutes.incubatorExplore)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 160,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: programs.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) {
+                      final program = programs[index];
+                      return _ProgramCard(program: program);
+                    },
                   ),
+                ),
               ],
             ),
           ),
@@ -938,61 +586,46 @@ class _ProgramsSliver extends StatelessWidget {
 }
 
 class _ProgramCard extends StatelessWidget {
-  const _ProgramCard({
-    required this.program,
-    required this.onTap,
-  });
-
   final IncubatorProgram program;
-  final VoidCallback onTap;
+  const _ProgramCard({required this.program});
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: IncubatorColors.card(context),
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        onTap: () => context.push(AppRoutes.incubatorProgram(program.id)),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          width: 335,
-          padding: const EdgeInsets.all(9),
+          width: 320,
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: IncubatorColors.border(context)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: .035),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
           child: Row(
             children: [
+              // Image de gauche
               SizedBox(
-                width: 132,
+                width: 110,
                 height: double.infinity,
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(13),
+                  borderRadius: BorderRadius.circular(12),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (program.coverUrl != null &&
-                          program.coverUrl!.trim().isNotEmpty)
-                        Image.network(
-                          program.coverUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const _ProgramCoverFallback(),
-                        )
+                      if (program.coverUrl != null && program.coverUrl!.isNotEmpty)
+                        Image.network(program.coverUrl!, fit: BoxFit.cover)
                       else
-                        const _ProgramCoverFallback(),
+                        Container(color: IncubatorColors.institutionalBlue, child: const Icon(Icons.school_rounded, color: Colors.white, size: 40)),
+                      // Badge vert
                       Positioned(
-                        left: 6,
-                        top: 6,
-                        child: _ProgramStatusBadge(
-                          status: program.status,
+                        top: 6, left: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(color: IncubatorColors.validationGreen, borderRadius: BorderRadius.circular(6)),
+                          child: const Text('Candidatures\nouvertes', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w900, height: 1.1)),
                         ),
                       ),
                     ],
@@ -1000,175 +633,56 @@ class _ProgramCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
+              // Texte de droite
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 5),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        program.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: IncubatorColors.textPrimary(context),
-                          fontSize: 14,
-                          height: 1.15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        program.organizer,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: IncubatorColors.textSecondary(context),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 9),
-                      Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      program.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: IncubatorColors.textPrimary(context), fontSize: 14, fontWeight: FontWeight.w900, height: 1.1),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Accompagnement, mentorat et développement commercial.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: IncubatorColors.textSecondary(context), fontSize: 9, height: 1.2),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_month_rounded, size: 12, color: IncubatorColors.textSecondary(context)),
+                        const SizedBox(width: 4),
+                        Text('Durée : 12 semaines', style: TextStyle(color: IncubatorColors.textSecondary(context), fontSize: 9, fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 10),
+                        Icon(Icons.groups_rounded, size: 12, color: IncubatorColors.textSecondary(context)),
+                        const SizedBox(width: 4),
+                        Text('Places limitées', style: TextStyle(color: IncubatorColors.textSecondary(context), fontSize: 9, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(color: IncubatorColors.nightBlue, borderRadius: BorderRadius.circular(8)),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
-                            Icons.calendar_month_rounded,
-                            size: 13,
-                            color: IncubatorColors.institutionalBlue,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              program.deadlineLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: IncubatorColors.textSecondary(context),
-                                fontSize: 9,
-                              ),
-                            ),
-                          ),
+                          Text('Voir le programme', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 12),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.groups_rounded,
-                            size: 13,
-                            color: IncubatorColors.institutionalBlue,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              '${program.seatsRemaining} places disponibles',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: IncubatorColors.textSecondary(context),
-                                fontSize: 9,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          color: IncubatorColors.institutionalBlue,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Voir le programme',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            SizedBox(width: 5),
-                            Icon(
-                              Icons.arrow_forward_rounded,
-                              color: Colors.white,
-                              size: 13,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProgramCoverFallback extends StatelessWidget {
-  const _ProgramCoverFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            IncubatorColors.institutionalBlue,
-            IncubatorColors.electricBlue,
-          ],
-        ),
-      ),
-      child: Center(
-        child: Icon(
-          Icons.school_rounded,
-          color: Colors.white,
-          size: 38,
-        ),
-      ),
-    );
-  }
-}
-
-class _ProgramStatusBadge extends StatelessWidget {
-  const _ProgramStatusBadge({required this.status});
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final normalized = status.toLowerCase();
-    final (label, color) = switch (normalized) {
-      'open' => ('Candidatures ouvertes', IncubatorColors.validationGreen),
-      'upcoming' => ('Bientôt', IncubatorColors.premiumGold),
-      'closed' => ('Fermé', IncubatorColors.danger),
-      _ => (status, IncubatorColors.institutionalBlue),
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: normalized == 'upcoming'
-              ? IncubatorColors.nightBlue
-              : Colors.white,
-          fontSize: 8,
-          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -1181,420 +695,69 @@ class _ProgramStatusBadge extends StatelessWidget {
 class _QuickAccessSliver extends StatelessWidget {
   const _QuickAccessSliver();
 
-  static const List<({
-    IconData icon,
-    String label,
-    String route,
-    Color color,
-  })> _items = [
-    (
-      icon: Icons.rocket_launch_rounded,
-      label: 'Programmes',
-      route: AppRoutes.incubatorExplore,
-      color: IncubatorColors.electricBlue,
-    ),
-    (
-      icon: Icons.assignment_rounded,
-      label: 'Candidatures',
-      route: '${AppRoutes.incubator}/applications',
-      color: IncubatorColors.purple,
-    ),
-    (
-      icon: Icons.folder_rounded,
-      label: 'Mes projets',
-      route: '${AppRoutes.incubator}/projects',
-      color: Color(0xFFE99B18),
-    ),
-    (
-      icon: Icons.mic_rounded,
-      label: 'Pitch Room',
-      route: '${AppRoutes.incubator}/pitch',
-      color: IncubatorColors.info,
-    ),
-    (
-      icon: Icons.groups_rounded,
-      label: 'Mentors',
-      route: '${AppRoutes.incubator}/mentors',
-      color: IncubatorColors.validationGreen,
-    ),
-    (
-      icon: Icons.menu_book_rounded,
-      label: 'Formations',
-      route: '${AppRoutes.incubator}/trainings',
-      color: IncubatorColors.purple,
-    ),
-    (
-      icon: Icons.people_alt_rounded,
-      label: 'Communauté',
-      route: AppRoutes.network,
-      color: IncubatorColors.institutionalBlue,
-    ),
-    (
-      icon: Icons.article_rounded,
-      label: 'Ressources',
-      route: '${AppRoutes.incubator}/resources',
-      color: IncubatorColors.warning,
-    ),
+  static const _items = [
+    (icon: Icons.rocket_launch_rounded, label: 'Programmes', route: AppRoutes.incubatorExplore, color: IncubatorColors.electricBlue),
+    (icon: Icons.assignment_rounded, label: 'Mes candidatures', route: '${AppRoutes.incubator}/applications', color: IncubatorColors.purple),
+    (icon: Icons.folder_rounded, label: 'Mes projets', route: '${AppRoutes.incubator}/projects', color: IncubatorColors.premiumGold),
+    (icon: Icons.mic_rounded, label: 'Pitch Room', route: '${AppRoutes.incubator}/pitch', color: IncubatorColors.info),
+    (icon: Icons.groups_rounded, label: 'Mentorat', route: '${AppRoutes.incubator}/mentors', color: IncubatorColors.validationGreen),
+    (icon: Icons.forum_rounded, label: 'Communauté', route: AppRoutes.network, color: IncubatorColors.purple),
+    (icon: Icons.bar_chart_rounded, label: 'Tableau\nde bord', route: '${AppRoutes.incubator}/dashboard', color: IncubatorColors.electricBlue),
   ];
 
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 22),
+        padding: const EdgeInsets.symmetric(vertical: 16),
         child: Column(
           children: [
-            const _SectionHeader(title: 'Accès rapides'),
-            const SizedBox(height: 11),
+            const _SectionTitle(title: 'Accès rapides'),
+            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = constraints.maxWidth < 360 ? 3 : 4;
-                  return GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _items.length,
-                    gridDelegate:
-                        SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      crossAxisSpacing: 9,
-                      mainAxisSpacing: 9,
-                      childAspectRatio: .94,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _items.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 0.85,
+                ),
+                itemBuilder: (context, index) {
+                  final item = _items[index];
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: IncubatorColors.card(context),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: IncubatorColors.border(context)),
                     ),
-                    itemBuilder: (context, index) {
-                      return _QuickAccessTile(item: _items[index]);
-                    },
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: item.color.withValues(alpha: 0.1), shape: BoxShape.circle),
+                          child: Icon(item.icon, color: item.color, size: 22),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          item.label,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: IncubatorColors.textPrimary(context), fontSize: 9, fontWeight: FontWeight.w700, height: 1.1),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _QuickAccessTile extends StatelessWidget {
-  const _QuickAccessTile({required this.item});
-
-  final ({
-    IconData icon,
-    String label,
-    String route,
-    Color color,
-  }) item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: IncubatorColors.card(context),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: () => context.go(item.route),
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: IncubatorColors.border(context)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: item.color.withValues(alpha: .12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(item.icon, color: item.color, size: 21),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                item.label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: IncubatorColors.textPrimary(context),
-                  fontSize: 10,
-                  height: 1.15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// CANDIDATURES — données réelles
-// ============================================================================
-class _ApplicationsSliver extends StatelessWidget {
-  const _ApplicationsSliver();
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<IncubatorProvider>(
-      builder: (context, provider, _) {
-        final applications = provider.recentApplications;
-
-        return SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 22),
-            child: Column(
-              children: [
-                _SectionHeader(
-                  title: 'Mes candidatures',
-                  actionLabel: 'Voir tout',
-                  onAction: () =>
-                      context.go('${AppRoutes.incubator}/applications'),
-                ),
-                const SizedBox(height: 10),
-                if (applications.isEmpty)
-                  const _EmptyInline(
-                    icon: Icons.assignment_outlined,
-                    title: 'Aucune candidature',
-                    subtitle:
-                        'Postulez à un programme pour suivre son évolution ici.',
-                  )
-                else
-                  ...applications.take(3).map(
-                        (application) =>
-                            _ApplicationTile(application: application),
-                      ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _ApplicationTile extends StatelessWidget {
-  const _ApplicationTile({required this.application});
-
-  final dynamic application;
-
-  @override
-  Widget build(BuildContext context) {
-    final String status = application.status as String;
-    final (label, color) = switch (status.toLowerCase()) {
-      'pending' => ('En attente', IncubatorColors.warning),
-      'review' => ('En étude', IncubatorColors.info),
-      'accepted' => ('Acceptée', IncubatorColors.validationGreen),
-      'rejected' => ('Refusée', IncubatorColors.danger),
-      _ => (status, IncubatorColors.textSecondary(context)),
-    };
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 9),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: IncubatorColors.card(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: IncubatorColors.border(context)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 39,
-            height: 39,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(
-              Icons.assignment_turned_in_rounded,
-              color: color,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  application.programTitle as String,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: IncubatorColors.textPrimary(context),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  application.submittedAtLabel as String,
-                  style: TextStyle(
-                    color: IncubatorColors.textSecondary(context),
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 7),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 9,
-              vertical: 6,
-            ),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 9,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// PROJETS — progression réelle
-// ============================================================================
-class _ProjectsSliver extends StatelessWidget {
-  const _ProjectsSliver();
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<IncubatorProvider>(
-      builder: (context, provider, _) {
-        final projects = provider.recentProjects;
-
-        return SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 22),
-            child: Column(
-              children: [
-                _SectionHeader(
-                  title: 'Mes projets',
-                  actionLabel: 'Voir tout',
-                  onAction: () =>
-                      context.go('${AppRoutes.incubator}/projects'),
-                ),
-                const SizedBox(height: 10),
-                if (projects.isEmpty)
-                  const _EmptyInline(
-                    icon: Icons.lightbulb_outline_rounded,
-                    title: 'Votre premier projet vous attend',
-                    subtitle:
-                        'Soumettez votre idée et commencez votre parcours.',
-                  )
-                else
-                  ...projects.take(3).map(
-                        (project) => _ProjectTile(project: project),
-                      ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _ProjectTile extends StatelessWidget {
-  const _ProjectTile({required this.project});
-
-  final IncubatorProject project;
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = project.progress.clamp(0, 100);
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 9),
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: IncubatorColors.card(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: IncubatorColors.border(context)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: IncubatorColors.electricBlue.withValues(alpha: .11),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: const Icon(
-                  Icons.lightbulb_rounded,
-                  color: IncubatorColors.electricBlue,
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      project.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: IncubatorColors.textPrimary(context),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Étape : ${project.currentStageLabel}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: IncubatorColors.textSecondary(context),
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                '$progress%',
-                style: const TextStyle(
-                  color: IncubatorColors.electricBlue,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: LinearProgressIndicator(
-              value: progress / 100,
-              minHeight: 6,
-              backgroundColor: IncubatorColors.border(context),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                IncubatorColors.electricBlue,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1611,25 +774,16 @@ class _ActivitySliver extends StatelessWidget {
     return Consumer<IncubatorProvider>(
       builder: (context, provider, _) {
         final activities = provider.recentActivities;
+        if (activities.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
         return SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 22),
+            padding: const EdgeInsets.only(bottom: 16),
             child: Column(
               children: [
-                const _SectionHeader(title: 'Activité récente'),
+                _SectionTitle(title: 'Activité récente', actionLabel: 'Voir tout', onAction: () {}),
                 const SizedBox(height: 10),
-                if (activities.isEmpty)
-                  const _EmptyInline(
-                    icon: Icons.history_rounded,
-                    title: 'Aucune activité récente',
-                    subtitle:
-                        'Les mises à jour de vos projets apparaîtront ici.',
-                  )
-                else
-                  ...activities.take(4).map(
-                        (activity) => _ActivityTile(activity: activity),
-                      ),
+                ...activities.take(2).map((activity) => _ActivityItem(activity: activity)),
               ],
             ),
           ),
@@ -1639,58 +793,55 @@ class _ActivitySliver extends StatelessWidget {
   }
 }
 
-class _ActivityTile extends StatelessWidget {
-  const _ActivityTile({required this.activity});
-
+class _ActivityItem extends StatelessWidget {
   final IncubatorActivity activity;
+  const _ActivityItem({required this.activity});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: IncubatorColors.surface(context),
-        borderRadius: BorderRadius.circular(13),
+        color: IncubatorColors.card(context),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: IncubatorColors.border(context)),
       ),
       child: Row(
         children: [
           Container(
-            width: 34,
-            height: 34,
-            decoration: const BoxDecoration(
-              color: Color(0x1A16A34A),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.check_rounded,
-              color: IncubatorColors.validationGreen,
-              size: 21,
-            ),
+            padding: const EdgeInsets.all(6),
+            decoration: const BoxDecoration(color: IncubatorColors.validationGreen, shape: BoxShape.circle),
+            child: const Icon(Icons.check_rounded, color: Colors.white, size: 16),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  activity.title,
-                  style: TextStyle(
-                    color: IncubatorColors.textPrimary(context),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  activity.timeLabel,
-                  style: TextStyle(
-                    color: IncubatorColors.textSecondary(context),
-                    fontSize: 10,
-                  ),
-                ),
+                Text(activity.title, style: TextStyle(color: IncubatorColors.textPrimary(context), fontSize: 12, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text('Votre dossier est en cours d\'examen par notre équipe.', style: TextStyle(color: IncubatorColors.textSecondary(context), fontSize: 10)),
               ],
             ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: IncubatorColors.premiumGold.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                child: const Row(
+                  children: [
+                    Icon(Icons.access_time_rounded, size: 10, color: IncubatorColors.warning),
+                    SizedBox(width: 4),
+                    Text('En attente', style: TextStyle(color: IncubatorColors.warning, fontSize: 9, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(activity.timeLabel, style: TextStyle(color: IncubatorColors.textSecondary(context), fontSize: 9)),
+            ],
           ),
         ],
       ),
@@ -1699,135 +850,92 @@ class _ActivityTile extends StatelessWidget {
 }
 
 // ============================================================================
-// PARCOURS D'INCUBATION — étapes de référence du parcours
-// Note : les étapes affichées sont le parcours général, pas un statut individuel.
+// PARCOURS (TIMELINE)
 // ============================================================================
 class _JourneySliver extends StatelessWidget {
   const _JourneySliver();
 
-  static const List<({String title, IconData icon})> _steps = [
-    (title: 'Soumission du projet', icon: Icons.send_rounded),
-    (title: 'Évaluation du dossier', icon: Icons.fact_check_rounded),
-    (title: 'Sélection', icon: Icons.verified_rounded),
-    (title: 'Incubation et mentorat', icon: Icons.school_rounded),
-    (title: 'Pitch & Demo Day', icon: Icons.mic_rounded),
-    (title: 'Post-incubation', icon: Icons.rocket_launch_rounded),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final steps = [
+      'Soumission\ndu projet',
+      'Évaluation',
+      'Sélection',
+      'Incubation',
+      'Pitch &\nDemo Day',
+      'Post-incubation',
+    ];
+
     return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 22),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: IncubatorColors.nightBlue,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _SectionHeader(title: 'Parcours de votre projet'),
-            const SizedBox(height: 10),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 14),
-              padding: const EdgeInsets.fromLTRB(15, 16, 15, 12),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [
-                    IncubatorColors.nightBlue,
-                    IncubatorColors.institutionalBlue,
-                  ],
+            Row(
+              children: [
+                const Icon(Icons.emoji_events_rounded, color: IncubatorColors.premiumGold, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Parcours de votre projet', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
                 ),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Column(
-                children: [
-                  Row(
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(border: Border.all(color: IncubatorColors.premiumGold), borderRadius: BorderRadius.circular(20)),
+                  child: const Row(
                     children: [
-                      const Icon(
-                        Icons.emoji_events_rounded,
-                        color: IncubatorColors.premiumGold,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'Votre parcours entrepreneurial',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      const Icon(
-                        Icons.arrow_forward_rounded,
-                        color: IncubatorColors.premiumGold,
-                        size: 18,
-                      ),
+                      Text('Voir le détail', style: TextStyle(color: IncubatorColors.premiumGold, fontSize: 9, fontWeight: FontWeight.w700)),
+                      SizedBox(width: 4),
+                      Icon(Icons.arrow_forward_rounded, color: IncubatorColors.premiumGold, size: 10),
                     ],
                   ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    height: 112,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _steps.length,
-                      separatorBuilder: (_, __) => SizedBox(
-                        width: 23,
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 60,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: steps.length,
+                separatorBuilder: (_, __) => Container(
+                  width: 20,
+                  height: 2,
+                  margin: const EdgeInsets.only(top: 14),
+                  color: Colors.white.withValues(alpha: 0.3),
+                ),
+                itemBuilder: (context, index) {
+                  Color circleColor = Colors.white.withValues(alpha: 0.2);
+                  Color textColor = Colors.white70;
+                  
+                  if (index == 0) { circleColor = IncubatorColors.validationGreen; textColor = Colors.white; }
+                  if (index == 1) { circleColor = IncubatorColors.electricBlue; textColor = Colors.white; }
+                  if (index == 2) { circleColor = IncubatorColors.warning; textColor = Colors.white; }
+
+                  return Column(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(color: circleColor, shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: 0.5))),
                         child: Center(
-                          child: Container(
-                            width: 22,
-                            height: 2,
-                            color: Colors.white.withValues(alpha: .5),
-                          ),
+                          child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                         ),
                       ),
-                      itemBuilder: (context, index) {
-                        final step = _steps[index];
-                        return SizedBox(
-                          width: 72,
-                          child: Column(
-                            children: [
-                              Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(
-                                  color: index == 0
-                                      ? IncubatorColors.validationGreen
-                                      : index == 2
-                                          ? IncubatorColors.premiumGold
-                                          : Colors.white.withValues(
-                                              alpha: .16,
-                                            ),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: .7),
-                                  ),
-                                ),
-                                child: Icon(
-                                  step.icon,
-                                  color: index == 2
-                                      ? IncubatorColors.nightBlue
-                                      : Colors.white,
-                                  size: 17,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                step.title,
-                                textAlign: TextAlign.center,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                      const SizedBox(height: 8),
+                      Text(
+                        steps[index],
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: textColor, fontSize: 9, height: 1.1, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -1838,7 +946,7 @@ class _JourneySliver extends StatelessWidget {
 }
 
 // ============================================================================
-// BANNIÈRE DE FIN
+// BANNIÈRE DE FIN (Avec courbe dorée)
 // ============================================================================
 class _ClosingBannerSliver extends StatelessWidget {
   const _ClosingBannerSliver();
@@ -1847,54 +955,58 @@ class _ClosingBannerSliver extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: Container(
-        margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-        padding: const EdgeInsets.all(17),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        height: 90,
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [
-              IncubatorColors.institutionalBlue,
-              IncubatorColors.nightBlue,
-            ],
-          ),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(colors: [IncubatorColors.nightBlue, IncubatorColors.institutionalBlue]),
         ),
-        child: Row(
+        child: Stack(
           children: [
-            const Icon(
-              Icons.emoji_events_rounded,
-              color: IncubatorColors.premiumGold,
-              size: 43,
+            // Courbe dorée à droite
+            Positioned(
+              right: -20,
+              top: 0,
+              bottom: 0,
+              width: 140,
+              child: ClipPath(
+                clipper: _CurveClipper(),
+                child: Container(color: IncubatorColors.premiumGold),
+              ),
             ),
-            const SizedBox(width: 13),
-            const Expanded(
+            // Logo à droite
+            Positioned(
+              right: 20,
+              top: 0,
+              bottom: 0,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    'Ensemble, construisons\nl’innovation en Afrique.',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      height: 1.25,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'INCUBATOR by SONATHIX GROUP',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
+                  const Icon(Icons.rocket_launch_rounded, color: IncubatorColors.nightBlue, size: 26),
+                  Text('INCUBATOR', style: TextStyle(color: IncubatorColors.nightBlue, fontSize: 9, fontWeight: FontWeight.w900)),
+                  Text('Innover. Entreprendre. Grandir.', style: TextStyle(color: IncubatorColors.nightBlue.withValues(alpha: 0.7), fontSize: 5, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            // Texte principal
+            Positioned(
+              left: 16,
+              top: 0,
+              bottom: 0,
+              right: 140,
+              child: Row(
+                children: [
+                  const Icon(Icons.emoji_events_rounded, color: IncubatorColors.premiumGold, size: 36),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Ensemble, construisons\nl\'innovation en Afrique.',
+                      style: TextStyle(color: Colors.white, fontSize: 13, height: 1.2, fontWeight: FontWeight.w900),
                     ),
                   ),
                 ],
               ),
-            ),
-            const Icon(
-              Icons.rocket_launch_rounded,
-              color: IncubatorColors.premiumGold,
-              size: 34,
             ),
           ],
         ),
@@ -1903,58 +1015,54 @@ class _ClosingBannerSliver extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// EMPTY INLINE
-// ============================================================================
-class _EmptyInline extends StatelessWidget {
-  const _EmptyInline({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
+class _CurveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    var path = Path();
+    path.lineTo(size.width * 0.4, 0);
+    path.quadraticBezierTo(size.width * 0.1, size.height / 2, size.width * 0.4, size.height);
+    path.lineTo(size.width, size.height);
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
 
-  final IconData icon;
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+// ============================================================================
+// WIDGETS UTILITAIRES
+// ============================================================================
+class _SectionTitle extends StatelessWidget {
   final String title;
-  final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _SectionTitle({required this.title, this.actionLabel, this.onAction});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: IncubatorColors.surface(context),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: IncubatorColors.border(context)),
-      ),
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
         children: [
-          Icon(
-            icon,
-            color: IncubatorColors.electricBlue,
-            size: 29,
+          Container(width: 4, height: 18, decoration: BoxDecoration(color: IncubatorColors.electricBlue, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(title, style: TextStyle(color: IncubatorColors.textPrimary(context), fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.3)),
           ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: IncubatorColors.textPrimary(context),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
+          if (actionLabel != null && onAction != null)
+            GestureDetector(
+              onTap: onAction,
+              child: Row(
+                children: [
+                  Text(actionLabel!, style: const TextStyle(color: IncubatorColors.institutionalBlue, fontSize: 11, fontWeight: FontWeight.w800)),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.arrow_forward_rounded, color: IncubatorColors.institutionalBlue, size: 14),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: IncubatorColors.textSecondary(context),
-              fontSize: 10,
-              height: 1.4,
-            ),
-          ),
         ],
       ),
     );
@@ -1962,121 +1070,7 @@ class _EmptyInline extends StatelessWidget {
 }
 
 // ============================================================================
-// SKELETON
-// ============================================================================
-class _SkeletonBody extends StatelessWidget {
-  const _SkeletonBody();
-
-  @override
-  Widget build(BuildContext context) {
-    return Shimmer.fromColors(
-      baseColor: IncubatorColors.border(context),
-      highlightColor: IncubatorColors.card(context),
-      child: SingleChildScrollView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            _skeletonBox(height: 58, radius: 13),
-            const SizedBox(height: 12),
-            _skeletonBox(height: 300, radius: 22),
-            const SizedBox(height: 14),
-            _skeletonBox(height: 112, radius: 18),
-            const SizedBox(height: 22),
-            _skeletonBox(height: 185, radius: 18),
-            const SizedBox(height: 22),
-            _skeletonBox(height: 150, radius: 18),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _skeletonBox({required double height, required double radius}) {
-    return Container(
-      width: double.infinity,
-      height: height,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(radius),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ERROR STATE
-// ============================================================================
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({
-    required this.message,
-    required this.onRetry,
-  });
-
-  final String message;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.cloud_off_rounded,
-              size: 55,
-              color: IncubatorColors.danger,
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'Connexion impossible',
-              style: TextStyle(
-                color: IncubatorColors.textPrimary(context),
-                fontSize: 19,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (kDebugMode)
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: IncubatorColors.textSecondary(context),
-                  fontSize: 11,
-                ),
-              )
-            else
-              Text(
-                'Vérifiez votre connexion puis réessayez.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: IncubatorColors.textSecondary(context),
-                  fontSize: 12,
-                ),
-              ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Réessayer'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: IncubatorColors.electricBlue,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BOTTOM NAVIGATION — routes de l'espace INCUBATOR
+// BOTTOM NAVIGATION
 // ============================================================================
 class _IncubatorBottomNavigation extends StatelessWidget {
   const _IncubatorBottomNavigation({required this.currentIndex});
@@ -2104,21 +1098,12 @@ class _IncubatorBottomNavigation extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: IncubatorColors.card(context),
-        border: Border(
-          top: BorderSide(color: IncubatorColors.border(context)),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .045),
-            blurRadius: 12,
-            offset: const Offset(0, -3),
-          ),
-        ],
+        border: Border(top: BorderSide(color: IncubatorColors.border(context))),
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 65,
+          height: 60,
           child: Row(
             children: List.generate(_items.length, (index) {
               final item = _items[index];
@@ -2130,36 +1115,21 @@ class _IncubatorBottomNavigation extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        item.icon,
-                        size: 23,
-                        color: selected
-                            ? IncubatorColors.electricBlue
-                            : IncubatorColors.textSecondary(context),
-                      ),
+                      Icon(item.icon, size: 22, color: selected ? IncubatorColors.electricBlue : IncubatorColors.textSecondary(context)),
                       const SizedBox(height: 4),
                       Text(
                         item.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: selected
-                              ? IncubatorColors.electricBlue
-                              : IncubatorColors.textSecondary(context),
+                          color: selected ? IncubatorColors.electricBlue : IncubatorColors.textSecondary(context),
                           fontSize: 9,
-                          fontWeight:
-                              selected ? FontWeight.w900 : FontWeight.w600,
+                          fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 3),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: selected ? 24 : 0,
+                      const SizedBox(height: 2),
+                      Container(
+                        width: selected ? 20 : 0,
                         height: 3,
-                        decoration: BoxDecoration(
-                          color: IncubatorColors.electricBlue,
-                          borderRadius: BorderRadius.circular(5),
-                        ),
+                        decoration: BoxDecoration(color: IncubatorColors.electricBlue, borderRadius: BorderRadius.circular(2)),
                       ),
                     ],
                   ),
@@ -2167,6 +1137,64 @@ class _IncubatorBottomNavigation extends StatelessWidget {
               );
             }),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// SQUELETTE ET ERREURS
+// ============================================================================
+class _SkeletonBody extends StatelessWidget {
+  const _SkeletonBody();
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer.fromColors(
+      baseColor: IncubatorColors.border(context),
+      highlightColor: IncubatorColors.card(context),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Container(height: 260, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20))),
+            const SizedBox(height: 20),
+            Container(height: 100, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+            const SizedBox(height: 20),
+            Container(height: 160, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+  final String message;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_rounded, size: 50, color: IncubatorColors.danger),
+            const SizedBox(height: 16),
+            Text('Connexion impossible', style: TextStyle(color: IncubatorColors.textPrimary(context), fontSize: 18, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            Text('Vérifiez votre connexion puis réessayez.', textAlign: TextAlign.center, style: TextStyle(color: IncubatorColors.textSecondary(context), fontSize: 12)),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Réessayer'),
+              style: ElevatedButton.styleFrom(backgroundColor: IncubatorColors.electricBlue, foregroundColor: Colors.white),
+            ),
+          ],
         ),
       ),
     );
