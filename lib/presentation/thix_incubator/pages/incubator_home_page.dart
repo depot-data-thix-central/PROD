@@ -611,6 +611,7 @@ class _HeroFallbackArt extends StatelessWidget {
 // ============================================================================
 // 4. TITRE DE SECTION (barre bleue + titre + lien optionnel)
 // ============================================================================
+// ✅ VERSION CORRIGÉE (sans const sur le Container problématique)
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.title, this.linkLabel, this.onLink});
   final String title;
@@ -623,7 +624,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
       child: Row(
         children: [
-          // ✅ PAS DE CONST sur ce Container (BorderRadius.circular non-const)
+          // ✅ PAS DE CONST ICI — BorderRadius.circular(2) n'est pas const-constructible
           Container(
             width: 4,
             height: 18,
