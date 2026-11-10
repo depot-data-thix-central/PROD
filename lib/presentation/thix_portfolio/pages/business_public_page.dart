@@ -1,25 +1,28 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  THIX PORTFOLIO BUSINESS — PAGE PUBLIQUE « SITE INSTITUTIONNEL »
+//  THIX PORTFOLIO BUSINESS — PAGE PUBLIQUE « GLASS PREMIUM »
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 3.0.0 — Novembre 2026
+//  Version  : 4.0.0 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  ✅ v3.0 :
-//    • HERO bannière qui défile (cover + galerie) + points indicateurs
-//    • Fix titre doublé (le titre n'apparaît dans la barre qu'une fois réduite)
-//    • Toutes les rubriques glissent GAUCHE ↔ DROITE (tactile + souris web)
-//    • FR / EN intégré (bouton dans la barre) — libellés UI + titres par défaut
-//    • 10 rubriques avancées (vidéos, partenaires, clients, certifications,
-//      projets, méthode, événements, carrières, tarifs, agences)
-//      avec photos et vidéos (table business_extras)
+//  ✅ v4.0 — Refonte design 100 % (glassmorphism / verre dépoli) :
+//    • Fond ambiant (dégradé + halos flous) dérivé du BusinessTheme
+//    • Barre du haut flottante en verre (opaque au scroll)
+//    • Hero plein écran : carrousel auto + stats en verre flou
+//    • Chips de navigation vers les rubriques
+//    • Toutes les rubriques en cartes de verre, glissement gauche ↔ droite
+//      (tactile + souris) + flèches
+//    • Dock flottant en verre (Contacter / QR / Partager)
+//    • FR / EN, 10 rubriques avancées (business_extras) conservés
+//    • Images : Image.network + repli <img> (corrige les images grises web)
 //    • 100 % des couleurs via BusinessTheme (Studio inchangé)
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,10 +37,10 @@ import '../data/business_extras.dart';
 import '../data/business_repository.dart';
 import '../models/business_bundle.dart';
 import '../models/business_theme.dart';
-import '../widgets/animated_counter.dart';
 import '../widgets/reveal_on_scroll.dart';
 
 const String kThixPublicBaseUrl = 'https://thixid.com';
+const double _kMaxW = 1120;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n FR / EN
@@ -53,7 +56,7 @@ const Map<String, Map<String, String>> _i18n = {
     'staff': 'collaborateurs',
     'visits': 'visites',
     'since': 'Depuis',
-    'read_more': 'Lire plus →',
+    'read_more': 'Lire plus',
     'copy_id': "Copier l'ID",
     'copied': 'ID copié : ',
     'qr': 'QR code',
@@ -67,9 +70,7 @@ const Map<String, Map<String, String>> _i18n = {
     'apply': 'Postuler',
     'lang_tip': 'English',
     'share_msg': 'Découvrez {name} sur THIX 🚀',
-    'not_found': 'Entreprise introuvable',
-    'invalid': 'Identifiant invalide',
-    'retry': 'Réessayer',
+    'top': 'Haut de page',
   },
   'en': {
     'contact_us': 'Contact us',
@@ -80,7 +81,7 @@ const Map<String, Map<String, String>> _i18n = {
     'staff': 'team members',
     'visits': 'visits',
     'since': 'Since',
-    'read_more': 'Read more →',
+    'read_more': 'Read more',
     'copy_id': 'Copy ID',
     'copied': 'ID copied: ',
     'qr': 'QR code',
@@ -94,13 +95,10 @@ const Map<String, Map<String, String>> _i18n = {
     'apply': 'Apply',
     'lang_tip': 'Français',
     'share_msg': 'Discover {name} on THIX 🚀',
-    'not_found': 'Business not found',
-    'invalid': 'Invalid identifier',
-    'retry': 'Retry',
+    'top': 'Back to top',
   },
 };
 
-/// Titres par défaut (FR → EN) pour les sections standard.
 const Map<String, String> _titlesEn = {
   'À propos': 'About',
   'À propos de nous': 'About us',
@@ -125,15 +123,24 @@ class _LangScope extends InheritedWidget {
   final String code;
 
   static String of(BuildContext c) =>
-      c.dependOnInheritedWidgetOfExactType<_LangScope>()?.code ?? 'fr';
+      c.dependOnInheritedWidgetOfType<_LangScope>()?.code ?? 'fr';
 
   @override
   bool updateShouldNotify(_LangScope old) => old.code != code;
 }
+
 String _tr(BuildContext c, String key) => _t(_LangScope.of(c), key);
 
 String _tt(BuildContext c, String title) =>
     _LangScope.of(c) == 'en' ? (_titlesEn[title.trim()] ?? title) : title;
+
+String _fmtDate(String lang, DateTime d) {
+  try {
+    return DateFormat.yMMMd(lang == 'fr' ? 'fr_FR' : 'en_US').format(d);
+  } catch (_) {
+    return '${d.day}/${d.month}/${d.year}';
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -161,19 +168,50 @@ Future<void> _openUrl(String? url) async {
   }
 }
 
-Widget _img(String url, {BoxFit fit = BoxFit.cover}) => CachedNetworkImage(
-      imageUrl: url,
+BorderRadius _radius(BuildContext c) =>
+    Theme.of(c).extension<BusinessThemeExt>()?.radius ??
+    BorderRadius.circular(24);
+
+String _compact(int n) {
+  if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+  if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+  return '$n';
+}
+
+class _ImgFallback extends StatelessWidget {
+  const _ImgFallback();
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+        color: Colors.black.withValues(alpha: 0.08),
+        child: const Center(
+          child: Icon(Icons.image_not_supported_outlined,
+              size: 22, color: Colors.black38),
+        ),
+      );
+}
+
+/// Image réseau robuste (repli <img> HTML sur le web → évite les erreurs CORS).
+Widget _img(String url, {BoxFit fit = BoxFit.cover, Widget? fallback}) {
+  return ColoredBox(
+    color: Colors.black.withValues(alpha: 0.05),
+    child: Image.network(
+      url,
       fit: fit,
       width: double.infinity,
       height: double.infinity,
-      placeholder: (_, __) => const ColoredBox(color: Colors.black12),
-      errorWidget: (_, __, ___) => const ColoredBox(
-        color: Colors.black12,
-        child: Center(
-            child: Icon(Icons.image_not_supported_outlined,
-                size: 20, color: Colors.black38)),
-      ),
-    );
+      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+      frameBuilder: (c, child, frame, sync) => sync
+          ? child
+          : AnimatedOpacity(
+              opacity: frame == null ? 0 : 1,
+              duration: const Duration(milliseconds: 450),
+              child: child,
+            ),
+      errorBuilder: (_, __, ___) => fallback ?? const _ImgFallback(),
+    ),
+  );
+}
 
 void _viewImage(BuildContext context, String url) {
   showDialog<void>(
@@ -184,7 +222,11 @@ void _viewImage(BuildContext context, String url) {
         children: [
           Positioned.fill(
             child: InteractiveViewer(
-              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+              ),
             ),
           ),
           Positioned(
@@ -203,24 +245,240 @@ void _viewImage(BuildContext context, String url) {
   );
 }
 
-/// Rangée horizontale (glisser gauche ↔ droite).
-Widget _hList({
-  required double height,
-  required int count,
-  required IndexedWidgetBuilder builder,
-  double gap = 12,
-}) {
-  return SizedBox(
-    height: height,
-    child: ListView.separated(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      itemCount: count,
-      separatorBuilder: (_, __) => SizedBox(width: gap),
-      itemBuilder: builder,
-    ),
-  );
+class _Tap extends StatelessWidget {
+  const _Tap({required this.child, this.onTap});
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onTap == null) return child;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: child,
+      ),
+    );
+  }
+}
+
+class _Wrap extends StatelessWidget {
+  const _Wrap({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _kMaxW),
+          child: child,
+        ),
+      );
+}
+
+/// Apparition (fondu + montée) sans contrôleur.
+class _Rise extends StatelessWidget {
+  const _Rise({required this.child, this.delay = 0, this.dy = 26});
+  final Widget child;
+  final int delay;
+  final double dy;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = 750 + delay;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: Duration(milliseconds: total),
+      curve: Interval(delay / total, 1, curve: Curves.easeOutCubic),
+      builder: (_, v, ch) => Opacity(
+        opacity: v.clamp(0.0, 1.0),
+        child: Transform.translate(offset: Offset(0, (1 - v) * dy), child: ch),
+      ),
+      child: child,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GLASS — verre dépoli
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Glass extends StatelessWidget {
+  const _Glass({
+    required this.child,
+    this.radius,
+    this.padding,
+    this.blur = 22,
+    this.tint,
+    this.alpha,
+    this.shadow = true,
+  });
+
+  final Widget child;
+  final BorderRadius? radius;
+  final EdgeInsetsGeometry? padding;
+  final double blur;
+  final Color? tint;
+  final double? alpha;
+  final bool shadow;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final r = radius ?? _radius(context);
+    final base = tint ?? Colors.white;
+    final a = alpha ?? (dark ? 0.08 : 0.60);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: r,
+        boxShadow: shadow
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: dark ? 0.22 : 0.05),
+                  blurRadius: 28,
+                  offset: const Offset(0, 10),
+                ),
+              ]
+            : null,
+      ),
+      child: ClipRRect(
+        borderRadius: r,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 280),
+            padding: padding,
+            decoration: BoxDecoration(
+              borderRadius: r,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  base.withValues(alpha: (a + 0.16).clamp(0.0, 1.0)),
+                  base.withValues(alpha: a),
+                ],
+              ),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: dark ? 0.14 : 0.75),
+                width: 1,
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundBtn extends StatelessWidget {
+  const _RoundBtn({
+    required this.icon,
+    required this.onTap,
+    this.color,
+    this.tooltip,
+    this.size = 40,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color? color;
+  final String? tooltip;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = _Tap(
+      onTap: onTap,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Icon(icon,
+            size: size * 0.5,
+            color: color ?? Theme.of(context).colorScheme.onSurface),
+      ),
+    );
+    return tooltip == null ? w : Tooltip(message: tooltip!, child: w);
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill(this.text, {this.big = false});
+  final String text;
+  final bool big;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: big ? 5 : 3),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: big ? 14 : 11.5,
+          fontWeight: FontWeight.w900,
+          color: scheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  const _Avatar({
+    required this.url,
+    required this.name,
+    required this.radius,
+    this.ring,
+  });
+
+  final String? url;
+  final String name;
+  final double radius;
+  final Color? ring;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final d = radius * 2;
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final fb = ColoredBox(
+      color: scheme.primaryContainer,
+      child: Center(
+        child: Text(initial,
+            style: TextStyle(
+                fontSize: radius * 0.9,
+                fontWeight: FontWeight.w900,
+                color: scheme.onPrimaryContainer)),
+      ),
+    );
+    final has = url != null && url!.isNotEmpty;
+    return Container(
+      padding: ring != null ? const EdgeInsets.all(3) : EdgeInsets.zero,
+      decoration: ring != null
+          ? BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: ring!, width: 2),
+            )
+          : null,
+      child: ClipOval(
+        child: SizedBox(
+          width: d,
+          height: d,
+          child: has ? _img(url!, fallback: fb) : fb,
+        ),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,35 +525,25 @@ class _PublicSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    Widget block(double h) => Container(
+          height: h,
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+        );
     return Scaffold(
       body: Shimmer.fromColors(
         baseColor: scheme.surfaceContainerHighest,
         highlightColor: scheme.surface,
-        child: CustomScrollView(
-          slivers: [
-            const SliverAppBar(
-              expandedHeight: 300,
-              pinned: true,
-              flexibleSpace: FlexibleSpaceBar(
-                background:
-                    DecoratedBox(decoration: BoxDecoration(color: Colors.white)),
-              ),
-            ),
-            SliverPadding(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            Container(height: 520, color: Colors.white),
+            Padding(
               padding: const EdgeInsets.all(20),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  const SizedBox(
-                      height: 120,
-                      child: DecoratedBox(
-                          decoration: BoxDecoration(color: Colors.white))),
-                  const SizedBox(height: 16),
-                  const SizedBox(
-                      height: 200,
-                      child: DecoratedBox(
-                          decoration: BoxDecoration(color: Colors.white))),
-                ]),
-              ),
+              child: Column(children: [block(80), block(220), block(160)]),
             ),
           ],
         ),
@@ -358,8 +606,37 @@ class _PublicNotFound extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SITE — structure professionnelle
+// SITE
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _Blk {
+  const _Blk(this.id, this.label, this.child);
+  final String id;
+  final String label;
+  final Widget child;
+}
+
+bool _isEmpty(BusinessSectionContent c) => switch (c) {
+      AboutContent() => c.body.trim().isEmpty,
+      ServicesContent() => c.items.isEmpty,
+      ProductsContent() => c.items.isEmpty,
+      GalleryContent() => c.images.isEmpty,
+      TeamContent() => c.members.isEmpty,
+      NewsContent() => c.posts.isEmpty,
+      TestimonialsContent() => c.items.isEmpty,
+      ContactContent() => c.channels.isEmpty,
+    };
+
+String _titleOf(BusinessSectionContent c) => switch (c) {
+      AboutContent() => c.title,
+      ServicesContent() => c.title,
+      ProductsContent() => c.title,
+      GalleryContent() => c.title,
+      TeamContent() => c.title,
+      NewsContent() => c.title,
+      TestimonialsContent() => c.title,
+      ContactContent() => c.title,
+    };
 
 class _BusinessSite extends ConsumerStatefulWidget {
   const _BusinessSite({required this.bundle});
@@ -373,22 +650,26 @@ class _BusinessSite extends ConsumerStatefulWidget {
 class _BusinessSiteState extends ConsumerState<_BusinessSite> {
   String _lang = 'fr';
   final ScrollController _scroll = ScrollController();
-  bool _collapsed = false;
+  final ValueNotifier<bool> _scrolled = ValueNotifier<bool>(false);
+  final Map<String, GlobalKey> _keys = {};
 
   BusinessBundle get bundle => widget.bundle;
+
+  GlobalKey _key(String id) => _keys.putIfAbsent(id, () => GlobalKey());
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(() {
-      final c = _scroll.hasClients && _scroll.offset > 300;
-      if (c != _collapsed) setState(() => _collapsed = c);
+      final s = _scroll.hasClients && _scroll.offset > 380;
+      if (s != _scrolled.value) _scrolled.value = s;
     });
   }
 
   @override
   void dispose() {
     _scroll.dispose();
+    _scrolled.dispose();
     super.dispose();
   }
 
@@ -403,7 +684,28 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
         if (i.url.isNotEmpty && !out.contains(i.url)) out.add(i.url);
       }
     }
+    final n = bundle.sectionOfType(BusinessSectionType.news)?.content;
+    if (n is NewsContent) {
+      for (final p in n.posts) {
+        final u = p.imageUrl;
+        if (u != null && u.isNotEmpty && !out.contains(u)) out.add(u);
+      }
+    }
     return out.take(6).toList();
+  }
+
+  String _label(String title) =>
+      _lang == 'en' ? (_titlesEn[title.trim()] ?? title) : title;
+
+  void _goTo(String id) {
+    final ctx = _keys[id]?.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 650),
+      curve: Curves.easeInOutCubic,
+      alignment: 0.1,
+    );
   }
 
   @override
@@ -415,121 +717,159 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     final extras = ref
         .watch(businessExtrasProvider(bundle.business.id))
         .maybeWhen(data: (d) => d, orElse: () => <BizExtra>[]);
-    final visibleExtras = extras
-        .where((e) => e.visible && e.hasContent)
-        .toList()
+    final visibleExtras = extras.where((e) => e.visible && e.hasContent).toList()
       ..sort((a, b) => a.position.compareTo(b.position));
 
-    final main =
-        sections.where((s) => s.type != BusinessSectionType.contact).toList();
-    final contact =
-        sections.where((s) => s.type == BusinessSectionType.contact).toList();
+    final main = sections
+        .where((s) =>
+            s.type != BusinessSectionType.contact && !_isEmpty(s.content))
+        .toList();
+    final contact = sections
+        .where((s) =>
+            s.type == BusinessSectionType.contact && !_isEmpty(s.content))
+        .toList();
 
-    final blocks = <Widget>[
-      for (final s in main) _SectionRenderer(section: s),
-      for (final e in visibleExtras) _ExtraSection(extra: e),
-      for (final s in contact) _SectionRenderer(section: s),
+    final blocks = <_Blk>[
+      for (final s in main)
+        _Blk('s-${s.id}', _label(_titleOf(s.content)),
+            _SectionRenderer(section: s)),
+      for (final e in visibleExtras)
+        if (kBizKindByKey[e.kind] != null)
+          _Blk(
+            'x-${e.kind}',
+            (e.title?.trim().isNotEmpty ?? false)
+                ? e.title!.trim()
+                : (_lang == 'en'
+                    ? kBizKindByKey[e.kind]!.en
+                    : kBizKindByKey[e.kind]!.fr),
+            _ExtraSection(extra: e),
+          ),
+      for (final s in contact)
+        _Blk('s-${s.id}', _label(_titleOf(s.content)),
+            _SectionRenderer(section: s)),
     ];
 
     return _LangScope(
       code: _lang,
       child: Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _openContactSheet,
-          icon: const Icon(Icons.chat_bubble_outline),
-          label: Text(_t(_lang, 'contact')),
-        ),
+        backgroundColor: scheme.surface,
         body: ScrollConfiguration(
           behavior: const _DragScrollBehavior(),
-          child: CustomScrollView(
-            controller: _scroll,
-            slivers: [
-              // ── HERO : carrousel + overlay + nom + slogan + CTAs ──
-              SliverAppBar(
-                expandedHeight: 400,
-                pinned: true,
-                stretch: true,
-                backgroundColor: scheme.primary,
-                foregroundColor: Colors.white,
-                title: AnimatedOpacity(
-                  opacity: _collapsed ? 1 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Text(
-                    bundle.business.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, color: Colors.white),
+          child: Stack(
+            children: [
+              Positioned.fill(child: _Ambient(bundle: bundle)),
+              CustomScrollView(
+                controller: _scroll,
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _Hero(
+                      bundle: bundle,
+                      images: _heroImages(),
+                      onContact: _openContactSheet,
+                      onShare: _share,
+                    ),
                   ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () =>
-                        setState(() => _lang = _lang == 'fr' ? 'en' : 'fr'),
-                    child: Tooltip(
-                      message: _t(_lang, 'lang_tip'),
-                      child: Text(
-                        _lang == 'fr' ? 'EN' : 'FR',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5),
+                  SliverToBoxAdapter(
+                    child: _Wrap(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(0, 22, 0, 0),
+                        child: _InfoStrip(business: bundle.business),
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: _t(_lang, 'copy_id'),
-                    icon: const Icon(Icons.content_copy),
-                    onPressed: _copyId,
+                  if (blocks.length > 1)
+                    SliverToBoxAdapter(
+                      child: _Wrap(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: _NavChips(
+                            labels: [for (final b in blocks) b.label],
+                            onTap: (i) => _goTo(blocks[i].id),
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 34)),
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        for (final b in blocks)
+                          KeyedSubtree(
+                            key: _key(b.id),
+                            child: _Wrap(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                                child: RevealOnScroll(
+                                  style: theme.animationStyle,
+                                  staggerIndex: 0,
+                                  child: b.child,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                  IconButton(
-                    tooltip: _t(_lang, 'qr'),
-                    icon: const Icon(Icons.qr_code_2),
-                    onPressed: _showQr,
-                  ),
-                  IconButton(
-                    tooltip: _t(_lang, 'share'),
-                    icon: const Icon(Icons.share),
-                    onPressed: _share,
+                  SliverToBoxAdapter(
+                    child: _Footer(
+                      bundle: bundle,
+                      onTop: () => _scroll.animateTo(0,
+                          duration: const Duration(milliseconds: 800),
+                          curve: Curves.easeInOutCubic),
+                    ),
                   ),
                 ],
-                flexibleSpace: FlexibleSpaceBar(
-                  stretchModes: const [StretchMode.zoomBackground],
-                  background: _HeroCover(
-                    bundle: bundle,
-                    images: _heroImages(),
-                    onContact: _openContactSheet,
-                    onShare: _share,
-                  ),
-                ),
               ),
 
-              // ── Carte identité chevauchante + compteurs ──
-              SliverToBoxAdapter(child: _IdentityCard(bundle: bundle)),
-
-              // ── Bandeau infos ──
-              SliverToBoxAdapter(child: _InfoStrip(business: bundle.business)),
-
-              // ── Sections ──
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => Padding(
-                      padding: const EdgeInsets.only(bottom: 22),
-                      child: RevealOnScroll(
-                        style: theme.animationStyle,
-                        staggerIndex: i,
-                        child: blocks[i],
+              // ── Barre du haut flottante ──
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                    child: _Wrap(
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _scrolled,
+                        builder: (_, s, __) => _TopBar(
+                          bundle: bundle,
+                          solid: s,
+                          lang: _lang,
+                          onLang: () => setState(
+                              () => _lang = _lang == 'fr' ? 'en' : 'fr'),
+                          onCopy: _copyId,
+                          onQr: _showQr,
+                          onShare: _share,
+                        ),
                       ),
                     ),
-                    childCount: blocks.length,
                   ),
                 ),
               ),
 
-              // ── Footer de marque ──
-              SliverToBoxAdapter(child: _Footer(bundle: bundle)),
+              // ── Dock flottant ──
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Center(
+                      child: _Dock(
+                        label: _t(_lang, 'contact'),
+                        onContact: _openContactSheet,
+                        onQr: _showQr,
+                        onShare: _share,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -542,8 +882,9 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content:
-              Text('${_t(_lang, 'copied')}${bundle.business.thixId}')),
+        behavior: SnackBarBehavior.floating,
+        content: Text('${_t(_lang, 'copied')}${bundle.business.thixId}'),
+      ),
     );
   }
 
@@ -605,72 +946,274 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
 
     showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (sheetCtx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: channels.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(_t(lang, 'no_channel')),
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '${_t(lang, 'contact_prefix')} ${bundle.business.name}',
-                      style: Theme.of(sheetCtx)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 12),
-                    for (final c in channels)
-                      ListTile(
-                        leading: Icon(_channelIcon(c.type)),
-                        title: Text(c.label ?? c.type.name),
-                        subtitle: Text(c.value),
-                        trailing: const Icon(Icons.open_in_new),
-                        onTap: () async {
-                          final uri = c.launchUri;
-                          if (uri != null) {
-                            await launchUrl(uri,
-                                mode: LaunchMode.externalApplication);
-                          }
-                        },
+          padding: const EdgeInsets.all(12),
+          child: _Glass(
+            radius: BorderRadius.circular(30),
+            blur: 30,
+            alpha: 0.86,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+            child: channels.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(_t(lang, 'no_channel')),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '${_t(lang, 'contact_prefix')} ${bundle.business.name}',
+                        style: Theme.of(sheetCtx)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w900),
                       ),
-                  ],
-                ),
+                      const SizedBox(height: 10),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              for (final c in channels)
+                                _ContactTile(channel: c),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
   }
+}
 
-  static IconData _channelIcon(ContactChannelType type) {
-    switch (type) {
-      case ContactChannelType.phone:
-        return Icons.phone;
-      case ContactChannelType.email:
-        return Icons.mail_outline;
-      case ContactChannelType.whatsapp:
-        return Icons.chat;
-      case ContactChannelType.website:
-        return Icons.language;
-      case ContactChannelType.address:
-        return Icons.place_outlined;
-      case ContactChannelType.map:
-        return Icons.map_outlined;
-    }
+// ─────────────────────────────────────────────────────────────────────────────
+// Fond ambiant (dégradé + halos flous)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Ambient extends StatelessWidget {
+  const _Ambient({required this.bundle});
+  final BusinessBundle bundle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final t = bundle.theme;
+
+    Widget blob(Color c, double size) => IgnorePointer(
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [c.withValues(alpha: 0.30), c.withValues(alpha: 0)],
+              ),
+            ),
+          ),
+        );
+
+    return LayoutBuilder(
+      builder: (_, cs) => Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color.alphaBlend(
+                      t.primary.withValues(alpha: 0.09), scheme.surface),
+                  scheme.surface,
+                  Color.alphaBlend(
+                      t.accent.withValues(alpha: 0.07), scheme.surface),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+              top: cs.maxHeight * 0.10,
+              right: -cs.maxWidth * 0.15,
+              child: blob(t.accent, 460)),
+          Positioned(
+              top: cs.maxHeight * 0.38,
+              left: -cs.maxWidth * 0.18,
+              child: blob(t.primary, 520)),
+          Positioned(
+              bottom: -cs.maxHeight * 0.05,
+              right: cs.maxWidth * 0.05,
+              child: blob(t.primary, 420)),
+        ],
+      ),
+    );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HERO : carrousel qui défile + contenu bas-gauche
+// Barre du haut
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _HeroCover extends StatelessWidget {
-  const _HeroCover({
+class _TopBar extends StatelessWidget {
+  const _TopBar({
+    required this.bundle,
+    required this.solid,
+    required this.lang,
+    required this.onLang,
+    required this.onCopy,
+    required this.onQr,
+    required this.onShare,
+  });
+
+  final BusinessBundle bundle;
+  final bool solid;
+  final String lang;
+  final VoidCallback onLang;
+  final VoidCallback onCopy;
+  final VoidCallback onQr;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fg = solid ? scheme.onSurface : Colors.white;
+    final b = bundle.business;
+
+    return _Glass(
+      radius: BorderRadius.circular(28),
+      blur: 24,
+      tint: solid ? scheme.surface : Colors.white,
+      alpha: solid ? 0.74 : 0.14,
+      padding: const EdgeInsets.all(5),
+      child: Row(
+        children: [
+          if (Navigator.of(context).canPop())
+            _RoundBtn(
+              icon: Icons.arrow_back_rounded,
+              color: fg,
+              onTap: () => Navigator.of(context).maybePop(),
+            ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: AnimatedOpacity(
+              opacity: solid ? 1 : 0,
+              duration: const Duration(milliseconds: 220),
+              child: Row(
+                children: [
+                  _Avatar(url: b.logoUrl, name: b.name, radius: 15),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      b.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: fg,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Tooltip(
+            message: _t(lang, 'lang_tip'),
+            child: TextButton(
+              onPressed: onLang,
+              style: TextButton.styleFrom(
+                foregroundColor: fg,
+                minimumSize: const Size(44, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              child: Text(
+                lang == 'fr' ? 'EN' : 'FR',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w900, letterSpacing: 0.6),
+              ),
+            ),
+          ),
+          _RoundBtn(
+              icon: Icons.content_copy_rounded,
+              color: fg,
+              tooltip: _t(lang, 'copy_id'),
+              onTap: onCopy),
+          _RoundBtn(
+              icon: Icons.qr_code_2_rounded,
+              color: fg,
+              tooltip: _t(lang, 'qr'),
+              onTap: onQr),
+          _RoundBtn(
+              icon: Icons.ios_share_rounded,
+              color: fg,
+              tooltip: _t(lang, 'share'),
+              onTap: onShare),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dock flottant
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Dock extends StatelessWidget {
+  const _Dock({
+    required this.label,
+    required this.onContact,
+    required this.onQr,
+    required this.onShare,
+  });
+
+  final String label;
+  final VoidCallback onContact;
+  final VoidCallback onQr;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _Glass(
+      radius: BorderRadius.circular(40),
+      blur: 26,
+      tint: scheme.surface,
+      alpha: 0.72,
+      padding: const EdgeInsets.all(6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FilledButton.icon(
+            onPressed: onContact,
+            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+            label: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+            style: FilledButton.styleFrom(
+              shape: const StadiumBorder(),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _RoundBtn(icon: Icons.qr_code_2_rounded, onTap: onQr, size: 46),
+          _RoundBtn(icon: Icons.ios_share_rounded, onTap: onShare, size: 46),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HERO
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Hero extends StatelessWidget {
+  const _Hero({
     required this.bundle,
     required this.images,
     required this.onContact,
@@ -686,126 +1229,272 @@ class _HeroCover extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = bundle.theme;
     final b = bundle.business;
+    final size = MediaQuery.sizeOf(context);
+    final height = math.min(math.max(680.0, size.height * 0.92), 880.0);
+    final narrow = size.width < 600;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _HeroCarousel(images: images, colors: theme.heroGradient),
-        // Voile bas pour lisibilité
-        const IgnorePointer(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.center,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.black87],
+    final stats = <(int, String)>[
+      if (b.ageYears != null && b.ageYears! > 0)
+        (b.ageYears!, _tr(context, 'years')),
+      if (b.employees != null && b.employees! > 0)
+        (b.employees!, _tr(context, 'staff')),
+      if ((bundle.stats?.views ?? 0) > 0)
+        (bundle.stats!.views, _tr(context, 'visits')),
+    ];
+
+    final meta = [b.sector, b.city]
+        .whereType<String>()
+        .where((e) => e.trim().isNotEmpty)
+        .join('  •  ');
+
+    return SizedBox(
+      height: height,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _HeroCarousel(images: images, colors: theme.heroGradient),
+          IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0, 0.32, 1],
+                  colors: [
+                    Colors.black.withValues(alpha: 0.45),
+                    Colors.transparent,
+                    Color.lerp(theme.primary, Colors.black, 0.75)!
+                        .withValues(alpha: 0.94),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-        Positioned(
-          left: 20,
-          right: 20,
-          bottom: 34,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (b.verified)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF22C55E),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _kMaxW),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 34),
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.verified_rounded,
-                          size: 12, color: Colors.white),
-                      const SizedBox(width: 4),
-                      Text(_tr(context, 'verified'),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5)),
+                      _Rise(
+                        child: Row(
+                          children: [
+                            _Avatar(
+                              url: b.logoUrl,
+                              name: b.name,
+                              radius: narrow ? 30 : 38,
+                              ring: theme.accent,
+                            ),
+                            if (b.verified) ...[
+                              const SizedBox(width: 12),
+                              _Glass(
+                                radius: BorderRadius.circular(20),
+                                blur: 16,
+                                tint: const Color(0xFF22C55E),
+                                alpha: 0.38,
+                                shadow: false,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 7),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.verified_rounded,
+                                        size: 15, color: Colors.white),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      _tr(context, 'verified'),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.7,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _Rise(
+                        delay: 120,
+                        child: Text(
+                          b.name,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: narrow ? 40 : 66,
+                            height: 1.03,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -1.6,
+                            shadows: const [
+                              Shadow(color: Colors.black45, blurRadius: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (b.claim != null && b.claim!.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: _Rise(
+                            delay: 240,
+                            child: Text(
+                              b.claim!,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.94),
+                                fontSize: narrow ? 16 : 21,
+                                height: 1.4,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (meta.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: _Rise(
+                            delay: 300,
+                            child: Text(
+                              meta,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.72),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                      _Rise(
+                        delay: 380,
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: onContact,
+                              icon: const Icon(
+                                  Icons.chat_bubble_outline_rounded,
+                                  size: 18),
+                              label: Text(_tr(context, 'contact_us'),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w800)),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: theme.primary,
+                                shape: const StadiumBorder(),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 26, vertical: 17),
+                              ),
+                            ),
+                            _Tap(
+                              onTap: onShare,
+                              child: _Glass(
+                                radius: BorderRadius.circular(40),
+                                blur: 18,
+                                alpha: 0.16,
+                                shadow: false,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 16),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.ios_share_rounded,
+                                        size: 18, color: Colors.white),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _tr(context, 'share'),
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (stats.isNotEmpty) ...[
+                        const SizedBox(height: 30),
+                        _Rise(
+                          delay: 500,
+                          child: _Glass(
+                            radius: BorderRadius.circular(26),
+                            blur: 26,
+                            alpha: 0.14,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            child: Row(
+                              children: [
+                                for (var i = 0; i < stats.length; i++) ...[
+                                  if (i > 0)
+                                    Container(
+                                        width: 1,
+                                        height: 36,
+                                        color: Colors.white24),
+                                  Expanded(
+                                    child: _Stat(
+                                        value: stats[i].$1,
+                                        label: stats[i].$2),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              _SlideIn(
-                duration: Duration(
-                    milliseconds:
-                        (650 * theme.animationStyle.durationScale).round()),
-                beginY: 0.25,
-                child: Text(
-                  b.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    height: 1.1,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.6,
-                    shadows: [Shadow(color: Colors.black38, blurRadius: 8)],
-                  ),
-                ),
               ),
-              if (b.claim != null && b.claim!.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: _FadeIn(
-                    duration: const Duration(milliseconds: 600),
-                    delay: const Duration(milliseconds: 250),
-                    child: Text(
-                      b.claim!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        shadows: [Shadow(color: Colors.black38, blurRadius: 6)],
-                      ),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: onContact,
-                      icon: const Icon(Icons.chat_bubble_outline, size: 17),
-                      label: Text(_tr(context, 'contact_us')),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: theme.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: theme.radiusSm),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onShare,
-                      icon: const Icon(Icons.share_rounded, size: 17),
-                      label: Text(_tr(context, 'share')),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white70),
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: theme.radiusSm),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat({required this.value, required this.label});
+  final int value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: value.toDouble()),
+      duration: const Duration(milliseconds: 1500),
+      curve: Curves.easeOutCubic,
+      builder: (_, v, __) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _compact(v.round()),
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.78),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -828,11 +1517,11 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   void initState() {
     super.initState();
     if (widget.images.length > 1) {
-      _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _timer = Timer.periodic(const Duration(seconds: 6), (_) {
         if (!mounted || !_pc.hasClients) return;
         final next = (_index + 1) % widget.images.length;
         _pc.animateToPage(next,
-            duration: const Duration(milliseconds: 700),
+            duration: const Duration(milliseconds: 900),
             curve: Curves.easeInOutCubic);
       });
     }
@@ -863,43 +1552,36 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (imgs.isEmpty)
-          gradient
-        else
+        gradient,
+        if (imgs.isNotEmpty)
           PageView.builder(
             controller: _pc,
             itemCount: imgs.length,
             onPageChanged: (i) => setState(() => _index = i),
-            itemBuilder: (_, i) => CachedNetworkImage(
-              imageUrl: imgs[i],
-              fit: BoxFit.cover,
-              placeholder: (_, __) => gradient,
-              errorWidget: (_, __, ___) => gradient,
-            ),
+            itemBuilder: (_, i) => _img(imgs[i], fallback: const SizedBox()),
           ),
-        const IgnorePointer(
-          child: ColoredBox(color: Color(0x59000000)),
-        ),
         if (imgs.length > 1)
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: 12,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < imgs.length; i++)
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: i == _index ? 22 : 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: i == _index ? Colors.white : Colors.white54,
-                      borderRadius: BorderRadius.circular(4),
+            right: 14,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < imgs.length; i++)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      margin: const EdgeInsets.symmetric(vertical: 3),
+                      width: 6,
+                      height: i == _index ? 24 : 6,
+                      decoration: BoxDecoration(
+                        color: i == _index ? Colors.white : Colors.white54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
       ],
@@ -908,134 +1590,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CARTE IDENTITÉ CHEVAUCHANTE (logo ring + compteurs)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _IdentityCard extends StatelessWidget {
-  const _IdentityCard({required this.bundle});
-  final BusinessBundle bundle;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = bundle.theme;
-    final scheme = Theme.of(context).colorScheme;
-    final b = bundle.business;
-    final style = theme.animationStyle;
-
-    return Transform.translate(
-      offset: const Offset(0, -18),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 44, 16, 16),
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: theme.radius,
-            border: Border.all(color: scheme.outlineVariant),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.07),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8)),
-            ],
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: 0,
-                top: -34,
-                child: _ScaleFadeIn(
-                  duration: Duration(
-                      milliseconds: (700 * style.durationScale).round()),
-                  beginScale: 0.5,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: scheme.surface,
-                      border: Border.all(color: theme.accent, width: 2),
-                    ),
-                    child: CircleAvatar(
-                      radius: 32,
-                      backgroundColor: scheme.primaryContainer,
-                      backgroundImage:
-                          b.logoUrl != null ? NetworkImage(b.logoUrl!) : null,
-                      child: b.logoUrl == null
-                          ? Text(
-                              b.name.isNotEmpty ? b.name[0].toUpperCase() : '?',
-                              style: TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w900,
-                                  color: scheme.onPrimaryContainer),
-                            )
-                          : null,
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(left: 76),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(b.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 2),
-                    Text(
-                      [b.sector, b.city].whereType<String>().join(' • '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12, color: scheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 58),
-              Padding(
-                padding: const EdgeInsets.only(top: 58),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    if (b.ageYears != null && b.ageYears! > 0)
-                      AnimatedCounter(
-                        value: b.ageYears!,
-                        label: _tr(context, 'years'),
-                        compact: false,
-                        duration: Duration(
-                            milliseconds: (1200 * style.durationScale).round()),
-                      ),
-                    if (b.employees != null && b.employees! > 0)
-                      AnimatedCounter(
-                        value: b.employees!,
-                        label: _tr(context, 'staff'),
-                        compact: false,
-                        duration: Duration(
-                            milliseconds: (1200 * style.durationScale).round()),
-                      ),
-                    AnimatedCounter(
-                      value: bundle.stats?.views ?? 0,
-                      label: _tr(context, 'visits'),
-                      duration: Duration(
-                          milliseconds: (1400 * style.durationScale).round()),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BANDEAU INFOS (chips horizontales)
+// Bandeau infos + navigation
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _InfoStrip extends StatelessWidget {
@@ -1045,45 +1600,222 @@ class _InfoStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final chips = <(IconData, String)>[
-      if (business.sector != null) (Icons.category_rounded, business.sector!),
-      if (business.city != null) (Icons.place_rounded, business.city!),
+    final chips = <(IconData, String, VoidCallback?)>[
+      if (business.sector != null)
+        (Icons.category_rounded, business.sector!, null),
+      if (business.city != null) (Icons.place_rounded, business.city!, null),
       if (business.sinceYear != null)
-        (Icons.event_rounded,
-            '${_tr(context, 'since')} ${business.sinceYear}'),
+        (
+          Icons.event_rounded,
+          '${_tr(context, 'since')} ${business.sinceYear}',
+          null
+        ),
       if (business.employees != null)
-        (Icons.groups_rounded,
-            '${business.employees} ${_tr(context, 'staff')}'),
-      if (business.website != null) (Icons.language_rounded, business.website!),
+        (
+          Icons.groups_rounded,
+          '${business.employees} ${_tr(context, 'staff')}',
+          null
+        ),
+      if (business.website != null)
+        (
+          Icons.language_rounded,
+          business.website!,
+          () => _openUrl(business.website)
+        ),
     ];
     if (chips.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 40,
+      height: 54,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         itemCount: chips.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              Icon(chips[i].$1, size: 14, color: scheme.primary),
-              const SizedBox(width: 6),
-              Text(chips[i].$2,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w700)),
-            ],
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => _Tap(
+          onTap: chips[i].$3,
+          child: _Glass(
+            radius: BorderRadius.circular(26),
+            blur: 16,
+            shadow: false,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(chips[i].$1, size: 16, color: scheme.primary),
+                const SizedBox(width: 8),
+                Text(chips[i].$2,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700)),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _NavChips extends StatelessWidget {
+  const _NavChips({required this.labels, required this.onTap});
+  final List<String> labels;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 54,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        itemCount: labels.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => _Tap(
+          onTap: () => onTap(i),
+          child: _Glass(
+            radius: BorderRadius.circular(26),
+            blur: 16,
+            tint: scheme.primary,
+            alpha: 0.12,
+            shadow: false,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            child: Text(
+              labels[i],
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: scheme.primary),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// En-têtes + section horizontale
+// ─────────────────────────────────────────────────────────────────────────────
+
+Widget _sectionHeader(BuildContext context, String title, {Widget? trailing}) {
+  final scheme = Theme.of(context).colorScheme;
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Row(
+      children: [
+        Container(
+          width: 5,
+          height: 28,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [scheme.primary, scheme.tertiary],
+            ),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            _tt(context, title),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w900, letterSpacing: -0.6),
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    ),
+  );
+}
+
+class _HSection extends StatefulWidget {
+  const _HSection({
+    required this.title,
+    required this.height,
+    required this.count,
+    required this.builder,
+    this.gap = 14,
+  });
+
+  final String title;
+  final double height;
+  final int count;
+  final IndexedWidgetBuilder builder;
+  final double gap;
+
+  @override
+  State<_HSection> createState() => _HSectionState();
+}
+
+class _HSectionState extends State<_HSection> {
+  final ScrollController _c = ScrollController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _go(int dir) {
+    if (!_c.hasClients) return;
+    final w = _c.position.viewportDimension * 0.8;
+    final t = (_c.offset + dir * w).clamp(0.0, _c.position.maxScrollExtent);
+    _c.animateTo(t,
+        duration: const Duration(milliseconds: 480),
+        curve: Curves.easeOutCubic);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final arrows = widget.count > 1
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _Glass(
+                radius: BorderRadius.circular(20),
+                blur: 14,
+                shadow: false,
+                child: _RoundBtn(
+                    icon: Icons.chevron_left_rounded,
+                    size: 38,
+                    onTap: () => _go(-1)),
+              ),
+              const SizedBox(width: 8),
+              _Glass(
+                radius: BorderRadius.circular(20),
+                blur: 14,
+                shadow: false,
+                child: _RoundBtn(
+                    icon: Icons.chevron_right_rounded,
+                    size: 38,
+                    onTap: () => _go(1)),
+              ),
+            ],
+          )
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(context, widget.title, trailing: arrows),
+        SizedBox(
+          height: widget.height + 20,
+          child: ListView.separated(
+            controller: _c,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            clipBehavior: Clip.none,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            itemCount: widget.count,
+            separatorBuilder: (_, __) => SizedBox(width: widget.gap),
+            itemBuilder: widget.builder,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1120,336 +1852,270 @@ class _SectionRenderer extends StatelessWidget {
   }
 }
 
-Widget _sectionHeader(BuildContext context, String title) {
-  final scheme = Theme.of(context).colorScheme;
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Row(
-      children: [
-        Container(
-          width: 4,
-          height: 22,
-          decoration: BoxDecoration(
-            color: scheme.primary,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            _tt(context, title),
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.3),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-Card _card(BuildContext context,
-    {required Widget child, Clip clip = Clip.none}) {
-  final theme = Theme.of(context);
-  final radius = theme.extension<BusinessThemeExt>()?.radius ??
-      BorderRadius.circular(24);
-  return Card(
-    margin: EdgeInsets.zero,
-    clipBehavior: clip,
-    elevation: 0,
-    color: theme.colorScheme.surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: radius,
-      side: BorderSide(color: theme.colorScheme.outlineVariant),
-    ),
-    child: child,
-  );
-}
-
-// ── À PROPOS (éditorial + photo) ──
+// ── À PROPOS ──
 class _AboutSection extends StatelessWidget {
   const _AboutSection({required this.content});
   final AboutContent content;
 
   @override
   Widget build(BuildContext context) {
-    if (content.body.trim().isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final hasImage = content.imageUrl != null && content.imageUrl!.isNotEmpty;
+    final url = content.imageUrl;
+    final hasImage = url != null && url.isNotEmpty;
 
-    return _card(
-      context,
-      clip: Clip.antiAlias,
+    final text = Padding(
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (hasImage)
-            SizedBox(
-              height: 190,
-              width: double.infinity,
-              child: GestureDetector(
-                onTap: () => _viewImage(context, content.imageUrl!),
-                child: _img(content.imageUrl!),
-              ),
+          _sectionHeader(context, content.title),
+          if (content.tagline != null && content.tagline!.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _Pill(content.tagline!, big: true),
             ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+          Text(content.body,
+              style: theme.textTheme.bodyLarge?.copyWith(height: 1.7)),
+        ],
+      ),
+    );
+
+    return _Glass(
+      child: LayoutBuilder(
+        builder: (context, cs) {
+          if (!hasImage) return text;
+          final wide = cs.maxWidth > 760;
+          final image = _Tap(
+            onTap: () => _viewImage(context, url),
+            child: _img(url),
+          );
+          if (!wide) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _sectionHeader(context, content.title),
-                if (content.tagline != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      content.tagline!,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.primary,
-                      ),
+                SizedBox(height: 230, width: double.infinity, child: image),
+                text,
+              ],
+            );
+          }
+          final imgW = cs.maxWidth * 5 / 11;
+          return Stack(
+            children: [
+              Row(
+                children: [
+                  SizedBox(width: imgW),
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 340),
+                      child: text,
                     ),
                   ),
-                Text(content.body,
-                    style:
-                        theme.textTheme.bodyMedium?.copyWith(height: 1.55)),
-              ],
-            ),
-          ),
-        ],
+                ],
+              ),
+              Positioned(
+                  left: 0, top: 0, bottom: 0, width: imgW, child: image),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-// ── SERVICES (rangée glissante, photo OU icône) ──
+// ── SERVICES ──
 class _ServicesSection extends StatelessWidget {
   const _ServicesSection({required this.content});
   final ServicesContent content;
 
   @override
   Widget build(BuildContext context) {
-    if (content.items.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(context, content.title),
-        _hList(
-          height: 240,
-          count: content.items.length,
-          builder: (_, i) {
-            final s = content.items[i];
-            final hasImg = s.imageUrl != null && s.imageUrl!.isNotEmpty;
-            return SizedBox(
-              width: 210,
-              child: _card(
-                context,
-                clip: Clip.antiAlias,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (hasImg)
-                      SizedBox(
-                        height: 100,
-                        width: double.infinity,
-                        child: _img(s.imageUrl!),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.only(top: 14, left: 12),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: scheme.primary.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.bolt_rounded,
-                              color: scheme.primary, size: 22),
-                        ),
+    return _HSection(
+      title: content.title,
+      height: 290,
+      count: content.items.length,
+      builder: (_, i) {
+        final s = content.items[i];
+        final hasImg = s.imageUrl != null && s.imageUrl!.isNotEmpty;
+        return SizedBox(
+          width: 250,
+          child: _Glass(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (hasImg)
+                  SizedBox(
+                      height: 130,
+                      width: double.infinity,
+                      child: _img(s.imageUrl!))
+                else
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: [
+                          scheme.primary.withValues(alpha: 0.22),
+                          scheme.tertiary.withValues(alpha: 0.16),
+                        ]),
+                        shape: BoxShape.circle,
                       ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(s.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 13.5)),
-                            if (s.description != null) ...[
-                              const SizedBox(height: 4),
-                              Expanded(
-                                child: Text(s.description!,
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall),
-                              ),
-                            ] else
-                              const Spacer(),
-                            if (s.price != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color:
-                                      scheme.tertiary.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(s.price!,
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        color: scheme.tertiary)),
-                              ),
-                          ],
-                        ),
-                      ),
+                      child: Icon(Icons.bolt_rounded,
+                          color: scheme.primary, size: 26),
                     ),
-                  ],
+                  ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(s.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w900, fontSize: 16)),
+                        const SizedBox(height: 6),
+                        if (s.description != null)
+                          Expanded(
+                            child: Text(s.description!,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(height: 1.45)),
+                          )
+                        else
+                          const Spacer(),
+                        if (s.price != null && s.price!.trim().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _Pill(s.price!),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-      ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-// ── PRODUITS (rangée glissante, photos) ──
+// ── PRODUITS ──
 class _ProductsSection extends StatelessWidget {
   const _ProductsSection({required this.content});
   final ProductsContent content;
 
   @override
   Widget build(BuildContext context) {
-    if (content.items.isEmpty) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(context, content.title),
-        _hList(
-          height: 240,
-          count: content.items.length,
-          builder: (_, i) {
-            final p = content.items[i];
-            return SizedBox(
-              width: 180,
-              child: InkWell(
-                onTap: () => _openUrl(p.url),
-                child: _card(
-                  context,
-                  clip: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: p.imageUrl == null || p.imageUrl!.isEmpty
-                            ? const ColoredBox(color: Colors.black12)
-                            : _img(p.imageUrl!),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(p.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 13)),
-                            if (p.price != null)
-                              Text(p.price!,
-                                  style: TextStyle(
-                                      color: scheme.primary,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ],
+    return _HSection(
+      title: content.title,
+      height: 300,
+      count: content.items.length,
+      builder: (_, i) {
+        final p = content.items[i];
+        return SizedBox(
+          width: 220,
+          child: _Tap(
+            onTap: (p.url != null && p.url!.isNotEmpty)
+                ? () => _openUrl(p.url)
+                : null,
+            child: _Glass(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: (p.imageUrl == null || p.imageUrl!.isEmpty)
+                          ? const _ImgFallback()
+                          : _img(p.imageUrl!),
+                    ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(p.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w900, fontSize: 14.5)),
+                        if (p.price != null && p.price!.trim().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: _Pill(p.price!),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            );
-          },
-        ),
-      ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-// ── RÉALISATIONS / GALERIE ──
+// ── GALERIE ──
 class _GallerySection extends StatelessWidget {
   const _GallerySection({required this.content});
   final GalleryContent content;
 
   @override
   Widget build(BuildContext context) {
-    if (content.images.isEmpty) return const SizedBox.shrink();
-    final radius = Theme.of(context).extension<BusinessThemeExt>()?.radius ??
-        BorderRadius.circular(24);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(context, content.title),
-        _hList(
-          height: 200,
-          count: content.images.length,
-          builder: (_, i) {
-            final img = content.images[i];
-            return GestureDetector(
-              onTap: () => _viewImage(context, img.url),
-              child: SizedBox(
-                width: 280,
-                child: ClipRRect(
-                  borderRadius: radius,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _img(img.url),
-                      if (img.caption != null && img.caption!.isNotEmpty)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            padding:
-                                const EdgeInsets.fromLTRB(12, 18, 12, 10),
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.center,
-                                end: Alignment.bottomCenter,
-                                colors: [Colors.transparent, Colors.black54],
-                              ),
-                            ),
-                            child: Text(img.caption!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12)),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+    return _HSection(
+      title: content.title,
+      height: 220,
+      count: content.images.length,
+      builder: (_, i) {
+        final img = content.images[i];
+        return SizedBox(
+          width: 330,
+          child: _Tap(
+            onTap: () => _viewImage(context, img.url),
+            child: _Glass(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _img(img.url),
+                  if (img.caption != null && img.caption!.isNotEmpty)
+                    Positioned(
+                      left: 10,
+                      right: 10,
+                      bottom: 10,
+                      child: _Glass(
+                        radius: BorderRadius.circular(16),
+                        blur: 16,
+                        tint: Colors.black,
+                        alpha: 0.30,
+                        shadow: false,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Text(img.caption!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12.5)),
+                      ),
+                    ),
+                ],
               ),
-            );
-          },
-        ),
-      ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1461,336 +2127,345 @@ class _TeamSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (content.members.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(context, content.title),
-        _hList(
-          height: 160,
-          gap: 14,
-          count: content.members.length,
-          builder: (_, i) {
-            final m = content.members[i];
-            return SizedBox(
-              width: 112,
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(2.5),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: scheme.primary, width: 2),
-                    ),
-                    child: CircleAvatar(
-                      radius: 36,
-                      backgroundColor: scheme.primaryContainer,
-                      backgroundImage:
-                          m.photoUrl != null ? NetworkImage(m.photoUrl!) : null,
-                      child: m.photoUrl == null
-                          ? Text(
-                              m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w900, fontSize: 22),
-                            )
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(m.name,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 12.5)),
-                  if (m.role != null)
-                    Text(m.role!,
+    return _HSection(
+      title: content.title,
+      height: 210,
+      count: content.members.length,
+      builder: (_, i) {
+        final m = content.members[i];
+        return SizedBox(
+          width: 170,
+          child: _Glass(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _Avatar(
+                    url: m.photoUrl,
+                    name: m.name,
+                    radius: 42,
+                    ring: scheme.primary),
+                const SizedBox(height: 12),
+                Text(m.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 14)),
+                if (m.role != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(m.role!,
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 10.5, color: scheme.onSurfaceVariant)),
-                ],
-              ),
-            );
-          },
-        ),
-      ],
+                            fontSize: 11.5, color: scheme.onSurfaceVariant)),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-// ── ACTUALITÉS (rangée glissante) ──
+// ── ACTUALITÉS ──
 class _NewsSection extends StatelessWidget {
   const _NewsSection({required this.content});
   final NewsContent content;
 
   @override
   Widget build(BuildContext context) {
-    if (content.posts.isEmpty) return const SizedBox.shrink();
     final lang = _LangScope.of(context);
-    final fmt = DateFormat.yMMMd(lang == 'fr' ? 'fr_FR' : 'en_US');
     final scheme = Theme.of(context).colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(context, content.title),
-        _hList(
-          height: 340,
-          count: content.posts.length,
-          builder: (_, i) {
-            final p = content.posts[i];
-            final hasImg = p.imageUrl != null && p.imageUrl!.isNotEmpty;
-            return SizedBox(
-              width: 290,
-              child: _card(
-                context,
-                clip: Clip.antiAlias,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (hasImg)
-                      Stack(
-                        children: [
-                          SizedBox(
-                              height: 150,
-                              width: double.infinity,
-                              child: _img(p.imageUrl!)),
-                          if (p.publishedAt != null)
-                            Positioned(
-                              left: 12,
-                              top: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: scheme.primary,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(fmt.format(p.publishedAt!),
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w800)),
+    return _HSection(
+      title: content.title,
+      height: 370,
+      count: content.posts.length,
+      builder: (_, i) {
+        final p = content.posts[i];
+        final hasImg = p.imageUrl != null && p.imageUrl!.isNotEmpty;
+        return SizedBox(
+          width: 320,
+          child: _Glass(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (hasImg)
+                  Stack(
+                    children: [
+                      SizedBox(
+                          height: 160,
+                          width: double.infinity,
+                          child: _img(p.imageUrl!)),
+                      if (p.publishedAt != null)
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: _Glass(
+                            radius: BorderRadius.circular(12),
+                            blur: 14,
+                            tint: scheme.primary,
+                            alpha: 0.55,
+                            shadow: false,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            child: Text(_fmtDate(lang, p.publishedAt!),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                    ],
+                  ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (p.publishedAt != null && !hasImg)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(_fmtDate(lang, p.publishedAt!),
+                                style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        Text(p.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w900, fontSize: 16)),
+                        const SizedBox(height: 6),
+                        if (p.excerpt != null)
+                          Expanded(
+                            child: Text(p.excerpt!,
+                                maxLines: 5,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(height: 1.5)),
+                          )
+                        else
+                          const Spacer(),
+                        if (p.url != null && p.url!.isNotEmpty)
+                          _Tap(
+                            onTap: () => _openUrl(p.url),
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(_tr(context, 'read_more'),
+                                      style: TextStyle(
+                                          color: scheme.primary,
+                                          fontWeight: FontWeight.w900)),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.arrow_forward_rounded,
+                                      size: 16, color: scheme.primary),
+                                ],
                               ),
                             ),
-                        ],
-                      ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (p.publishedAt != null && !hasImg)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: Text(fmt.format(p.publishedAt!),
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        color: scheme.onSurfaceVariant,
-                                        fontWeight: FontWeight.w600)),
-                              ),
-                            Text(p.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 15)),
-                            if (p.excerpt != null) ...[
-                              const SizedBox(height: 6),
-                              Expanded(
-                                child: Text(p.excerpt!,
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium),
-                              ),
-                            ] else
-                              const Spacer(),
-                            if (p.url != null && p.url!.isNotEmpty)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: () => _openUrl(p.url),
-                                  child: Text(_tr(context, 'read_more')),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
+                          ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-      ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-// ── TÉMOIGNAGES (rangée glissante) ──
+// ── TÉMOIGNAGES ──
 class _TestimonialsSection extends StatelessWidget {
   const _TestimonialsSection({required this.content});
   final TestimonialsContent content;
 
   @override
   Widget build(BuildContext context) {
-    if (content.items.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(context, content.title),
-        _hList(
-          height: 210,
-          count: content.items.length,
-          builder: (_, idx) {
-            final t = content.items[idx];
-            return SizedBox(
-              width: 300,
-              child: _card(
-                context,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.format_quote_rounded,
-                          color: scheme.primary, size: 28),
-                      const SizedBox(height: 6),
-                      Expanded(
-                        child: Text(t.quote,
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(height: 1.5)),
-                      ),
-                      const Divider(height: 16),
-                      Row(
+    return _HSection(
+      title: content.title,
+      height: 230,
+      count: content.items.length,
+      builder: (_, idx) {
+        final t = content.items[idx];
+        return SizedBox(
+          width: 350,
+          child: _Glass(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.format_quote_rounded,
+                    color: scheme.primary, size: 34),
+                const SizedBox(height: 4),
+                Expanded(
+                  child: Text(t.quote,
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(height: 1.55)),
+                ),
+                const Divider(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (t.author != null)
-                                  Text(t.author!,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 12.5)),
-                                if (t.role != null)
-                                  Text(t.role!,
-                                      style: TextStyle(
-                                          fontSize: 10.5,
-                                          color: scheme.onSurfaceVariant)),
-                              ],
-                            ),
-                          ),
-                          if (t.rating != null)
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                for (var i = 0; i < 5; i++)
-                                  Icon(
-                                    i < t.rating!
-                                        ? Icons.star_rounded
-                                        : Icons.star_border_rounded,
-                                    size: 15,
-                                    color: scheme.tertiary,
-                                  ),
-                              ],
+                          if (t.author != null)
+                            Text(t.author!,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13)),
+                          if (t.role != null)
+                            Text(t.role!,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                    if (t.rating != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < 5; i++)
+                            Icon(
+                              i < t.rating!
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              size: 16,
+                              color: scheme.tertiary,
                             ),
                         ],
                       ),
-                    ],
-                  ),
+                  ],
                 ),
-              ),
-            );
-          },
-        ),
-      ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 // ── CONTACT ──
+IconData _contactIcon(ContactChannelType type) {
+  switch (type) {
+    case ContactChannelType.phone:
+      return Icons.phone_rounded;
+    case ContactChannelType.email:
+      return Icons.mail_rounded;
+    case ContactChannelType.whatsapp:
+      return Icons.chat_rounded;
+    case ContactChannelType.website:
+      return Icons.language_rounded;
+    case ContactChannelType.address:
+      return Icons.place_rounded;
+    case ContactChannelType.map:
+      return Icons.map_rounded;
+  }
+}
+
+class _ContactTile extends StatelessWidget {
+  const _ContactTile({required this.channel});
+  final ContactChannel channel;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final c = channel;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () async {
+          final uri = c.launchUri;
+          if (uri != null) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(_contactIcon(c.type),
+                    size: 20, color: scheme.primary),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(c.label ?? c.type.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w900, fontSize: 14)),
+                    const SizedBox(height: 2),
+                    Text(c.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_outward_rounded,
+                  size: 18, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ContactSection extends StatelessWidget {
   const _ContactSection({required this.content});
   final ContactContent content;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return _card(
-      context,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _sectionHeader(context, content.title),
-            for (final c in content.channels)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Container(
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(_iconOf(c.type), size: 18, color: scheme.primary),
-                ),
-                title: Text(c.label ?? c.type.name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 13)),
-                subtitle: Text(c.value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant)),
-                trailing: const Icon(Icons.chevron_right_rounded, size: 20),
-                onTap: () async {
-                  final uri = c.launchUri;
-                  if (uri != null) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                },
-              ),
-          ],
-        ),
+    return _Glass(
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(context, content.title),
+          for (final c in content.channels) _ContactTile(channel: c),
+        ],
       ),
     );
-  }
-
-  IconData _iconOf(ContactChannelType type) {
-    switch (type) {
-      case ContactChannelType.phone:
-        return Icons.phone_rounded;
-      case ContactChannelType.email:
-        return Icons.mail_rounded;
-      case ContactChannelType.whatsapp:
-        return Icons.chat_rounded;
-      case ContactChannelType.website:
-        return Icons.language_rounded;
-      case ContactChannelType.address:
-        return Icons.place_rounded;
-      case ContactChannelType.map:
-        return Icons.map_rounded;
-    }
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10 RUBRIQUES AVANCÉES (rangées glissantes, photos + vidéos)
+// 10 RUBRIQUES AVANCÉES (photos + vidéos)
 // ─────────────────────────────────────────────────────────────────────────────
+
+String _v(Map<String, String> m, String k) => (m[k] ?? '').trim();
 
 class _ExtraSection extends StatelessWidget {
   const _ExtraSection({required this.extra});
@@ -1807,44 +2482,34 @@ class _ExtraSection extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
 
     final custom = extra.title?.trim() ?? '';
-    final title = custom.isNotEmpty ? custom : (lang == 'en' ? spec.en : spec.fr);
+    final title =
+        custom.isNotEmpty ? custom : (lang == 'en' ? spec.en : spec.fr);
 
-    late final Widget list;
     switch (spec.layout) {
       case BizLayout.logo:
-        list = _hList(
-          height: 136,
+        return _HSection(
+          title: title,
+          height: 150,
           count: items.length,
           builder: (_, i) => _LogoCard(item: items[i]),
         );
-        break;
       case BizLayout.steps:
-        list = _hList(
-          height: 250,
+        return _HSection(
+          title: title,
+          height: 270,
           count: items.length,
           builder: (_, i) => _StepCard(item: items[i], number: i + 1),
         );
-        break;
       case BizLayout.standard:
-        list = _hList(
-          height: 350,
+        return _HSection(
+          title: title,
+          height: 380,
           count: items.length,
           builder: (_, i) => _StdCard(item: items[i], kind: spec.key),
         );
-        break;
     }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(context, title),
-        list,
-      ],
-    );
   }
 }
-
-String _v(Map<String, String> m, String k) => (m[k] ?? '').trim();
 
 class _LogoCard extends StatelessWidget {
   const _LogoCard({required this.item});
@@ -1855,38 +2520,35 @@ class _LogoCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final img = _v(item, 'image');
     final sub = _v(item, 'subtitle');
+    final link = _v(item, 'link');
     return SizedBox(
-      width: 150,
-      child: InkWell(
-        onTap: _v(item, 'link').isEmpty ? null : () => _openUrl(item['link']),
-        child: _card(
-          context,
-          clip: Clip.antiAlias,
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              children: [
-                Expanded(
-                  child: img.isEmpty
-                      ? Icon(Icons.business_rounded,
-                          size: 36, color: scheme.primary)
-                      : _img(img, fit: BoxFit.contain),
-                ),
-                const SizedBox(height: 6),
-                Text(_v(item, 'title'),
+      width: 170,
+      child: _Tap(
+        onTap: link.isEmpty ? null : () => _openUrl(link),
+        child: _Glass(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              Expanded(
+                child: img.isEmpty
+                    ? Icon(Icons.business_rounded,
+                        size: 40, color: scheme.primary)
+                    : _img(img, fit: BoxFit.contain),
+              ),
+              const SizedBox(height: 8),
+              Text(_v(item, 'title'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900, fontSize: 12.5)),
+              if (sub.isNotEmpty)
+                Text(sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 12)),
-                if (sub.isNotEmpty)
-                  Text(sub,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 10, color: scheme.onSurfaceVariant)),
-              ],
-            ),
+                    style: TextStyle(
+                        fontSize: 10.5, color: scheme.onSurfaceVariant)),
+            ],
           ),
         ),
       ),
@@ -1904,32 +2566,35 @@ class _StepCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final img = _v(item, 'image');
     return SizedBox(
-      width: 260,
-      child: _card(
-        context,
-        clip: Clip.antiAlias,
+      width: 280,
+      child: _Glass(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (img.isNotEmpty)
-              SizedBox(
-                  height: 100, width: double.infinity, child: _img(img)),
+              SizedBox(height: 110, width: double.infinity, child: _img(img)),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        CircleAvatar(
-                          radius: 14,
-                          backgroundColor: scheme.primary,
+                        Container(
+                          width: 32,
+                          height: 32,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                                colors: [scheme.primary, scheme.tertiary]),
+                            shape: BoxShape.circle,
+                          ),
                           child: Text('$number',
                               style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w900,
-                                  fontSize: 13)),
+                                  fontSize: 14)),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -1937,16 +2602,19 @@ class _StepCard extends StatelessWidget {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                  fontWeight: FontWeight.w900, fontSize: 14)),
+                                  fontWeight: FontWeight.w900, fontSize: 15)),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Expanded(
                       child: Text(_v(item, 'text'),
                           maxLines: 5,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(height: 1.5)),
                     ),
                   ],
                 ),
@@ -1976,23 +2644,19 @@ class _StdCard extends StatelessWidget {
     final isVideoKind = kind == 'videos';
     final isPricing = kind == 'pricing';
 
-    final ctaLabel = kind == 'careers'
-        ? _tr(context, 'apply')
-        : _tr(context, 'learn_more');
+    final ctaLabel =
+        kind == 'careers' ? _tr(context, 'apply') : _tr(context, 'learn_more');
 
     return SizedBox(
-      width: 260,
-      child: _card(
-        context,
-        clip: Clip.antiAlias,
+      width: 280,
+      child: _Glass(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Média : photo ou vidéo ──
             SizedBox(
-              height: 140,
+              height: 150,
               width: double.infinity,
-              child: GestureDetector(
+              child: _Tap(
                 onTap: () {
                   if (video.isNotEmpty) {
                     _openUrl(video);
@@ -2013,15 +2677,18 @@ class _StdCard extends StatelessWidget {
                                 ? Icons.movie_creation_outlined
                                 : kBizKindByKey[kind]?.icon ??
                                     Icons.image_outlined,
-                            size: 36,
+                            size: 38,
                             color: scheme.primary),
                       ),
                     if (video.isNotEmpty)
                       Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: const BoxDecoration(
-                              color: Colors.black54, shape: BoxShape.circle),
+                        child: _Glass(
+                          radius: BorderRadius.circular(40),
+                          blur: 14,
+                          tint: Colors.black,
+                          alpha: 0.35,
+                          shadow: false,
+                          padding: const EdgeInsets.all(12),
                           child: const Icon(Icons.play_arrow_rounded,
                               color: Colors.white, size: 30),
                         ),
@@ -2032,7 +2699,7 @@ class _StdCard extends StatelessWidget {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2040,7 +2707,7 @@ class _StdCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontWeight: FontWeight.w900, fontSize: 14)),
+                            fontWeight: FontWeight.w900, fontSize: 15)),
                     if (sub.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
@@ -2048,48 +2715,47 @@ class _StdCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 12,
                                 color: scheme.onSurfaceVariant)),
                       ),
                     if (meta.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: scheme.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(meta,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: isPricing ? 14 : 11,
-                                  fontWeight: FontWeight.w900,
-                                  color: scheme.primary)),
-                        ),
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _Pill(meta, big: isPricing),
                       ),
                     if (text.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Expanded(
                         child: Text(text,
                             maxLines: 4,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(height: 1.45)),
                       ),
                     ] else
                       const Spacer(),
                     if (link.isNotEmpty || (isVideoKind && video.isNotEmpty))
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () =>
-                              _openUrl(link.isNotEmpty ? link : video),
-                          child: Text(
-                              link.isEmpty && isVideoKind
-                                  ? _tr(context, 'watch')
-                                  : ctaLabel),
+                      _Tap(
+                        onTap: () => _openUrl(link.isNotEmpty ? link : video),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                  link.isEmpty && isVideoKind
+                                      ? _tr(context, 'watch')
+                                      : ctaLabel,
+                                  style: TextStyle(
+                                      color: scheme.primary,
+                                      fontWeight: FontWeight.w900)),
+                              const SizedBox(width: 4),
+                              Icon(Icons.arrow_forward_rounded,
+                                  size: 16, color: scheme.primary),
+                            ],
+                          ),
                         ),
                       ),
                   ],
@@ -2104,238 +2770,120 @@ class _StdCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FOOTER DE MARQUE
+// FOOTER
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Footer extends StatelessWidget {
-  const _Footer({required this.bundle});
+  const _Footer({required this.bundle, required this.onTop});
   final BusinessBundle bundle;
+  final VoidCallback onTop;
 
   @override
   Widget build(BuildContext context) {
     final theme = bundle.theme;
-    final dark = Color.lerp(theme.primary, Colors.black, 0.55)!;
+    final b = bundle.business;
+    final d1 = Color.lerp(theme.primary, Colors.black, 0.60)!;
+    final d2 = Color.lerp(theme.primary, Colors.black, 0.84)!;
 
     return Container(
       width: double.infinity,
-      color: dark,
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 34),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: Colors.white.withValues(alpha: 0.12),
-                backgroundImage: bundle.business.logoUrl != null
-                    ? NetworkImage(bundle.business.logoUrl!)
-                    : null,
-                child: bundle.business.logoUrl == null
-                    ? const Icon(Icons.storefront_rounded,
-                        color: Colors.white, size: 18)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(bundle.business.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 15)),
-                    if (bundle.business.claim != null)
-                      Text(bundle.business.claim!,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [d1, d2],
+        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
+      ),
+      padding: const EdgeInsets.fromLTRB(22, 34, 22, 120),
+      child: _Wrap(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _Avatar(url: b.logoUrl, name: b.name, radius: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(b.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 11)),
-                  ],
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 18)),
+                      if (b.claim != null)
+                        Text(b.claim!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                fontSize: 12)),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          const Divider(color: Colors.white24, height: 1),
-          const SizedBox(height: 14),
-          SelectableText(
-            bundle.business.thixId,
-            style: TextStyle(
-              color: theme.accent,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.4,
+                _Tap(
+                  onTap: onTop,
+                  child: _Glass(
+                    radius: BorderRadius.circular(26),
+                    blur: 14,
+                    alpha: 0.12,
+                    shadow: false,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.arrow_upward_rounded,
+                            size: 16, color: Colors.white),
+                        const SizedBox(width: 6),
+                        Text(_tr(context, 'top'),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '© ${DateTime.now().year} ${bundle.business.name}. '
-            '${_tr(context, 'rights')}',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.65), fontSize: 11),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Icon(Icons.verified_rounded,
-                  size: 12, color: Colors.white.withValues(alpha: 0.65)),
-              const SizedBox(width: 5),
-              Text(
-                _tr(context, 'powered'),
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.65), fontSize: 11),
+            const SizedBox(height: 22),
+            const Divider(color: Colors.white24, height: 1),
+            const SizedBox(height: 16),
+            SelectableText(
+              b.thixId,
+              style: TextStyle(
+                color: theme.accent,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Animations natives
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _FadeIn extends StatefulWidget {
-  const _FadeIn(
-      {required this.child,
-      required this.duration,
-      this.delay = Duration.zero});
-  final Widget child;
-  final Duration duration;
-  final Duration delay;
-
-  @override
-  State<_FadeIn> createState() => _FadeInState();
-}
-
-class _FadeInState extends State<_FadeIn> with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: widget.duration);
-  bool _started = false;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(widget.delay, () {
-      if (mounted && !_started) {
-        _started = true;
-        _c.forward();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) =>
-      FadeTransition(opacity: _c, child: widget.child);
-}
-
-class _SlideIn extends StatefulWidget {
-  const _SlideIn({
-    required this.child,
-    required this.duration,
-    this.delay = Duration.zero,
-    this.beginY = 0.1,
-  });
-  final Widget child;
-  final Duration duration;
-  final Duration delay;
-  final double beginY;
-
-  @override
-  State<_SlideIn> createState() => _SlideInState();
-}
-
-class _SlideInState extends State<_SlideIn>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: widget.duration);
-  late final Animation<double> _curve =
-      CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
-  bool _started = false;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.delayed(widget.delay, () {
-      if (mounted && !_started) {
-        _started = true;
-        _c.forward();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _curve,
-      child: SlideTransition(
-        position:
-            Tween<Offset>(begin: Offset(0, widget.beginY), end: Offset.zero)
-                .animate(_curve),
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-class _ScaleFadeIn extends StatefulWidget {
-  const _ScaleFadeIn({
-    required this.child,
-    required this.duration,
-    this.beginScale = 0.88,
-  });
-  final Widget child;
-  final Duration duration;
-  final double beginScale;
-
-  @override
-  State<_ScaleFadeIn> createState() => _ScaleFadeInState();
-}
-
-class _ScaleFadeInState extends State<_ScaleFadeIn>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: widget.duration);
-  late final Animation<double> _curve =
-      CurvedAnimation(parent: _c, curve: Curves.easeOutBack);
-
-  @override
-  void initState() {
-    super.initState();
-    _c.forward();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _curve,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: widget.beginScale, end: 1).animate(_curve),
-        child: widget.child,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '© ${DateTime.now().year} ${b.name}. ${_tr(context, 'rights')}',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.verified_rounded,
+                    size: 13, color: Colors.white.withValues(alpha: 0.65)),
+                const SizedBox(width: 6),
+                Text(
+                  _tr(context, 'powered'),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontSize: 12),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
