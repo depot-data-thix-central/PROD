@@ -1,8 +1,11 @@
 // ============================================================================
 // FICHIER : lib/presentation/thix_incubator/pages/incubator_home_page.dart
 // Module  : thix_incubator — Route : /incubator
-// Stack   : Riverpod moderne (ConsumerStatefulWidget + ref) — zéro provider/*
+// Stack   : Riverpod moderne — 100% data-driven (Supabase)
+// Design  : conforme maquette SONATHIX v1.0 (disposition + icônes + couleurs)
 // ============================================================================
+
+import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -17,9 +20,9 @@ import '../../../models/incubator_application.dart';
 import '../../../models/incubator_program.dart';
 import '../../../models/incubator_project.dart';
 
-// ---------------------------------------------------------------------------
-// CHARTES COULEURS INCUBATOR (CdC SONATHIX GROUP)
-// ---------------------------------------------------------------------------
+// ============================================================================
+// CHARTE COULEURS INCUBATOR (CdC SONATHIX GROUP)
+// ============================================================================
 @immutable
 class IncubatorColors {
   const IncubatorColors._();
@@ -28,31 +31,40 @@ class IncubatorColors {
   static const Color nightBlue         = Color(0xFF061B4D);
   static const Color electricBlue      = Color(0xFF1455D9);
   static const Color premiumGold       = Color(0xFFFFC107);
+  static const Color goldDeep          = Color(0xFFF5A800);
   static const Color validationGreen   = Color(0xFF16A34A);
+  static const Color greenSoft         = Color(0xFFE7F6EC);
+  static const Color purple            = Color(0xFF8B5CF6);
+  static const Color orange            = Color(0xFFF59E0B);
 
-  static const Color lightSurface      = Color(0xFFF4F7FC);
+  static const Color surfaceLight      = Color(0xFFF4F7FC);
+  static const Color cardLight         = Color(0xFFFFFFFF);
+  static const Color borderLight       = Color(0xFFE3E9F2);
+  static const Color statsBg           = Color(0xFFEDF2FA);
+
   static const Color darkSurface       = Color(0xFF0B1220);
   static const Color darkBackground    = Color(0xFF050A14);
+  static const Color darkCard          = Color(0xFF111827);
+  static const Color darkBorder        = Color(0xFF1F2937);
 
-  static const Color textPrimaryLight  = Color(0xFF0F172A);
-  static const Color textSecondaryLight = Color(0xFF64748B);
+  static const Color textPrimaryLight  = Color(0xFF0E1B2E);
+  static const Color textSecondaryLight = Color(0xFF5A6B84);
   static const Color textPrimaryDark   = Color(0xFFEAF2FF);
   static const Color textSecondaryDark = Color(0xFF9CB0D2);
 
   static const Color danger            = Color(0xFFDC2626);
   static const Color warning           = Color(0xFFF59E0B);
-  static const Color info              = Color(0xFF0EA5E9);
 
+  static bool _dark(BuildContext c) =>
+      Theme.of(c).brightness == Brightness.dark;
   static Color background(BuildContext c) =>
-      Theme.of(c).brightness == Brightness.dark ? darkBackground : Colors.white;
-  static Color card(BuildContext c) =>
-      Theme.of(c).brightness == Brightness.dark ? const Color(0xFF111827) : Colors.white;
+      _dark(c) ? darkBackground : surfaceLight;
+  static Color card(BuildContext c) => _dark(c) ? darkCard : cardLight;
+  static Color border(BuildContext c) => _dark(c) ? darkBorder : borderLight;
   static Color textPrimary(BuildContext c) =>
-      Theme.of(c).brightness == Brightness.dark ? textPrimaryDark : textPrimaryLight;
+      _dark(c) ? textPrimaryDark : textPrimaryLight;
   static Color textSecondary(BuildContext c) =>
-      Theme.of(c).brightness == Brightness.dark ? textSecondaryDark : textSecondaryLight;
-  static Color border(BuildContext c) =>
-      Theme.of(c).brightness == Brightness.dark ? const Color(0xFF1F2937) : const Color(0xFFE2E8F0);
+      _dark(c) ? textSecondaryDark : textSecondaryLight;
 }
 
 // ============================================================================
@@ -65,18 +77,14 @@ class IncubatorHomePage extends ConsumerStatefulWidget {
   ConsumerState<IncubatorHomePage> createState() => _IncubatorHomePageState();
 }
 
-class _IncubatorHomePageState extends ConsumerState<IncubatorHomePage>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _refreshCtrl;
-  bool _isRefreshing = false;
+class _IncubatorHomePageState extends ConsumerState<IncubatorHomePage> {
+  final PageController _heroCtrl = PageController();
+  int _heroIndex = 0;
+  Timer? _heroTimer;
 
   @override
   void initState() {
     super.initState();
-    _refreshCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (ref.read(incubatorProvider).status == IncubatorStatus.idle) {
@@ -85,24 +93,27 @@ class _IncubatorHomePageState extends ConsumerState<IncubatorHomePage>
     });
   }
 
+  void _startHeroAuto(int count) {
+    if (count <= 1 || _heroTimer != null) return;
+    _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || !_heroCtrl.hasClients) return;
+      _heroIndex = (_heroIndex + 1) % count;
+      _heroCtrl.animateToPage(_heroIndex,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeOutCubic);
+      setState(() {});
+    });
+  }
+
   @override
   void dispose() {
-    _refreshCtrl.dispose();
+    _heroTimer?.cancel();
+    _heroCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _onRefresh() async {
-    if (_isRefreshing) return;
-    _isRefreshing = true;
-    _refreshCtrl.repeat();
-    try {
-      await ref.read(incubatorProvider.notifier).loadAll(forceRefresh: true);
-    } finally {
-      if (mounted) {
-        _refreshCtrl.reset();
-        _isRefreshing = false;
-      }
-    }
+    await ref.read(incubatorProvider.notifier).loadAll(forceRefresh: true);
   }
 
   @override
@@ -111,74 +122,44 @@ class _IncubatorHomePageState extends ConsumerState<IncubatorHomePage>
 
     return Scaffold(
       backgroundColor: IncubatorColors.background(context),
-      extendBody: true,
       body: SafeArea(
         bottom: false,
-        child: _Body(
-          state: state,
-          refreshCtrl: _refreshCtrl,
-          onRefresh: _onRefresh,
-          onRetry: () => ref.read(incubatorProvider.notifier).loadAll(),
-        ),
+        child: _buildBody(state),
       ),
-      bottomNavigationBar: const _IncubatorBottomNav(currentIndex: 0),
+      bottomNavigationBar: const _BottomNav(currentIndex: 0),
     );
   }
-}
 
-// ============================================================================
-// BODY — switch sur l'état Riverpod
-// ============================================================================
-class _Body extends StatelessWidget {
-  const _Body({
-    required this.state,
-    required this.refreshCtrl,
-    required this.onRefresh,
-    required this.onRetry,
-  });
-
-  final IncubatorState state;
-  final AnimationController refreshCtrl;
-  final Future<void> Function() onRefresh;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    // 1. Premier chargement → skeleton
+  Widget _buildBody(IncubatorState state) {
     if (state.status == IncubatorStatus.loading && state.isFirstLoad) {
-      return const _SkeletonBody();
+      return const _Skeleton();
     }
-    // 2. Erreur sans données → écran erreur
     if (state.status == IncubatorStatus.error && state.isEmpty) {
-      return _ErrorState(message: state.error ?? 'Erreur inconnue', onRetry: onRetry);
-    }
-    // 3. Aucune donnée → empty state
-    if (state.isEmpty) {
-      return _EmptyState(
-        onExplore: () => context.go(AppRoutes.incubatorExplore),
+      return _ErrorState(
+        message: state.error ?? '',
+        onRetry: () => ref.read(incubatorProvider.notifier).loadAll(),
       );
     }
-    // 4. Données prêtes
     return RefreshIndicator(
       color: IncubatorColors.electricBlue,
-      onRefresh: onRefresh,
-      child: CustomScrollView(
+      onRefresh: _onRefresh,
+      child: ListView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          _SliverAppBarSection(
-            refreshCtrl: refreshCtrl,
-            notifCount: state.unreadNotifications,
-          ),
-          const _SliverHeroBanner(),
-          _SliverProgressStats(state: state),
-          _SliverAvailablePrograms(state: state),
-          const _SliverQuickAccess(),
-          _SliverMyApplications(state: state),
-          _SliverMyProjects(state: state),
-          _SliverRecentActivity(state: state),
-          const _SliverJourney(),
-          const _SliverPromoBanner(),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+        padding: EdgeInsets.zero,
+        children: [
+          const _TopHeader(),
+          const _BrandBar(),
+          _HeroBanner(state: state, ctrl: _heroCtrl, onIndexChanged: (i) {
+            _heroIndex = i;
+            setState(() {});
+          }, heroIndex: _heroIndex, onReady: _startHeroAuto),
+          _ProgressStats(state: state),
+          _ProgramsSection(state: state),
+          const _QuickAccessRail(),
+          _ActivitySection(state: state),
+          _JourneyCard(state: state),
+          const _PromoBanner(),
+          const SizedBox(height: 110),
         ],
       ),
     );
@@ -186,116 +167,68 @@ class _Body extends StatelessWidget {
 }
 
 // ============================================================================
-// 1. HEADER
+// 1. HEADER NAVY — logo fusée + titre + recherche / notif / avatar
 // ============================================================================
-class _SliverAppBarSection extends StatelessWidget {
-  const _SliverAppBarSection({required this.refreshCtrl, required this.notifCount});
-  final AnimationController refreshCtrl;
-  final int notifCount;
+class _TopHeader extends StatelessWidget {
+  const _TopHeader();
 
   @override
   Widget build(BuildContext context) {
-    return SliverAppBar(
-      backgroundColor: IncubatorColors.background(context),
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      pinned: false,
-      floating: true,
-      automaticallyImplyLeading: false,
-      toolbarHeight: 72,
-      title: _IncubatorHeader(refreshCtrl: refreshCtrl, notifCount: notifCount),
-    );
-  }
-}
-
-class _IncubatorHeader extends StatelessWidget {
-  const _IncubatorHeader({required this.refreshCtrl, required this.notifCount});
-  final AnimationController refreshCtrl;
-  final int notifCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+    final notif = context.watch<IncubatorProvider>().unreadNotifications;
+    return Container(
+      color: IncubatorColors.institutionalBlue,
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 14),
       child: Row(
         children: [
-          Container(
-            height: 38,
-            width: 38,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [IncubatorColors.institutionalBlue, IncubatorColors.electricBlue],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Center(
-              child: Text("𝒯",
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
+          const Icon(Icons.rocket_launch_rounded,
+              color: IncubatorColors.premiumGold, size: 34),
+          const SizedBox(width: 10),
+          const Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text("THIX ",
-                        style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                            color: IncubatorColors.textPrimary(context))),
-                    Text("INCUBATOR",
-                        style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                            color: IncubatorColors.electricBlue)),
-                    if (refreshCtrl.isAnimating) ...[
-                      const SizedBox(width: 8),
-                      RotationTransition(
-                        turns: refreshCtrl,
-                        child: const Icon(Icons.refresh,
-                            size: 14, color: IncubatorColors.electricBlue),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text("Innover. Entreprendre. Grandir.",
+                Text('INCUBATOR',
                     style: TextStyle(
-                        fontSize: 10,
-                        color: IncubatorColors.textSecondary(context),
-                        letterSpacing: 0.3)),
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5)),
+                Text('Innover • Entreprendre • Grandir',
+                    style: TextStyle(color: Colors.white70, fontSize: 10)),
               ],
             ),
           ),
-          _HeaderIconButton(
-            icon: Icons.search_rounded,
-            onPressed: () => context.go('${AppRoutes.incubator}/search'),
+          _HeaderIcon(icon: Icons.search_rounded, onTap: () {}),
+          _HeaderIcon(
+            icon: Icons.notifications_rounded,
+            badge: notif > 0 ? notif : null,
+            onTap: () => context.go(AppRoutes.networkNotifications),
           ),
-          const SizedBox(width: 4),
-          _HeaderIconButton(
-            icon: Icons.notifications_none_rounded,
-            badge: notifCount > 0 ? notifCount : null,
-            onPressed: () => context.go(AppRoutes.networkNotifications),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () => context.go(AppRoutes.profile),
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                color: IncubatorColors.electricBlue,
+              ),
+              child: const Icon(Icons.person_rounded,
+                  color: Colors.white, size: 20),
+            ),
           ),
-          const SizedBox(width: 4),
-          _HeaderAvatar(),
         ],
       ),
     );
   }
 }
 
-class _HeaderIconButton extends StatelessWidget {
-  const _HeaderIconButton({required this.icon, required this.onPressed, this.badge});
+class _HeaderIcon extends StatelessWidget {
+  const _HeaderIcon({required this.icon, required this.onTap, this.badge});
   final IconData icon;
-  final VoidCallback onPressed;
+  final VoidCallback onTap;
   final int? badge;
 
   @override
@@ -303,34 +236,28 @@ class _HeaderIconButton extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onPressed,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              child: Icon(icon, size: 22, color: IncubatorColors.textSecondary(context)),
-            ),
-          ),
+        IconButton(
+          onPressed: onTap,
+          icon: Icon(icon, color: Colors.white, size: 22),
         ),
         if (badge != null)
           Positioned(
-            right: 4,
-            top: 4,
+            right: 6,
+            top: 6,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: IncubatorColors.danger,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: IncubatorColors.background(context), width: 1.5),
+                color: Colors.red,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1),
               ),
               constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-              child: Text('${badge! > 99 ? '99+' : badge!}',
-                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
-                  textAlign: TextAlign.center),
+              child: Text('$badge',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800)),
             ),
           ),
       ],
@@ -338,239 +265,343 @@ class _HeaderIconButton extends StatelessWidget {
   }
 }
 
-class _HeaderAvatar extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => context.go(AppRoutes.profile),
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: CircleAvatar(
-            radius: 16,
-            backgroundColor: IncubatorColors.institutionalBlue,
-            child: const Icon(Icons.person_rounded, color: Colors.white, size: 18),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // ============================================================================
-// 2. HERO BANNER
+// 2. BARRE BLANCHE FLOTTANTE — menu | trophée + marque | pill verte | dots
 // ============================================================================
-class _SliverHeroBanner extends StatelessWidget {
-  const _SliverHeroBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                IncubatorColors.nightBlue,
-                IncubatorColors.institutionalBlue,
-                IncubatorColors.electricBlue,
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: IncubatorColors.institutionalBlue.withValues(alpha: 0.3),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: CustomPaint(painter: const _HeroPatternPainter()),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: IncubatorColors.premiumGold.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                            color: IncubatorColors.premiumGold.withValues(alpha: 0.4)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.auto_awesome, size: 12, color: IncubatorColors.premiumGold),
-                          SizedBox(width: 6),
-                          Text('Programmes ouverts',
-                              style: TextStyle(
-                                  color: IncubatorColors.premiumGold,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.4)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    const Text("Transformez votre idée\nen startup d'impact.",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            height: 1.2,
-                            letterSpacing: -0.3)),
-                    const SizedBox(height: 10),
-                    Text(
-                        "Accédez aux programmes, mentors, formations et pitchs pour faire décoller votre projet.",
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontSize: 13,
-                            height: 1.4)),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      height: 44,
-                      child: ElevatedButton.icon(
-                        onPressed: () => context.go(AppRoutes.incubatorExplore),
-                        icon: const Icon(Icons.explore_rounded, size: 18),
-                        label: const Text('Explorer les programmes',
-                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: IncubatorColors.premiumGold,
-                          foregroundColor: IncubatorColors.nightBlue,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroPatternPainter extends CustomPainter {
-  const _HeroPatternPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.04)
-      ..strokeWidth = 1;
-    for (int i = -20; i < size.width + 20; i += 24) {
-      canvas.drawLine(Offset(i.toDouble(), 0), Offset(i.toDouble() + 80, size.height), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ============================================================================
-// 3. STATS (DB-driven)
-// ============================================================================
-class _SliverProgressStats extends StatelessWidget {
-  const _SliverProgressStats({required this.state});
-  final IncubatorState state;
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 1.6,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        delegate: SliverChildListDelegate([
-          _StatTile(icon: Icons.school_rounded, label: 'Programmes',
-              value: state.openProgramsCount, color: IncubatorColors.electricBlue),
-          _StatTile(icon: Icons.folder_rounded, label: 'Mes projets',
-              value: state.myProjectsCount, color: IncubatorColors.institutionalBlue),
-          _StatTile(icon: Icons.assignment_turned_in_rounded, label: 'Candidatures',
-              value: state.myApplicationsCount, color: IncubatorColors.premiumGold,
-              textColor: IncubatorColors.nightBlue),
-          _StatTile(icon: Icons.trending_up_rounded, label: 'Progression',
-              value: state.averageProgressPercent, color: IncubatorColors.validationGreen,
-              suffix: '%'),
-        ]),
-      ),
-    );
-  }
-}
-
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    this.suffix = '',
-    this.textColor,
-  });
-
-  final IconData icon;
-  final String label;
-  final int value;
-  final Color color;
-  final String suffix;
-  final Color? textColor;
+class _BrandBar extends StatelessWidget {
+  const _BrandBar();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: IncubatorColors.card(context),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: IncubatorColors.border(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 16),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('$value$suffix',
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: textColor ?? IncubatorColors.textPrimary(context),
-                      letterSpacing: -0.5)),
-              const SizedBox(height: 2),
-              Text(label,
-                  style: TextStyle(fontSize: 11, color: IncubatorColors.textSecondary(context))),
-            ],
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.menu_rounded,
+              color: IncubatorColors.textPrimaryLight, size: 22),
+          const SizedBox(width: 10),
+          Container(width: 1, height: 26, color: IncubatorColors.borderLight),
+          const SizedBox(width: 10),
+          const Icon(Icons.emoji_events_rounded,
+              color: IncubatorColors.premiumGold, size: 26),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('INCUBATOR',
+                    style: TextStyle(
+                        color: IncubatorColors.institutionalBlue,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800)),
+                Text('by SONATHIX GROUP',
+                    style: TextStyle(
+                        color: IncubatorColors.institutionalBlue,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: IncubatorColors.greenSoft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.verified_user_rounded,
+                    color: IncubatorColors.validationGreen, size: 14),
+                SizedBox(width: 6),
+                Text('Espace Entrepreneur',
+                    style: TextStyle(
+                        color: IncubatorColors.validationGreen,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.more_vert_rounded,
+              color: IncubatorColors.textSecondaryLight, size: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 3. HERO BANNER — texte + CTA or | image + dots carousel
+// ============================================================================
+class _HeroBanner extends StatefulWidget {
+  const _HeroBanner({
+    required this.state,
+    required this.ctrl,
+    required this.onIndexChanged,
+    required this.heroIndex,
+    required this.onReady,
+  });
+  final IncubatorState state;
+  final PageController ctrl;
+  final ValueChanged<int> onIndexChanged;
+  final int heroIndex;
+  final ValueChanged<int> onReady;
+
+  @override
+  State<_HeroBanner> createState() => _HeroBannerState();
+}
+
+class _HeroBannerState extends State<_HeroBanner> {
+  @override
+  void didUpdateWidget(covariant _HeroBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final count = widget.state.openPrograms.length;
+    if (count > 0) widget.onReady(count);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final count = widget.state.openPrograms.length;
+      if (count > 0) widget.onReady(count);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final programs = widget.state.openPrograms;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            IncubatorColors.nightBlue,
+            IncubatorColors.institutionalBlue,
+            Color(0xFF0D3B9E),
+          ],
+        ),
+      ),
+      child: SizedBox(
+        height: 300,
+        child: Stack(
+          children: [
+            // ── Image droite (carousel des covers programmes) ──
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 165,
+              child: programs.isEmpty
+                  ? const _HeroFallbackArt()
+                  : PageView.builder(
+                      controller: widget.ctrl,
+                      itemCount: programs.length,
+                      onPageChanged: widget.onIndexChanged,
+                      itemBuilder: (_, i) => _HeroImage(program: programs[i]),
+                    ),
+            ),
+            // Dégradé de fusion
+            Positioned(
+              right: 100,
+              top: 0,
+              bottom: 0,
+              width: 90,
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        IncubatorColors.institutionalBlue,
+                        IncubatorColors.institutionalBlue.withValues(alpha: 0),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // ── Contenu gauche ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 30, 180, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: 'Transformez\nvotre idée en\n',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                            height: 1.15),
+                      ),
+                      TextSpan(
+                        text: 'entreprise.',
+                        style: TextStyle(
+                            color: IncubatorColors.premiumGold,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                            height: 1.15),
+                      ),
+                    ]),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Découvrez les programmes, développez vos projets et accédez aux opportunités qui feront grandir votre ambition.',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 11.5,
+                        height: 1.45),
+                  ),
+                  const SizedBox(height: 18),
+                  GestureDetector(
+                    onTap: () => context.go(AppRoutes.incubatorExplore),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: IncubatorColors.premiumGold,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.rocket_launch_rounded,
+                              color: IncubatorColors.nightBlue, size: 16),
+                          SizedBox(width: 8),
+                          Text('Explorer les programmes',
+                              style: TextStyle(
+                                  color: IncubatorColors.nightBlue,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800)),
+                          SizedBox(width: 6),
+                          Icon(Icons.arrow_forward_rounded,
+                              color: IncubatorColors.nightBlue, size: 14),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Dots carousel ──
+            if (programs.length > 1)
+              Positioned(
+                right: 14,
+                bottom: 12,
+                child: Row(
+                  children: List.generate(programs.length, (i) {
+                    final sel = i == widget.heroIndex;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: sel ? 8 : 7,
+                      height: sel ? 8 : 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: sel
+                            ? IncubatorColors.premiumGold
+                            : Colors.white.withValues(alpha: 0.6),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroImage extends StatelessWidget {
+  const _HeroImage({required this.program});
+  final IncubatorProgram program;
+
+  @override
+  Widget build(BuildContext context) {
+    if (program.coverUrl == null || program.coverUrl!.isEmpty) {
+      return const _HeroFallbackArt();
+    }
+    return Image.network(
+      program.coverUrl!,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const _HeroFallbackArt(),
+      loadingBuilder: (_, child, progress) =>
+          progress == null ? child : const _HeroFallbackArt(),
+    );
+  }
+}
+
+class _HeroFallbackArt extends StatelessWidget {
+  const _HeroFallbackArt();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            IncubatorColors.electricBlue,
+            IncubatorColors.institutionalBlue,
+          ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -20,
+            top: 30,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: IncubatorColors.institutionalBlue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Column(
+                children: [
+                  Icon(Icons.rocket_launch_rounded,
+                      color: IncubatorColors.premiumGold, size: 30),
+                  SizedBox(height: 6),
+                  Text('INCUBATOR',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800)),
+                  Text('Innovation\npour l\'Afrique',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70, fontSize: 8)),
+                ],
+              ),
+            ),
+          ),
+          const Positioned(
+            left: 20,
+            bottom: 40,
+            child: Icon(Icons.person_rounded,
+                color: Colors.white24, size: 110),
           ),
         ],
       ),
@@ -579,134 +610,387 @@ class _StatTile extends StatelessWidget {
 }
 
 // ============================================================================
-// 4. PROGRAMMES DISPONIBLES
+// 4. TITRE DE SECTION (barre bleue + titre + lien optionnel)
 // ============================================================================
-class _SliverAvailablePrograms extends StatelessWidget {
-  const _SliverAvailablePrograms({required this.state});
-  final IncubatorState state;
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.title, this.linkLabel, this.onLink});
+  final String title;
+  final String? linkLabel;
+  final VoidCallback? onLink;
 
   @override
   Widget build(BuildContext context) {
-    final programs = state.openPrograms;
-    if (programs.isEmpty) return const SliverToBoxAdapter();
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionHeader(
-              title: 'Programmes disponibles',
-              actionLabel: 'Voir tout',
-              onAction: () => context.go(AppRoutes.incubatorExplore),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 18,
+            decoration: BoxDecoration(
+              color: IncubatorColors.electricBlue,
+              borderRadius: BorderRadius.circular(2),
             ),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 200,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                scrollDirection: Axis.horizontal,
-                itemCount: programs.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 14),
-                itemBuilder: (_, i) => _ProgramCard(
-                  program: programs[i],
-                  onTap: () => context.push(AppRoutes.incubatorProgram(programs[i].id)),
-                ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(title,
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: IncubatorColors.textPrimary(context))),
+          ),
+          if (linkLabel != null && onLink != null)
+            GestureDetector(
+              onTap: onLink,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(linkLabel!,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: IncubatorColors.electricBlue)),
+                  const SizedBox(width: 2),
+                  const Icon(Icons.arrow_forward_rounded,
+                      size: 14, color: IncubatorColors.electricBlue),
+                ],
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
 }
 
-class _ProgramCard extends StatelessWidget {
-  const _ProgramCard({required this.program, required this.onTap});
-  final IncubatorProgram program;
-  final VoidCallback onTap;
+// ============================================================================
+// 5. MON ESPACE DE PROGRESSION — 4 stats avec séparateurs verticaux
+// ============================================================================
+class _ProgressStats extends StatelessWidget {
+  const _ProgressStats({required this.state});
+  final IncubatorState state;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          width: 260,
-          decoration: BoxDecoration(
-            color: IncubatorColors.card(context),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: IncubatorColors.border(context)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-                child: SizedBox(
-                  height: 110,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (program.coverUrl != null && program.coverUrl!.isNotEmpty)
-                        Image.network(
-                          program.coverUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const _CoverFallback(),
-                          loadingBuilder: (_, child, progress) =>
-                              progress == null ? child : const _CoverLoading(),
-                        )
-                      else
-                        const _CoverFallback(),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.4)],
-                          ),
-                        ),
-                      ),
-                      Positioned(top: 10, left: 10, child: _StatusBadge(program.status)),
-                    ],
+    final pitches = state.projects
+        .where((p) => p.stage == IncubatorStage.pitching)
+        .length;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? IncubatorColors.darkCard
+            : IncubatorColors.statsBg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: IncubatorColors.electricBlue,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
+                SizedBox(width: 8),
+                Text('Mon espace de progression',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: IncubatorColors.textPrimaryLight)),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              _StatCell(
+                icon: Icons.folder_rounded,
+                color: IncubatorColors.electricBlue,
+                value: state.myProjectsCount.toString().padLeft(2, '0'),
+                label: 'Mes projets',
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              _divider(context),
+              _StatCell(
+                icon: Icons.assignment_turned_in_rounded,
+                color: IncubatorColors.validationGreen,
+                value: state.myApplicationsCount.toString().padLeft(2, '0'),
+                label: 'Candidatures',
+              ),
+              _divider(context),
+              _StatCell(
+                icon: Icons.insert_chart_rounded,
+                color: IncubatorColors.purple,
+                value: pitches.toString().padLeft(2, '0'),
+                label: 'Pitchs préparés',
+              ),
+              _divider(context),
+              _StatCell(
+                icon: Icons.trending_up_rounded,
+                color: IncubatorColors.premiumGold,
+                value: '${state.averageProgressPercent}%',
+                label: 'Progression globale',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider(BuildContext context) => Container(
+        width: 1,
+        height: 46,
+        color: Theme.of(context).brightness == Brightness.dark
+            ? IncubatorColors.darkBorder
+            : const Color(0xFFD7DEE9),
+      );
+}
+
+class _StatCell extends StatelessWidget {
+  const _StatCell({
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.label,
+  });
+  final IconData icon;
+  final Color color;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 30),
+          const SizedBox(height: 6),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  color: IncubatorColors.textPrimary(context))),
+          const SizedBox(height: 2),
+          Text(label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 10,
+                  color: IncubatorColors.textSecondary(context))),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 6. PROGRAMMES DISPONIBLES — carte horizontale image + badge + CTA
+// ============================================================================
+class _ProgramsSection extends StatelessWidget {
+  const _ProgramsSection({required this.state});
+  final IncubatorState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final programs = state.openPrograms;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: 'Programmes disponibles',
+          linkLabel: 'Voir tous',
+          onLink: () => context.go(AppRoutes.incubatorExplore),
+        ),
+        if (programs.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: IncubatorColors.card(context),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: IncubatorColors.border(context)),
+              ),
+              child: Text(
+                'Aucun programme ouvert pour le moment.',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: IncubatorColors.textSecondary(context)),
+              ),
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: _ProgramCard(program: programs.first),
+          ),
+      ],
+    );
+  }
+}
+
+class _ProgramCard extends StatelessWidget {
+  const _ProgramCard({required this.program});
+  final IncubatorProgram program;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: IncubatorColors.card(context),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Image gauche + badge ──
+            SizedBox(
+              width: 165,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (program.coverUrl != null && program.coverUrl!.isNotEmpty)
+                    Image.network(program.coverUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const _CoverFallback())
+                  else
+                    const _CoverFallback(),
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    right: 10,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: IncubatorColors.validationGreen,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_rounded,
+                                color: Colors.white, size: 13),
+                            SizedBox(width: 5),
+                            Text('Candidatures ouvertes',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Contenu droit ──
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(program.title,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: IncubatorColors.textPrimary(context))),
-                    const SizedBox(height: 4),
-                    Text(program.organizer,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: IncubatorColors.textSecondary(context))),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            height: 1.2,
+                            color: IncubatorColors.institutionalBlue)),
+                    const SizedBox(height: 6),
+                    Text(
+                      program.description.isEmpty
+                          ? program.organizer
+                          : program.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.35,
+                          color: IncubatorColors.textSecondary(context)),
+                    ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        _MiniInfo(icon: Icons.calendar_today_rounded, label: program.deadlineLabel),
-                        const SizedBox(width: 12),
-                        _MiniInfo(icon: Icons.group_rounded, label: '${program.seatsRemaining} places'),
+                        const Icon(Icons.calendar_today_rounded,
+                            size: 12,
+                            color: IncubatorColors.institutionalBlue),
+                        const SizedBox(width: 4),
+                        Text('Durée : ${program.durationWeeks} semaines',
+                            style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: IncubatorColors.textPrimaryLight)),
+                        const SizedBox(width: 8),
+                        const Text('•',
+                            style: TextStyle(
+                                color: IncubatorColors.textSecondaryLight)),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.group_rounded,
+                            size: 13,
+                            color: IncubatorColors.institutionalBlue),
+                        const SizedBox(width: 4),
+                        Text(
+                            program.seatsRemaining < program.totalSeats
+                                ? 'Places limitées'
+                                : '${program.seatsRemaining} places',
+                            style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: IncubatorColors.textPrimaryLight)),
                       ],
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => context
+                          .push(AppRoutes.incubatorProgram(program.id)),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        decoration: BoxDecoration(
+                          color: IncubatorColors.institutionalBlue,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('Voir le programme',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700)),
+                            SizedBox(width: 6),
+                            Icon(Icons.arrow_forward_rounded,
+                                color: Colors.white, size: 14),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -719,502 +1003,80 @@ class _CoverFallback extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [IncubatorColors.institutionalBlue, IncubatorColors.electricBlue]),
+            colors: [
+              IncubatorColors.institutionalBlue,
+              IncubatorColors.electricBlue,
+            ],
+          ),
         ),
-        child: const Center(child: Icon(Icons.school_rounded, color: Colors.white, size: 32)),
-      );
-}
-
-class _CoverLoading extends StatelessWidget {
-  const _CoverLoading();
-  @override
-  Widget build(BuildContext context) => Container(
-        color: IncubatorColors.border(context),
         child: const Center(
-          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          child: Icon(Icons.groups_rounded, color: Colors.white38, size: 54),
         ),
       );
 }
 
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge(this.status);
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, color, textColor) = switch (status) {
-      'open' => ('Ouvert', IncubatorColors.validationGreen, Colors.white),
-      'upcoming' => ('Bientôt', IncubatorColors.premiumGold, IncubatorColors.nightBlue),
-      'closed' => ('Fermé', IncubatorColors.textSecondaryLight, Colors.white),
-      _ => (status, IncubatorColors.textSecondaryLight, Colors.white),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-      child: Text(label,
-          style: TextStyle(color: textColor, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.3)),
-    );
-  }
-}
-
-class _MiniInfo extends StatelessWidget {
-  const _MiniInfo({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 11, color: IncubatorColors.textSecondary(context)),
-          const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 10, color: IncubatorColors.textSecondary(context))),
-        ],
-      );
-}
-
 // ============================================================================
-// 5. ACCÈS RAPIDES
+// 7. ACCÈS RAPIDES — rail horizontal 7 tuiles
 // ============================================================================
-class _SliverQuickAccess extends StatelessWidget {
-  const _SliverQuickAccess();
+class _QuickAccessRail extends StatelessWidget {
+  const _QuickAccessRail();
 
-  static const List<({IconData icon, String label, String route, Color color})> _items = [
-    (icon: Icons.add_circle_outline_rounded, label: 'Nouveau',    route: '/incubator/projects/new', color: IncubatorColors.electricBlue),
-    (icon: Icons.school_rounded,             label: 'Programmes', route: AppRoutes.incubatorExplore, color: IncubatorColors.institutionalBlue),
-    (icon: Icons.assignment_rounded,         label: 'Candid.',    route: '/incubator/applications', color: IncubatorColors.premiumGold),
-    (icon: Icons.mic_rounded,                label: 'Pitch',      route: '/incubator/pitch',        color: IncubatorColors.danger),
-    (icon: Icons.groups_rounded,             label: 'Mentors',    route: '/incubator/mentors',      color: IncubatorColors.info),
-    (icon: Icons.menu_book_rounded,          label: 'Formations', route: '/incubator/trainings',    color: IncubatorColors.validationGreen),
-    (icon: Icons.people_alt_rounded,         label: 'Communauté', route: AppRoutes.network,         color: IncubatorColors.nightBlue),
-    (icon: Icons.article_rounded,            label: 'Ressources', route: '/incubator/resources',    color: IncubatorColors.warning),
+  static const List<({IconData icon, String label, String route, Color color})>
+      _items = [
+    (icon: Icons.rocket_launch_rounded, label: 'Programmes',       route: AppRoutes.incubatorExplore,      color: IncubatorColors.electricBlue),
+    (icon: Icons.description_rounded,   label: 'Mes candidatures', route: '/incubator/applications',       color: IncubatorColors.purple),
+    (icon: Icons.folder_rounded,        label: 'Mes projets',      route: '/incubator/projects',           color: IncubatorColors.premiumGold),
+    (icon: Icons.mic_rounded,           label: 'Pitch Room',       route: '/incubator/pitch',              color: IncubatorColors.electricBlue),
+    (icon: Icons.group_rounded,         label: 'Mentorat',         route: '/incubator/mentors',            color: IncubatorColors.validationGreen),
+    (icon: Icons.forum_rounded,         label: 'Communauté',       route: AppRoutes.network,               color: IncubatorColors.purple),
+    (icon: Icons.bar_chart_rounded,     label: 'Tableau de bord',  route: '/incubator/dashboard',          color: IncubatorColors.electricBlue),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeader(title: 'Accès rapides'),
-            const SizedBox(height: 14),
-            GridView.count(
-              crossAxisCount: 4,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.9,
-              children: _items.map((i) => _QuickTile(item: i)).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickTile extends StatelessWidget {
-  const _QuickTile({required this.item});
-  final ({IconData icon, String label, String route, Color color}) item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => context.go(item.route),
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: IncubatorColors.card(context),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: IncubatorColors.border(context)),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: item.color.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(item.icon, color: item.color, size: 20),
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(item.label,
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 10,
-                        color: IncubatorColors.textPrimary(context),
-                        fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// 6. MES CANDIDATURES
-// ============================================================================
-class _SliverMyApplications extends StatelessWidget {
-  const _SliverMyApplications({required this.state});
-  final IncubatorState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final apps = state.recentApplications;
-    if (apps.isEmpty) return const SliverToBoxAdapter();
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionHeader(
-              title: 'Mes candidatures',
-              actionLabel: 'Voir tout',
-              onAction: () => context.go('${AppRoutes.incubator}/applications'),
-            ),
-            const SizedBox(height: 12),
-            ...apps.map((a) => _ApplicationTile(app: a)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ApplicationTile extends StatelessWidget {
-  const _ApplicationTile({required this.app});
-  final IncubatorApplication app;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, color) = switch (app.status) {
-      'pending'  => ('En attente', IncubatorColors.warning),
-      'review'   => ('En étude', IncubatorColors.info),
-      'accepted' => ('Acceptée', IncubatorColors.validationGreen),
-      'rejected' => ('Refusée', IncubatorColors.danger),
-      _          => (app.status, IncubatorColors.textSecondary(context)),
-    };
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: IncubatorColors.card(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: IncubatorColors.border(context)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.assignment_rounded, color: color, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(app.programTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: IncubatorColors.textPrimary(context))),
-                const SizedBox(height: 4),
-                Text(app.submittedAtLabel,
-                    style: TextStyle(fontSize: 11, color: IncubatorColors.textSecondary(context))),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(label,
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// 7. MES PROJETS
-// ============================================================================
-class _SliverMyProjects extends StatelessWidget {
-  const _SliverMyProjects({required this.state});
-  final IncubatorState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final projects = state.recentProjects;
-    if (projects.isEmpty) return const SliverToBoxAdapter();
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionHeader(
-              title: 'Mes projets',
-              actionLabel: 'Voir tout',
-              onAction: () => context.go('${AppRoutes.incubator}/projects'),
-            ),
-            const SizedBox(height: 12),
-            ...projects.map((pr) => _ProjectTile(project: pr)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProjectTile extends StatelessWidget {
-  const _ProjectTile({required this.project});
-  final IncubatorProject project;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: IncubatorColors.card(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: IncubatorColors.border(context)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: IncubatorColors.electricBlue.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.lightbulb_rounded,
-                    color: IncubatorColors.electricBlue, size: 18),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(project.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: IncubatorColors.textPrimary(context))),
-                    const SizedBox(height: 4),
-                    Text('Étape : ${project.currentStageLabel}',
-                        style: TextStyle(fontSize: 11, color: IncubatorColors.textSecondary(context))),
-                  ],
-                ),
-              ),
-              Text('${project.progress}%',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 14, color: IncubatorColors.electricBlue)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: project.progress / 100,
-              minHeight: 4,
-              backgroundColor: IncubatorColors.border(context),
-              valueColor: const AlwaysStoppedAnimation<Color>(IncubatorColors.electricBlue),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// 8. ACTIVITÉ RÉCENTE
-// ============================================================================
-class _SliverRecentActivity extends StatelessWidget {
-  const _SliverRecentActivity({required this.state});
-  final IncubatorState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final acts = state.recentActivities;
-    if (acts.isEmpty) return const SliverToBoxAdapter();
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeader(title: 'Activité récente'),
-            const SizedBox(height: 12),
-            ...acts.map((a) => _ActivityTile(activity: a)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ActivityTile extends StatelessWidget {
-  const _ActivityTile({required this.activity});
-  final IncubatorActivity activity;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            margin: const EdgeInsets.only(top: 7),
-            decoration: const BoxDecoration(
-                color: IncubatorColors.electricBlue, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(activity.title,
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: IncubatorColors.textPrimary(context))),
-                const SizedBox(height: 2),
-                Text(activity.timeLabel,
-                    style: TextStyle(fontSize: 10, color: IncubatorColors.textSecondary(context))),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// 9. PARCOURS D'INCUBATION
-// ============================================================================
-class _SliverJourney extends StatelessWidget {
-  const _SliverJourney();
-
-  static const List<({String label, IconData icon})> _steps = [
-    (label: 'Soumission',      icon: Icons.send_rounded),
-    (label: 'Évaluation',      icon: Icons.search_rounded),
-    (label: 'Sélection',       icon: Icons.school_rounded),
-    (label: 'Incubation',      icon: Icons.build_rounded),
-    (label: 'Pitch & Demo',    icon: Icons.mic_rounded),
-    (label: 'Post-incubation', icon: Icons.rocket_launch_rounded),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeader(title: "Parcours d'incubation"),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: IncubatorColors.card(context),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: IncubatorColors.border(context)),
-              ),
-              child: Column(
-                children: [
-                  for (int i = 0; i < _steps.length; i++)
-                    _JourneyStep(
-                      index: i + 1,
-                      icon: _steps[i].icon,
-                      label: _steps[i].label,
-                      isLast: i == _steps.length - 1,
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _JourneyStep extends StatelessWidget {
-  const _JourneyStep({
-    required this.index,
-    required this.icon,
-    required this.label,
-    required this.isLast,
-  });
-  final int index;
-  final IconData icon;
-  final String label;
-  final bool isLast;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Column(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: IncubatorColors.electricBlue.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Center(child: Icon(icon, size: 18, color: IncubatorColors.electricBlue)),
-            ),
-            if (!isLast)
-              Container(width: 2, height: 24, color: IncubatorColors.border(context)),
-          ],
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text('Étape $index — $label',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: IncubatorColors.textPrimary(context))),
+        const _SectionTitle(title: 'Accès rapides'),
+        SizedBox(
+          height: 92,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: _items.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) {
+              final it = _items[i];
+              return GestureDetector(
+                onTap: () => context.go(it.route),
+                child: Container(
+                  width: 82,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: IncubatorColors.card(context),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: IncubatorColors.border(context)),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(it.icon, color: it.color, size: 26),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(it.label,
+                            maxLines: 2,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: IncubatorColors.textPrimary(context))),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -1223,54 +1085,470 @@ class _JourneyStep extends StatelessWidget {
 }
 
 // ============================================================================
-// 10. BANNIÈRE PROMO
+// 8. ACTIVITÉ RÉCENTE — ligne icône verte + pill or + horodatage
 // ============================================================================
-class _SliverPromoBanner extends StatelessWidget {
-  const _SliverPromoBanner();
+class _ActivitySection extends StatelessWidget {
+  const _ActivitySection({required this.state});
+  final IncubatorState state;
 
   @override
   Widget build(BuildContext context) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Color(0xFFFFC107), Color(0xFFFF9800)]),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: IncubatorColors.premiumGold.withValues(alpha: 0.3),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
+    final acts = state.recentActivities;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: 'Activité récente',
+          linkLabel: 'Voir tout',
+          onLink: () => context.go('${AppRoutes.incubator}/activities'),
+        ),
+        if (acts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text('Aucune activité pour le moment.',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: IncubatorColors.textSecondary(context))),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              children: acts.map((a) => _ActivityRow(activity: a)).toList(),
+            ),
           ),
-          child: Row(
+      ],
+    );
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({required this.activity});
+  final IncubatorActivity activity;
+
+  @override
+  Widget build(BuildContext context) {
+    final (pillLabel, pillColor, pillIcon) = switch (activity.type) {
+      'application_submitted' => ('En attente', IncubatorColors.premiumGold, Icons.schedule_rounded),
+      'stage_changed'         => ('En cours', IncubatorColors.electricBlue, Icons.refresh_rounded),
+      'mentor_assigned'       => ('Mentorat', IncubatorColors.validationGreen, Icons.group_rounded),
+      'pitch_scheduled'       => ('Pitch', IncubatorColors.purple, Icons.mic_rounded),
+      _                       => ('En attente', IncubatorColors.premiumGold, Icons.schedule_rounded),
+    };
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? IncubatorColors.darkCard
+            : IncubatorColors.statsBg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              color: IncubatorColors.validationGreen,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_rounded, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(activity.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: IncubatorColors.textPrimary(context))),
+                const SizedBox(height: 3),
+                Text(
+                    activity.subtitle ??
+                        'Votre dossier est en cours d\'examen par notre équipe.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: IncubatorColors.textSecondary(context))),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(12),
+                  color: pillColor,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(Icons.handshake_rounded, color: Colors.white, size: 24),
-              ),
-              const SizedBox(width: 14),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text("Ensemble, construisons l'entreprise de demain.",
-                        style: TextStyle(
-                            color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800, height: 1.3)),
-                    SizedBox(height: 4),
-                    Text("Rejoignez la communauté SONATHIX.",
-                        style: TextStyle(color: Colors.white, fontSize: 11)),
+                    Icon(pillIcon, color: Colors.white, size: 12),
+                    const SizedBox(width: 4),
+                    Text(pillLabel,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800)),
                   ],
                 ),
               ),
+              const SizedBox(height: 4),
+              Text(activity.timeLabel,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: IncubatorColors.textSecondary(context))),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 9. PARCOURS DE VOTRE PROJET — carte navy + stepper 6 étapes
+// ============================================================================
+class _JourneyCard extends StatelessWidget {
+  const _JourneyCard({required this.state});
+  final IncubatorState state;
+
+  static const List<String> _labels = [
+    'Soumission\ndu projet',
+    'Évaluation',
+    'Sélection',
+    'Incubation',
+    'Pitch &\nDemo Day',
+    'Post-incubation',
+  ];
+
+  int _currentStep(IncubatorState state) {
+    if (state.projects.isEmpty) return 1;
+    final maxIdx = state.projects
+        .map((p) => p.stage.index + 1)
+        .reduce((a, b) => a > b ? a : b);
+    return maxIdx.clamp(1, 6);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final current = _currentStep(state);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      decoration: BoxDecoration(
+        color: IncubatorColors.nightBlue,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.emoji_events_rounded,
+                  color: IncubatorColors.premiumGold, size: 24),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Parcours de votre projet',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800)),
+              ),
+              GestureDetector(
+                onTap: () => context.go('${AppRoutes.incubator}/projects'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: IncubatorColors.premiumGold, width: 1.2),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Voir le détail',
+                          style: TextStyle(
+                              color: IncubatorColors.premiumGold,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700)),
+                      SizedBox(width: 4),
+                      Icon(Icons.arrow_forward_rounded,
+                          color: IncubatorColors.premiumGold, size: 12),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(6, (i) {
+              final step = i + 1;
+              return Expanded(
+                child: Column(
+                  children: [
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: i == 0
+                                  ? const SizedBox.shrink()
+                                  : Container(
+                                      height: 2,
+                                      color: step <= current
+                                          ? IncubatorColors.validationGreen
+                                          : Colors.white24),
+                            ),
+                            const SizedBox(width: 26),
+                            Expanded(
+                              child: i == 5
+                                  ? const SizedBox.shrink()
+                                  : Container(
+                                      height: 2,
+                                      color: step < current
+                                          ? IncubatorColors.validationGreen
+                                          : Colors.white24),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: _stepColor(step, current),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text('$step',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(_labels[i],
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 9,
+                            height: 1.25,
+                            fontWeight: FontWeight.w600,
+                            color: step <= current
+                                ? Colors.white
+                                : Colors.white54)),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _stepColor(int step, int current) {
+    if (step < current) return IncubatorColors.validationGreen;
+    if (step == current) return IncubatorColors.electricBlue;
+    if (step == current + 1) return IncubatorColors.orange;
+    return const Color(0xFF8A94A6);
+  }
+}
+
+// ============================================================================
+// 10. BANNIÈRE PROMO — bleu / or en diagonale + trophée
+// ============================================================================
+class _PromoBanner extends StatelessWidget {
+  const _PromoBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      height: 110,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          colors: [IncubatorColors.nightBlue, IncubatorColors.institutionalBlue],
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Zone or diagonale à droite
+          Positioned.fill(
+            child: CustomPaint(painter: _GoldDiagonalPainter()),
+          ),
+          // Contenu droite (sur or)
+          Positioned(
+            right: 18,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.rocket_launch_rounded,
+                      color: IncubatorColors.nightBlue, size: 26),
+                  const SizedBox(height: 4),
+                  const Text('INCUBATOR',
+                      style: TextStyle(
+                          color: IncubatorColors.nightBlue,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800)),
+                  Text('Innover. Entreprendre. Grandir.',
+                      style: TextStyle(
+                          color: IncubatorColors.nightBlue.withValues(alpha: 0.75),
+                          fontSize: 6.5,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+          // Contenu gauche (sur bleu)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 130, 0),
+            child: Row(
+              children: [
+                const Icon(Icons.emoji_events_rounded,
+                    color: IncubatorColors.premiumGold, size: 52),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                        text: 'Ensemble, construisons\nl\'innovation ',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1.3),
+                      ),
+                      TextSpan(
+                        text: 'en Afrique.',
+                        style: TextStyle(
+                            color: IncubatorColors.premiumGold,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1.3),
+                      ),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GoldDiagonalPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = IncubatorColors.premiumGold;
+    final path = Path()
+      ..moveTo(size.width * 0.66, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(size.width * 0.58, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ============================================================================
+// 11. BOTTOM NAV — 5 onglets, actif bleu + underline
+// ============================================================================
+class _BottomNav extends StatelessWidget {
+  const _BottomNav({required this.currentIndex});
+  final int currentIndex;
+
+  static const List<({IconData icon, IconData activeIcon, String label, String? route})>
+      _tabs = [
+    (icon: Icons.home_outlined,     activeIcon: Icons.home_rounded,     label: 'Accueil',     route: null),
+    (icon: Icons.explore_outlined,  activeIcon: Icons.explore_rounded,  label: 'Explorer',    route: AppRoutes.incubatorExplore),
+    (icon: Icons.work_outline_rounded, activeIcon: Icons.work_rounded,  label: 'Mes projets', route: '/incubator/projects'),
+    (icon: Icons.insert_chart_outlined, activeIcon: Icons.insert_chart_rounded, label: 'Pitch', route: '/incubator/pitch'),
+    (icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'Profil',   route: AppRoutes.profile),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: IncubatorColors.card(context),
+        border: Border(
+          top: BorderSide(color: IncubatorColors.border(context)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 62,
+          child: Row(
+            children: List.generate(_tabs.length, (i) {
+              final t = _tabs[i];
+              final active = i == currentIndex;
+              return Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: t.route == null ? null : () => context.go(t.route!),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        active ? t.activeIcon : t.icon,
+                        color: active
+                            ? IncubatorColors.electricBlue
+                            : IncubatorColors.textSecondary(context),
+                        size: 22,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(t.label,
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight:
+                                  active ? FontWeight.w800 : FontWeight.w500,
+                              color: active
+                                  ? IncubatorColors.electricBlue
+                                  : IncubatorColors.textSecondary(context))),
+                      Container(
+                        margin: const EdgeInsets.only(top: 3),
+                        width: 26,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? IncubatorColors.electricBlue
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
           ),
         ),
       ),
@@ -1279,89 +1557,31 @@ class _SliverPromoBanner extends StatelessWidget {
 }
 
 // ============================================================================
-// ÉTATS (skeleton / empty / error)
+// ÉTATS : SKELETON / ERROR
 // ============================================================================
-class _SkeletonBody extends StatelessWidget {
-  const _SkeletonBody();
+class _Skeleton extends StatelessWidget {
+  const _Skeleton();
 
   @override
   Widget build(BuildContext context) {
     return Shimmer.fromColors(
       baseColor: IncubatorColors.border(context),
       highlightColor: IncubatorColors.card(context),
-      child: SingleChildScrollView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Container(height: 180, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20))),
-            const SizedBox(height: 20),
-            Row(children: [
-              Expanded(child: Container(height: 80, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)))),
-              const SizedBox(width: 12),
-              Expanded(child: Container(height: 80, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)))),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: Container(height: 80, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)))),
-              const SizedBox(width: 12),
-              Expanded(child: Container(height: 80, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)))),
-            ]),
-            const SizedBox(height: 24),
-            Container(height: 200, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18))),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onExplore});
-  final VoidCallback onExplore;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: IncubatorColors.electricBlue.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.rocket_launch_rounded, size: 56, color: IncubatorColors.electricBlue),
-            ),
-            const SizedBox(height: 24),
-            Text('Bienvenue dans INCUBATOR',
-                style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: IncubatorColors.textPrimary(context)),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text("Aucun programme pour le moment. Explorez l'écosystème pour découvrir les prochaines opportunités.",
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: IncubatorColors.textSecondary(context), height: 1.5)),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: onExplore,
-              icon: const Icon(Icons.explore_rounded),
-              label: const Text('Explorer'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: IncubatorColors.electricBlue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ],
-        ),
+      child: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Container(height: 54, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14))),
+          const SizedBox(height: 12),
+          Container(height: 260, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22))),
+          const SizedBox(height: 12),
+          Container(height: 110, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+          const SizedBox(height: 12),
+          Container(height: 170, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16))),
+          const SizedBox(height: 12),
+          Container(height: 92, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14))),
+          const SizedBox(height: 12),
+          Container(height: 130, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18))),
+        ],
       ),
     );
   }
@@ -1380,144 +1600,33 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: IncubatorColors.danger.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.cloud_off_rounded, size: 56, color: IncubatorColors.danger),
-            ),
-            const SizedBox(height: 24),
+            const Icon(Icons.cloud_off_rounded,
+                size: 52, color: IncubatorColors.danger),
+            const SizedBox(height: 16),
             Text('Connexion impossible',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: IncubatorColors.textPrimary(context))),
-            const SizedBox(height: 8),
-            if (kDebugMode)
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: IncubatorColors.textPrimary(context))),
+            if (kDebugMode) ...[
+              const SizedBox(height: 8),
               Text(message,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: IncubatorColors.textSecondary(context),
-                      fontFamily: 'monospace')),
-            const SizedBox(height: 24),
+                  style: const TextStyle(fontSize: 10, fontFamily: 'monospace')),
+            ],
+            const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
               label: const Text('Réessayer'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: IncubatorColors.electricBlue,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// COMMUNS
-// ============================================================================
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, this.actionLabel, this.onAction});
-  final String title;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(title,
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: IncubatorColors.textPrimary(context),
-                letterSpacing: -0.2)),
-        const Spacer(),
-        if (actionLabel != null && onAction != null)
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onAction,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Text(actionLabel!,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: IncubatorColors.electricBlue)),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-// ============================================================================
-// BOTTOM NAV (inline, autonome)
-// ============================================================================
-class _IncubatorBottomNav extends StatelessWidget {
-  const _IncubatorBottomNav({required this.currentIndex});
-  final int currentIndex;
-
-  static const _items = [
-    (icon: Icons.home_rounded,    label: 'Accueil'),
-    (icon: Icons.explore_rounded, label: 'Explorer'),
-    (icon: Icons.folder_rounded,  label: 'Mes projets'),
-    (icon: Icons.mic_rounded,     label: 'Pitch'),
-    (icon: Icons.person_rounded,  label: 'Profil'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: dark ? const Color(0xFF111827) : Colors.white,
-        border: Border(top: BorderSide(color: dark ? const Color(0xFF1F2937) : const Color(0xFFE2E8F0))),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(_items.length, (i) {
-              final item = _items[i];
-              final active = i == currentIndex;
-              final col = active ? IncubatorColors.electricBlue : (dark ? const Color(0xFF6B7280) : const Color(0xFF94A3B8));
-              return Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () {},
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(item.icon, size: 22, color: col),
-                          const SizedBox(height: 2),
-                          Text(item.label,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                                  color: col)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
         ),
       ),
     );
