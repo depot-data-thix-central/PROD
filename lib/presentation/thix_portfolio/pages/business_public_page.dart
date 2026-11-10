@@ -1946,15 +1946,17 @@ class _SectionRenderer extends StatelessWidget {
 class _AboutSection extends StatelessWidget {
   const _AboutSection({required this.content});
   final AboutContent content;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final url = content.imageUrl;
-    final hasImage = url != null && url.isNotEmpty;
-    void more() => _showDetail(context,
-        title: _tt(context, content.title),
-        image: url,
-        text: content.body);
+    void more() => _showDetail(
+          context,
+          title: _tt(context, content.title),
+          image: content.imageUrl,
+          text: content.body,
+        );
+
     final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1964,20 +1966,36 @@ class _AboutSection extends StatelessWidget {
             child: Text(
               content.tagline!,
               style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  fontStyle: FontStyle.italic,
-                  color: scheme.primary),
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                fontStyle: FontStyle.italic,
+                color: scheme.primary,
+              ),
             ),
           ),
-        _ExpandText(content.body,
-            maxLines: 6,
-            style: TextStyle(
-                fontSize: 14.5, height: 1.8, color: scheme.onSurfaceVariant)),
+        _ExpandText(
+          content.body,
+          maxLines: 6,
+          style: TextStyle(
+            fontSize: 14.5,
+            height: 1.8,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
       ],
     );
+
     final body = LayoutBuilder(
       builder: (context, cs) {
+        // 🔑 On capture l'URL ICI : la promotion de type fonctionne
+        //   car on fait le test null/empty dans le même scope.
+        final url = content.imageUrl;
+        if (url == null || url.isEmpty) {
+          // Pas d'image → on n'affiche que le texte
+          return text;
+        }
+
+        // À partir d'ici, Dart sait que `url` est un String non-null.
         final image = _Tap(
           onTap: () => _viewImage(context, url),
           child: Container(
@@ -1988,10 +2006,14 @@ class _AboutSection extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: SizedBox(
-                  height: 240, width: double.infinity, child: _img(url)),
+                height: 240,
+                width: double.infinity,
+                child: _img(url),
+              ),
             ),
           ),
         );
+
         if (cs.maxWidth <= 760) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2008,6 +2030,7 @@ class _AboutSection extends StatelessWidget {
         );
       },
     );
+
     return Container(
       width: double.infinity,
       color: Colors.white,
@@ -2018,8 +2041,12 @@ class _AboutSection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _secHead(context, content.title,
-                  moreLabel: _tr(context, 'learn_more'), onMore: more),
+              _secHead(
+                context,
+                content.title,
+                moreLabel: _tr(context, 'learn_more'),
+                onMore: more,
+              ),
               body,
             ],
           ),
