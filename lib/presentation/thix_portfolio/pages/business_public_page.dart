@@ -1645,7 +1645,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chiffres clés (bandeau slim, hairlines)
+// ─────────────────────────────────────────────────────────────────────────────
+// Chiffres clés (bandeau slim) — CORRECTIF v9.1
 // ─────────────────────────────────────────────────────────────────────────────
 class _Figures extends StatelessWidget {
   const _Figures({required this.bundle});
@@ -1664,13 +1665,52 @@ class _Figures extends StatelessWidget {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(vertical: 28),
-      child: Container(height: 0.0, color: Colors.transparent),
+      child: _Wrap(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++) ...[
+                if (i > 0) Container(width: 1, height: 44, color: _hair(context)),
+                Expanded(
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(
+                        begin: 0, end: items[i].$1.toDouble()),
+                    duration: const Duration(milliseconds: 1200),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, v, __) => Column(
+                      children: [
+                        Text(_compact(v.round()),
+                            style: TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w300,
+                                letterSpacing: -1,
+                                height: 1,
+                                color: scheme.onSurface)),
+                        const SizedBox(height: 6),
+                        Text(items[i].$2.toUpperCase(),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.4,
+                                color: scheme.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FICHE D'IDENTITÉ — tableau compact (3 colonnes, hairlines)
+// FICHE D'IDENTITÉ — tableau compact CORRECTIF v9.1
+// (IntrinsicHeight borne la hauteur → CrossAxisAlignment.stretch valide)
 // ─────────────────────────────────────────────────────────────────────────────
 class _ProfileBlock extends StatelessWidget {
   const _ProfileBlock({required this.business});
@@ -1686,14 +1726,19 @@ class _ProfileBlock extends StatelessWidget {
       if (b.country.trim().isNotEmpty) _country(lang, b.country),
     ].join(', ');
     final cells = <(String, String, VoidCallback?)>[
-      (_tr(context, 'f_sector'), b.sector ?? '—', null),
-      (_tr(context, 'f_hq'), where.isEmpty ? '—' : where, null),
-      (_tr(context, 'f_since'), '${b.sinceYear ?? '—'}', null),
-      (_tr(context, 'f_staff'),
-          b.employees == null ? '—' : '${b.employees} ${_tr(context, 'staff')}', null),
-      (_tr(context, 'f_web'), b.website ?? '—', () => _openUrl(b.website)),
-      (_tr(context, 'f_phone'), b.phone ?? '—', () => _openTel(b.phone ?? '')),
-      (_tr(context, 'f_email'), b.email ?? '—', () => _openMail(b.email ?? '')),
+      if (b.sector != null && b.sector!.trim().isNotEmpty)
+        (_tr(context, 'f_sector'), b.sector!, null),
+      if (where.isNotEmpty) (_tr(context, 'f_hq'), where, null),
+      if (b.sinceYear != null)
+        (_tr(context, 'f_since'), '${b.sinceYear}', null),
+      if (b.employees != null)
+        (_tr(context, 'f_staff'), '${b.employees} ${_tr(context, 'staff')}', null),
+      if (b.website != null && b.website!.trim().isNotEmpty)
+        (_tr(context, 'f_web'), b.website!, () => _openUrl(b.website)),
+      if (b.phone != null && b.phone!.trim().isNotEmpty)
+        (_tr(context, 'f_phone'), b.phone!, () => _openTel(b.phone!)),
+      if (b.email != null && b.email!.trim().isNotEmpty)
+        (_tr(context, 'f_email'), b.email!, () => _openMail(b.email!)),
       (_tr(context, 'f_id'), b.thixId, () async {
         await Clipboard.setData(ClipboardData(text: b.thixId));
         if (!context.mounted) return;
@@ -1703,7 +1748,7 @@ class _ProfileBlock extends StatelessWidget {
       }),
       if (b.verified)
         (_tr(context, 'f_status'), _tr(context, 'verified_status'), null),
-    ]..removeWhere((c) => c.$2 == '—' && c.$1 != _tr(context, 'f_id'));
+    ];
     final desc = b.description?.trim() ?? '';
     final hair = _hair(context);
 
@@ -1726,18 +1771,21 @@ class _ProfileBlock extends StatelessWidget {
               children: [
                 Container(height: 2, color: scheme.primary),
                 for (final r in rows) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < r.length; i++) ...[
-                        if (i > 0) Container(width: 1, color: hair),
-                        Expanded(child: _SpecCell(cell: r[i])),
+                  // ✅ IntrinsicHeight : borne la hauteur → stretch valide
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < r.length; i++) ...[
+                          if (i > 0) Container(width: 1, color: hair),
+                          Expanded(child: _SpecCell(cell: r[i])),
+                        ],
+                        for (var i = r.length; i < cols; i++) ...[
+                          Container(width: 1, color: hair),
+                          const Expanded(child: SizedBox.shrink()),
+                        ],
                       ],
-                      for (var i = r.length; i < cols; i++) ...[
-                        Container(width: 1, color: hair),
-                        const Expanded(child: SizedBox.shrink()),
-                      ],
-                    ],
+                    ),
                   ),
                   Container(height: 1, color: hair),
                 ],
@@ -1749,7 +1797,6 @@ class _ProfileBlock extends StatelessWidget {
     );
   }
 }
-
 class _SpecCell extends StatelessWidget {
   const _SpecCell({required this.cell});
   final (String, String, VoidCallback?) cell;
