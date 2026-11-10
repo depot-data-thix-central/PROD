@@ -1,7 +1,8 @@
 // ============================================================================
-// PROGRAM DETAILS PAGE — SONATHIX GROUP
-// Module : thix_incubator
-// Route  : /incubator/program/:programId
+// FICHIER : lib/presentation/thix_incubator/pages/program_details_page.dart
+// Module  : thix_incubator
+// Route   : /incubator/program/:programId
+// Stack   : Riverpod moderne (ConsumerStatefulWidget + ref) — zéro provider/*
 // ============================================================================
 // Détail d'un programme d'incubation + candidature.
 // Sécurité :
@@ -14,28 +15,29 @@
 // ============================================================================
 
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint, debugPrintStack;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../nav.dart';
 import '../../../providers/incubator_provider.dart';
 import '../../../services/incubator_service.dart';
 import '../../../models/incubator_program.dart';
-import '../pages/incubator_home_page.dart'; // pour IncubatorColors
+import 'incubator_home_page.dart'; // pour IncubatorColors
 
-class ProgramDetailsPage extends StatefulWidget {
+class ProgramDetailsPage extends ConsumerStatefulWidget {
   const ProgramDetailsPage({super.key, required this.programId});
   final String programId;
 
   @override
-  State<ProgramDetailsPage> createState() => _ProgramDetailsPageState();
+  ConsumerState<ProgramDetailsPage> createState() => _ProgramDetailsPageState();
 }
 
-class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
+class _ProgramDetailsPageState extends ConsumerState<ProgramDetailsPage> {
   IncubatorProgram? _program;
   ProgramDetailsState _state = ProgramDetailsState.loading;
   String? _errorMessage;
@@ -51,7 +53,13 @@ class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Pré-charger l'état global incubator (pour les mentors, etc.)
+      if (ref.read(incubatorProvider).status == IncubatorStatus.idle) {
+        ref.read(incubatorProvider.notifier).loadAll();
+      }
+      _load();
+    });
   }
 
   Future<void> _load() async {
@@ -71,7 +79,7 @@ class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
     });
 
     try {
-      final service = context.read<IncubatorService>();
+      final service = ref.read(incubatorServiceProvider);
       final program = await service.fetchProgram(id);
       if (!mounted) return;
 
@@ -102,7 +110,8 @@ class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
       if (!mounted) return;
       setState(() {
         _state = ProgramDetailsState.error;
-        _errorMessage = kDebugMode ? e.toString() : 'Impossible de charger le programme.';
+        _errorMessage =
+            kDebugMode ? e.toString() : 'Impossible de charger le programme.';
       });
       if (kDebugMode) debugPrintStack(stackTrace: st);
     }
@@ -113,8 +122,8 @@ class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
   // --------------------------------------------------------------------------
   Future<void> _onApply() async {
     // Garde : session authentifiée (RLS Supabase fait le reste côté serveur)
-    final provider = context.read<IncubatorProvider>();
-    if (!provider.isAuthenticated) {
+    final isAuth = Supabase.instance.client.auth.currentUser != null;
+    if (!isAuth) {
       context.go(AppRoutes.login);
       return;
     }
@@ -123,9 +132,7 @@ class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
     if (_lastAttemptAt != null &&
         DateTime.now().difference(_lastAttemptAt!) < _cooldown) {
       final remaining = _cooldown - DateTime.now().difference(_lastAttemptAt!);
-      _showInfo(
-        'Veuillez patienter ${remaining.inSeconds}s avant de réessayer.',
-      );
+      _showInfo('Veuillez patienter ${remaining.inSeconds}s avant de réessayer.');
       return;
     }
 
@@ -201,13 +208,13 @@ class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
 
   Widget _buildBody() {
     return switch (_state) {
-      ProgramDetailsState.loading  => const _DetailsSkeleton(),
+      ProgramDetailsState.loading => const _DetailsSkeleton(),
       ProgramDetailsState.notFound => _NotFound(onBack: () => context.pop()),
-      ProgramDetailsState.error    => _DetailsError(
+      ProgramDetailsState.error => _DetailsError(
           message: _errorMessage ?? 'Erreur inconnue',
           onRetry: _load,
         ),
-      ProgramDetailsState.loaded   => _DetailsContent(program: _program!),
+      ProgramDetailsState.loaded => _DetailsContent(program: _program!),
     };
   }
 }
@@ -215,15 +222,17 @@ class _ProgramDetailsPageState extends State<ProgramDetailsPage> {
 enum ProgramDetailsState { loading, loaded, notFound, error }
 
 // ============================================================================
-// CONTENT
+// CONTENT — ConsumerWidget pour accéder à ref (mentors via incubatorProvider)
 // ============================================================================
-class _DetailsContent extends StatelessWidget {
+class _DetailsContent extends ConsumerWidget {
   const _DetailsContent({required this.program});
   final IncubatorProgram program;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cover = program.coverUrl;
+    final mentors = ref.watch(incubatorProvider).mentorsForProgram(program.id);
+
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
@@ -232,7 +241,7 @@ class _DetailsContent extends StatelessWidget {
           expandedHeight: 280,
           pinned: true,
           backgroundColor: IncubatorColors.background(context),
-          leading: _BackButton(),
+          leading: const _BackButton(),
           flexibleSpace: FlexibleSpaceBar(
             background: Stack(
               fit: StackFit.expand,
@@ -245,7 +254,6 @@ class _DetailsContent extends StatelessWidget {
                   )
                 else
                   const _CoverFallbackBig(),
-                // Gradient
                 Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -258,7 +266,6 @@ class _DetailsContent extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Titre sur l'image
                 Positioned(
                   left: 20,
                   right: 20,
@@ -401,8 +408,7 @@ class _DetailsContent extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 12,
                                       height: 1.5,
-                                      color:
-                                          IncubatorColors.textPrimary(context),
+                                      color: IncubatorColors.textPrimary(context),
                                     ),
                                   ),
                                 ),
@@ -415,41 +421,36 @@ class _DetailsContent extends StatelessWidget {
             ),
           ),
 
-        // Mentors associés (DB)
-        SliverToBoxAdapter(
-          child: Consumer<IncubatorProvider>(
-            builder: (context, p, _) {
-              final mentors = p.mentorsForProgram(program.id);
-              if (mentors.isEmpty) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mentors associés',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: IncubatorColors.textPrimary(context),
-                      ),
+        // Mentors associés (DB) — via Riverpod
+        if (mentors.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Mentors associés',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: IncubatorColors.textPrimary(context),
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 100,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: mentors.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
-                        itemBuilder: (_, i) => _MentorChip(mentor: mentors[i]),
-                      ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 100,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: mentors.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (_, i) => _MentorChip(mentor: mentors[i]),
                     ),
-                  ],
-                ),
-              );
-            },
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
 
         // Espace pour le CTA sticky
         const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
@@ -459,6 +460,7 @@ class _DetailsContent extends StatelessWidget {
 }
 
 class _BackButton extends StatelessWidget {
+  const _BackButton();
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -640,7 +642,6 @@ class _StickyCta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Détermination du bouton par la DB
     final (label, color, enabled, icon) = _resolveCta();
     return Container(
       padding: EdgeInsets.fromLTRB(
@@ -691,38 +692,44 @@ class _StickyCta extends StatelessWidget {
   }
 
   (String, Color, bool, IconData) _resolveCta() {
-    // Déjà candidat → bouton informatif
     if (userStatus != null && userStatus != 'none') {
       return switch (userStatus!) {
-        'pending'  => ('Candidature en cours', IncubatorColors.warning, false, Icons.hourglass_top_rounded),
-        'accepted' => ('Candidature acceptée', IncubatorColors.validationGreen, false, Icons.check_circle_rounded),
-        'rejected' => ('Candidature refusée', IncubatorColors.textSecondaryLight, false, Icons.close_rounded),
-        _          => ('Consulter', IncubatorColors.electricBlue, true, Icons.arrow_forward_rounded),
+        'pending' => ('Candidature en cours', IncubatorColors.warning, false,
+            Icons.hourglass_top_rounded),
+        'accepted' => ('Candidature acceptée', IncubatorColors.validationGreen,
+            false, Icons.check_circle_rounded),
+        'rejected' => ('Candidature refusée', IncubatorColors.textSecondaryLight,
+            false, Icons.close_rounded),
+        _ => ('Consulter', IncubatorColors.electricBlue, true,
+            Icons.arrow_forward_rounded),
       };
     }
-    // Statut du programme
     return switch (program.status) {
-      'open'     => ('Postuler', IncubatorColors.electricBlue, true, Icons.send_rounded),
-      'upcoming' => ('Candidatures bientôt ouvertes', IncubatorColors.warning, false, Icons.event_busy_rounded),
-      'closed'   => ('Programme fermé', IncubatorColors.textSecondaryLight, false, Icons.lock_rounded),
-      _          => ('Postuler', IncubatorColors.electricBlue, true, Icons.send_rounded),
+      'open' => ('Postuler', IncubatorColors.electricBlue, true,
+          Icons.send_rounded),
+      'upcoming' => ('Candidatures bientôt ouvertes', IncubatorColors.warning,
+          false, Icons.event_busy_rounded),
+      'closed' => ('Programme fermé', IncubatorColors.textSecondaryLight, false,
+          Icons.lock_rounded),
+      _ => ('Postuler', IncubatorColors.electricBlue, true, Icons.send_rounded),
     };
   }
 }
 
 // ============================================================================
-// BOTTOM SHEET — Formulaire de candidature sécurisé
+// BOTTOM SHEET — Formulaire de candidature sécurisé (ConsumerStatefulWidget)
 // ============================================================================
-class _ApplicationBottomSheet extends StatefulWidget {
+class _ApplicationBottomSheet extends ConsumerStatefulWidget {
   const _ApplicationBottomSheet({required this.program});
   final IncubatorProgram program;
 
   @override
-  State<_ApplicationBottomSheet> createState() =>
+  ConsumerState<_ApplicationBottomSheet> createState() =>
       _ApplicationBottomSheetState();
 }
 
-class _ApplicationBottomSheetState extends State<_ApplicationBottomSheet> {
+class _ApplicationBottomSheetState
+    extends ConsumerState<_ApplicationBottomSheet> {
   final _formKey = GlobalKey<FormState>();
   final _messageCtrl = TextEditingController();
   bool _acceptTerms = false;
@@ -734,7 +741,6 @@ class _ApplicationBottomSheetState extends State<_ApplicationBottomSheet> {
     super.dispose();
   }
 
-  // Sanitization : suppression des caractères non imprimables, trim
   String _sanitize(String s) =>
       s.replaceAll(RegExp(r'[\p{C}]', unicode: true), '').trim();
 
@@ -754,12 +760,12 @@ class _ApplicationBottomSheetState extends State<_ApplicationBottomSheet> {
     HapticFeedback.lightImpact();
 
     try {
-      final service = context.read<IncubatorService>();
+      final service = ref.read(incubatorServiceProvider);
       await service.submitApplication(
-  programId: widget.program.id,
-  programTitle: widget.program.title,  // ← AJOUTER CETTE LIGNE
-  message: _sanitize(_messageCtrl.text),
-);
+        programId: widget.program.id,
+        programTitle: widget.program.title,
+        message: _sanitize(_messageCtrl.text),
+      );
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on TimeoutException {
@@ -975,11 +981,24 @@ class _DetailsSkeleton extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(height: 100, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18))),
+                  Container(
+                      height: 100,
+                      decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18))),
                   const SizedBox(height: 20),
-                  Container(height: 16, width: 120, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8))),
+                  Container(
+                      height: 16,
+                      width: 120,
+                      decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8))),
                   const SizedBox(height: 12),
-                  Container(height: 100, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12))),
+                  Container(
+                      height: 100,
+                      decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12))),
                 ],
               ),
             ),
