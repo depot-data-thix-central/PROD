@@ -1,15 +1,16 @@
 // ============================================================================
 // FICHIER : lib/providers/incubator_provider.dart
 // Module  : thix_incubator
+// Stack   : Riverpod moderne (API Notifier) — aucun package:provider
 // ============================================================================
-// ChangeNotifier — état global du module INCUBATOR.
-// Expose : programmes, projets, candidatures, mentors, activités, stats
-//          agrégées (compteurs, progression moyenne).
-// Gère les streams Supabase real-time pour refresh auto.
+// État global du module INCUBATOR : programmes, projets, candidatures,
+// mentors, activités + stats agrégées. Auto-refresh via Supabase Realtime.
 // ============================================================================
 
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrintStack;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/incubator_activity.dart';
@@ -19,114 +20,174 @@ import '../models/incubator_program.dart';
 import '../models/incubator_project.dart';
 import '../services/incubator_service.dart';
 
-enum IncubatorState { idle, loading, loaded, error }
+// ============================================================================
+// ÉTAT
+// ============================================================================
+enum IncubatorStatus { idle, loading, loaded, error }
 
-class IncubatorProvider extends ChangeNotifier {
-  IncubatorProvider({IncubatorService? service})
-      : _service = service ?? IncubatorService.instance;
+@immutable
+class IncubatorState {
+  final IncubatorStatus status;
+  final String? error;
+  final bool isFirstLoad;
+  final bool isAuthenticated;
+  final List<IncubatorProgram> programs;
+  final List<IncubatorProject> projects;
+  final List<IncubatorApplication> applications;
+  final List<IncubatorMentor> mentors;
+  final List<IncubatorActivity> activities;
+  final int unreadNotifications;
 
-  final IncubatorService _service;
+  const IncubatorState({
+    this.status = IncubatorStatus.idle,
+    this.error,
+    this.isFirstLoad = true,
+    this.isAuthenticated = false,
+    this.programs = const [],
+    this.projects = const [],
+    this.applications = const [],
+    this.mentors = const [],
+    this.activities = const [],
+    this.unreadNotifications = 0,
+  });
 
-  // ─── ÉTAT ───
-  IncubatorState _state = IncubatorState.idle;
-  String? _error;
-  bool _isFirstLoad = true;
+  // ─── DÉRIVÉS (calculés, jamais stockés en dur) ───
+  List<IncubatorProgram> get openPrograms =>
+      programs.where((p) => p.isOpen).toList(growable: false);
 
-  // ─── DONNÉES ───
-  List<IncubatorProgram>     _programs     = const [];
-  List<IncubatorProject>     _projects     = const [];
-  List<IncubatorApplication> _applications = const [];
-  List<IncubatorMentor>      _mentors      = const [];
-  List<IncubatorActivity>    _activities   = const [];
-  int                        _unreadNotifs = 0;
-
-  StreamSubscription<void>? _realtimeSub;
-
-  // ─── GETTERS ───
-  IncubatorState get state        => _state;
-  String?        get error        => _error;
-  bool           get isFirstLoad  => _isFirstLoad;
-  bool           get isAuthenticated => Supabase.instance.client.auth.currentUser != null;
-
-  List<IncubatorProgram>     get programs          => _programs;
-  List<IncubatorProgram>     get openPrograms      => _programs.where((p) => p.isOpen).toList();
-  List<IncubatorProject>     get projects          => _projects;
-  List<IncubatorApplication> get applications      => _applications;
-  List<IncubatorMentor>      get mentors           => _mentors;
-  List<IncubatorActivity>    get activities        => _activities;
-
-  List<IncubatorApplication> get recentApplications => _applications.take(3).toList();
-  List<IncubatorProject>     get recentProjects     => _projects.take(3).toList();
-  List<IncubatorActivity>    get recentActivities   => _activities.take(4).toList();
-
-  int get unreadNotifications => _unreadNotifs;
-  int get openProgramsCount   => openPrograms.length;
-  int get myProjectsCount     => _projects.length;
-  int get myApplicationsCount => _applications.length;
+  int get openProgramsCount => openPrograms.length;
+  int get myProjectsCount => projects.length;
+  int get myApplicationsCount => applications.length;
 
   int get averageProgressPercent {
-    if (_projects.isEmpty) return 0;
-    final sum = _projects.fold<int>(0, (acc, p) => acc + p.progress);
-    return (sum / _projects.length).round();
+    if (projects.isEmpty) return 0;
+    final sum = projects.fold<int>(0, (acc, p) => acc + p.progress);
+    return (sum / projects.length).round();
   }
 
-  bool get isEmpty => _programs.isEmpty && _projects.isEmpty;
+  bool get isEmpty => programs.isEmpty && projects.isEmpty;
+
+  List<IncubatorApplication> get recentApplications =>
+      applications.take(3).toList(growable: false);
+  List<IncubatorProject> get recentProjects =>
+      projects.take(3).toList(growable: false);
+  List<IncubatorActivity> get recentActivities =>
+      activities.take(4).toList(growable: false);
 
   List<IncubatorMentor> mentorsForProgram(String programId) {
-    final program = _programs.cast<IncubatorProgram?>().firstWhere(
-      (p) => p?.id == programId,
-      orElse: () => null,
-    );
-    if (program == null) return const [];
-    return _mentors.where((m) => program.mentorIds.contains(m.id)).toList();
+    IncubatorProgram? target;
+    for (final p in programs) {
+      if (p.id == programId) {
+        target = p;
+        break;
+      }
+    }
+    if (target == null || target.mentorIds.isEmpty) return const [];
+    return mentors
+        .where((m) => target!.mentorIds.contains(m.id))
+        .toList(growable: false);
   }
 
-  Stream<void> realtimeUpdates() => _service.realtimeUpdates();
+  IncubatorState copyWith({
+    IncubatorStatus? status,
+    String? error,
+    bool? isFirstLoad,
+    bool? isAuthenticated,
+    List<IncubatorProgram>? programs,
+    List<IncubatorProject>? projects,
+    List<IncubatorApplication>? applications,
+    List<IncubatorMentor>? mentors,
+    List<IncubatorActivity>? activities,
+    int? unreadNotifications,
+  }) {
+    return IncubatorState(
+      status: status ?? this.status,
+      error: error,
+      isFirstLoad: isFirstLoad ?? this.isFirstLoad,
+      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+      programs: programs ?? this.programs,
+      projects: projects ?? this.projects,
+      applications: applications ?? this.applications,
+      mentors: mentors ?? this.mentors,
+      activities: activities ?? this.activities,
+      unreadNotifications: unreadNotifications ?? this.unreadNotifications,
+    );
+  }
+}
 
-  // ─── LIFECYCLE ───
+// ============================================================================
+// PROVIDERS
+// ============================================================================
+
+/// Service singleton exposé à l'arbre Riverpod (testable / overridable).
+final incubatorServiceProvider =
+    Provider<IncubatorService>((ref) => IncubatorService.instance);
+
+/// Notifier principal du module.
+class IncubatorNotifier extends Notifier<IncubatorState> {
+  StreamSubscription<void>? _rtSub;
+
+  @override
+  IncubatorState build() {
+    ref.onDispose(() => _rtSub?.cancel());
+    return const IncubatorState();
+  }
+
+  IncubatorService get _service => ref.read(incubatorServiceProvider);
+
+  bool get _isAuth => Supabase.instance.client.auth.currentUser != null;
+
+  // ─── CHARGEMENT GLOBAL ───
   Future<void> loadAll({bool forceRefresh = false}) async {
-    if (_state == IncubatorState.loading && !forceRefresh) return;
+    if (state.status == IncubatorStatus.loading && !forceRefresh) return;
 
-    _state = IncubatorState.loading;
-    _error = null;
-    if (forceRefresh) _isFirstLoad = true;
-    notifyListeners();
+    state = state.copyWith(status: IncubatorStatus.loading, error: '');
 
     try {
-      // Chargement en parallèle (perf)
-      final results = await Future.wait([
+      final results = await Future.wait<Object>([
         _service.listPrograms(forceRefresh: forceRefresh),
-        if (isAuthenticated) _service.listMyProjects() else Future.value(<IncubatorProject>[]),
-        if (isAuthenticated) _service.listMyApplications() else Future.value(<IncubatorApplication>[]),
+        _isAuth
+            ? _service.listMyProjects()
+            : Future.value(const <IncubatorProject>[]),
+        _isAuth
+            ? _service.listMyApplications()
+            : Future.value(const <IncubatorApplication>[]),
         _service.listMentors(),
-        if (isAuthenticated) _service.listMyActivities() else Future.value(<IncubatorActivity>[]),
-        if (isAuthenticated) _service.countUnreadNotifications() else Future.value(0),
+        _isAuth
+            ? _service.listMyActivities()
+            : Future.value(const <IncubatorActivity>[]),
+        _service.countUnreadNotifications(),
       ]);
 
-      _programs     = results[0] as List<IncubatorProgram>;
-      _projects     = results[1] as List<IncubatorProject>;
-      _applications = results[2] as List<IncubatorApplication>;
-      _mentors      = results[3] as List<IncubatorMentor>;
-      _activities   = results[4] as List<IncubatorActivity>;
-      _unreadNotifs = results[5] as int;
+      state = IncubatorState(
+        status: IncubatorStatus.loaded,
+        isFirstLoad: false,
+        isAuthenticated: _isAuth,
+        programs: results[0] as List<IncubatorProgram>,
+        projects: results[1] as List<IncubatorProject>,
+        applications: results[2] as List<IncubatorApplication>,
+        mentors: results[3] as List<IncubatorMentor>,
+        activities: results[4] as List<IncubatorActivity>,
+        unreadNotifications: results[5] as int,
+      );
 
-      _state = IncubatorState.loaded;
+      _ensureRealtime();
     } catch (e, st) {
-      _state = IncubatorState.error;
-      _error = e.toString();
+      state = state.copyWith(
+        status: IncubatorStatus.error,
+        error: e.toString(),
+        isFirstLoad: false,
+      );
       if (kDebugMode) debugPrintStack(stackTrace: st);
-    } finally {
-      _isFirstLoad = false;
-      notifyListeners();
     }
+  }
 
-    // Abonnement temps réel (une seule fois)
-    if (_realtimeSub == null) {
-      _realtimeSub = _service.realtimeUpdates().listen((_) {
-        // Refresh auto quand un changement real-time arrive
-        loadAll();
-      });
-    }
+  /// Abonnement Realtime unique (invalidation auto → reload).
+  void _ensureRealtime() {
+    if (_rtSub != null) return;
+    _rtSub = _service.realtimeUpdates().listen((_) {
+      loadAll(forceRefresh: true);
+    });
   }
 
   // ─── ACTIONS ───
@@ -142,7 +203,6 @@ class IncubatorProvider extends ChangeNotifier {
       message: message,
       projectId: projectId,
     );
-    // Refresh la liste en background
     await loadAll(forceRefresh: true);
     return app;
   }
@@ -160,10 +220,8 @@ class IncubatorProvider extends ChangeNotifier {
     await loadAll(forceRefresh: true);
     return project;
   }
-
-  @override
-  void dispose() {
-    _realtimeSub?.cancel();
-    super.dispose();
-  }
 }
+
+/// ⭐ Provider unique consommé par toutes les pages du module.
+final incubatorProvider =
+    NotifierProvider<IncubatorNotifier, IncubatorState>(IncubatorNotifier.new);
