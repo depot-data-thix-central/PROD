@@ -2,7 +2,7 @@
 //  THIX PORTFOLIO BUSINESS — STUDIO : RUBRIQUES AVANCÉES (OWNER)
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_extras_studio.dart
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.0.1 — Novembre 2026 (i18n FR/EN inline)
 // ════════════════════════════════════════════════════════════════════════════
 //  Carte « Rubriques avancées » à placer dans le Studio.
 //  10 rubriques : visibilité + édition + upload photo ET vidéo.
@@ -21,6 +21,15 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 import '../data/business_extras.dart';
 
+// ─── i18n minimaliste FR/EN ─────────────────────────────────────────────────
+String _lang(BuildContext c) =>
+    Localizations.localeOf(c).languageCode.toLowerCase();
+
+/// Retourne la chaîne française si la locale courante est `fr`, sinon l'anglaise.
+String _s(BuildContext c, String fr, String en) =>
+    _lang(c) == 'fr' ? fr : en;
+// ────────────────────────────────────────────────────────────────────────────
+
 const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo
 
 class _P {
@@ -29,6 +38,17 @@ class _P {
   static const Color surface = Color(0xFFFFFFFF);
   static const Color border = Color(0xFFE6E9F2);
   static const Color inkMuted = Color(0xFF8A94A6);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exception typée pour la limite de taille vidéo (permet i18n au point de catch)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class MediaTooLargeException implements Exception {
+  final int maxBytes;
+  const MediaTooLargeException(this.maxBytes);
+  @override
+  String toString() => 'MediaTooLargeException(maxBytes: $maxBytes)';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +62,7 @@ Future<String> _uploadMedia(
 }) async {
   final bytes = await file.readAsBytes();
   if (video && bytes.length > _kMaxVideoBytes) {
-    throw Exception('Vidéo trop lourde (max 50 Mo)');
+    throw const MediaTooLargeException(_kMaxVideoBytes);
   }
   final ext = file.name.contains('.')
       ? file.name.split('.').last.toLowerCase()
@@ -135,7 +155,7 @@ class _BusinessExtrasStudioCardState
       await _repo.save(widget.businessId, e);
       ref.invalidate(businessExtrasProvider(widget.businessId));
     } catch (err) {
-      _snack('Erreur : $err', error: true);
+      _snack(_s(context, 'Erreur : $err', 'Error: $err'), error: true);
     }
   }
 
@@ -159,7 +179,7 @@ class _BusinessExtrasStudioCardState
     if (result == null) return;
     setState(() => _byKind[spec.key] = result);
     await _persist(result);
-    _snack('Rubrique enregistrée');
+    _snack(_s(context, 'Rubrique enregistrée', 'Section saved'));
   }
 
   @override
@@ -174,20 +194,25 @@ class _BusinessExtrasStudioCardState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.dashboard_customize_rounded,
+              const Icon(Icons.dashboard_customize_rounded,
                   size: 20, color: ThixPolicy.primary),
-              SizedBox(width: 8),
-              Text('Rubriques avancées (10)',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+              const SizedBox(width: 8),
+              Text(
+                  _s(context, 'Rubriques avancées (10)',
+                      'Advanced sections (10)'),
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800)),
             ],
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Active une rubrique, ajoute tes éléments avec photos / vidéos.',
-            style: TextStyle(fontSize: 12, color: _P.inkMuted),
+          Text(
+            _s(
+                context,
+                'Active une rubrique, ajoute tes éléments avec photos / vidéos.',
+                'Enable a section, add your items with photos / videos.'),
+            style: const TextStyle(fontSize: 12, color: _P.inkMuted),
           ),
           const SizedBox(height: 14),
           if (_loading)
@@ -196,8 +221,7 @@ class _BusinessExtrasStudioCardState
                     padding: EdgeInsets.all(16),
                     child: CircularProgressIndicator()))
           else
-            for (final spec in kBizKinds)
-              _row(spec, _byKind[spec.key]!),
+            for (final spec in kBizKinds) _row(spec, _byKind[spec.key]!),
         ],
       ),
     );
@@ -206,6 +230,7 @@ class _BusinessExtrasStudioCardState
   Widget _row(BizKindSpec spec, BizExtra e) {
     final count =
         e.items.where((i) => (i['title'] ?? '').trim().isNotEmpty).length;
+    final specName = _lang(context) == 'fr' ? spec.fr : spec.en;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -216,11 +241,12 @@ class _BusinessExtrasStudioCardState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(spec.fr,
+                Text(specName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w700)),
-                Text('$count élément(s)',
+                Text(
+                    _s(context, '$count élément(s)', '$count item(s)'),
                     style: const TextStyle(
                         fontSize: 11, color: _P.inkMuted)),
               ],
@@ -301,8 +327,16 @@ class _ExtraEditorSheetState extends State<_ExtraEditorSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _uploadingKey = '');
+      final String msg;
+      if (e is MediaTooLargeException) {
+        final mb = e.maxBytes ~/ (1024 * 1024);
+        msg = _s(
+            context, 'Vidéo trop lourde (max $mb Mo)', 'Video too large (max $mb MB)');
+      } else {
+        msg = _s(context, 'Upload impossible : $e', 'Upload failed: $e');
+      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Upload impossible : $e'),
+        content: Text(msg),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
       ));
@@ -402,7 +436,9 @@ class _ExtraEditorSheetState extends State<_ExtraEditorSheet> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: IconButton(
-                    tooltip: video ? 'Uploader une vidéo' : 'Uploader une photo',
+                    tooltip: video
+                        ? _s(context, 'Uploader une vidéo', 'Upload a video')
+                        : _s(context, 'Uploader une photo', 'Upload a photo'),
                     icon: uploading
                         ? const SizedBox(
                             width: 16,
@@ -442,6 +478,14 @@ class _ExtraEditorSheetState extends State<_ExtraEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isFr = _lang(context) == 'fr';
+    final specName = isFr ? widget.spec.fr : widget.spec.en;
+    final titleHint = _s(
+      context,
+      'Titre de la rubrique (vide = "${widget.spec.fr}" / "${widget.spec.en}")',
+      'Section title (empty = "${widget.spec.fr}" / "${widget.spec.en}")',
+    );
+
     return DraggableScrollableSheet(
       initialChildSize: 0.8,
       minChildSize: 0.4,
@@ -467,7 +511,7 @@ class _ExtraEditorSheetState extends State<_ExtraEditorSheet> {
                   Icon(widget.spec.icon, color: ThixPolicy.primary),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(widget.spec.fr,
+                    child: Text(specName,
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w900)),
                   ),
@@ -484,8 +528,7 @@ class _ExtraEditorSheetState extends State<_ExtraEditorSheet> {
                 controller: controller,
                 padding: const EdgeInsets.all(20),
                 children: [
-                  _tf(_title,
-                      'Titre de la rubrique (vide = "${widget.spec.fr}" / "${widget.spec.en}")'),
+                  _tf(_title, titleHint),
                   for (var i = 0; i < _items.length; i++)
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -524,12 +567,12 @@ class _ExtraEditorSheetState extends State<_ExtraEditorSheet> {
                     onPressed: () =>
                         setState(() => _items.add(_ctrls(const {}))),
                     icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('Ajouter un élément'),
+                    label: Text(_s(context, 'Ajouter un élément', 'Add an item')),
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
                     onPressed: () => Navigator.pop(context, _build()),
-                    child: const Text('Enregistrer'),
+                    child: Text(_s(context, 'Enregistrer', 'Save')),
                   ),
                 ],
               ),
@@ -539,4 +582,4 @@ class _ExtraEditorSheetState extends State<_ExtraEditorSheet> {
       ),
     );
   }
-} 
+}
