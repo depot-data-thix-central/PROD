@@ -123,7 +123,7 @@ class _LangScope extends InheritedWidget {
   final String code;
 
   static String of(BuildContext c) =>
-      c.dependOnInheritedWidgetOfType<_LangScope>()?.code ?? 'fr';
+      c.dependOnInheritedWidgetOfExactType<_LangScope>()?.code ?? 'fr';
 
   @override
   bool updateShouldNotify(_LangScope old) => old.code != code;
