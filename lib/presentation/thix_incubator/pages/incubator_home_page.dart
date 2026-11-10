@@ -169,12 +169,12 @@ class _IncubatorHomePageState extends ConsumerState<IncubatorHomePage> {
 // ============================================================================
 // 1. HEADER NAVY — logo fusée + titre + recherche / notif / avatar
 // ============================================================================
-class _TopHeader extends StatelessWidget {
+class _TopHeader extends ConsumerWidget {
   const _TopHeader();
 
   @override
-  Widget build(BuildContext context) {
-    final notif = context.watch<IncubatorProvider>().unreadNotifications;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notif = ref.watch(incubatorProvider).unreadNotifications;
     return Container(
       color: IncubatorColors.institutionalBlue,
       padding: const EdgeInsets.fromLTRB(16, 10, 12, 14),
@@ -224,7 +224,6 @@ class _TopHeader extends StatelessWidget {
     );
   }
 }
-
 class _HeaderIcon extends StatelessWidget {
   const _HeaderIcon({required this.icon, required this.onTap, this.badge});
   final IconData icon;
@@ -624,6 +623,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
       child: Row(
         children: [
+          // ✅ PAS DE CONST sur ce Container (BorderRadius.circular non-const)
           Container(
             width: 4,
             height: 18,
