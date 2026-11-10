@@ -3,7 +3,7 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/create_business_flow.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.3 — Novembre 2026 (CORRIGÉ CI v4)
+//  Version  : 1.0.4 — Novembre 2026 (i18n FR/EN inline)
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/create
@@ -14,18 +14,10 @@
 //    • Remplacement de .glow() (flutter_animate) par widget natif
 //    • Remplacement de .withValues() par Color.fromRGBO() dans les const
 //
-//  Parcours utilisateur :
-//    1. FORMULAIRE — nom + secteur + ville + pays (validation live)
-//    2. CRÉATION   — appel RPC `create_business` (ID généré côté DB)
-//    3. SUCCÈS     — écran de célébration : THIX ID + QR + partage + CTA
-//
-//  Principes production :
-//    • Sanitization stricte de toutes les saisies (XSS + injection DB)
-//    • Logger dédié `BizCreateLogger` avec trace de la RPC
-//    • i18n complet avec `args: []` pour les interpolations
-//    • Haptic feedback + semantics pour accessibilité
-//    • Gestion réseau : retry, timeout soft, message d'erreur lisible
-//    • Navigation : retour à l'accueil THIX IA ou ouverture du site
+//  Corrections i18n v1.0.4 :
+//    • Import `l10n/app_localizations.dart` retiré
+//    • Helper `_s(context, 'FR', 'EN')` inline
+//    • Toutes les chaînes UI bilingues (formulaire, succès, partage, snackbars)
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:ui'; // ✅ FIX CI v4 : pour ImageFilter.blur
@@ -39,10 +31,18 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../core/thix_business_id.dart';
 import '../data/business_repository.dart';
+
+// ─── i18n minimaliste FR/EN ─────────────────────────────────────────────────
+String _lang(BuildContext c) =>
+    Localizations.localeOf(c).languageCode.toLowerCase();
+
+/// Retourne la chaîne française si la locale courante est `fr`, sinon l'anglaise.
+String _s(BuildContext c, String fr, String en) =>
+    _lang(c) == 'fr' ? fr : en;
+// ────────────────────────────────────────────────────────────────────────────
 
 // ============================================================================
 // ROUTES (cohérentes avec le FAB/Spotlight de Thix IA)
@@ -206,9 +206,11 @@ class _CreateBusinessFlowState extends ConsumerState<CreateBusinessFlow> {
 
       final parsedId = ThixBusinessId.tryParse(result.thixId);
       if (parsedId == null) {
-        throw const BusinessCreationException(
+        throw BusinessCreationException(_s(
+          context,
           'Le serveur a renvoyé un identifiant invalide.',
-        );
+          'The server returned an invalid identifier.',
+        ));
       }
 
       _BizCreateLogger.info('Business created', {
@@ -237,11 +239,10 @@ class _CreateBusinessFlowState extends ConsumerState<CreateBusinessFlow> {
           {'error': '$e', 'stack': '$s'});
       if (!mounted) return;
       HapticFeedback.heavyImpact();
+      final err = _Sanitizer.errorMessage(e);
       setState(() {
         _step = _Step.form;
-        _errorMessage = AppLocalizations.of(context)
-            .t('biz_create_error_generic',
-                args: [_Sanitizer.errorMessage(e)]);
+        _errorMessage = _s(context, 'Erreur : $err', 'Error: $err');
       });
     }
   }
@@ -267,7 +268,7 @@ class _CreateBusinessFlowState extends ConsumerState<CreateBusinessFlow> {
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(AppLocalizations.of(context).t('biz_create_id_copied')),
+        content: Text(_s(context, 'ID copié ✓', 'ID copied ✓')),
         backgroundColor: _Prism.success,
         behavior: SnackBarBehavior.floating,
       ),
@@ -278,11 +279,12 @@ class _CreateBusinessFlowState extends ConsumerState<CreateBusinessFlow> {
     if (_createdId == null) return;
     final url = 'https://thixid.com/b/${_createdId!.raw}';
     final name = _Sanitizer.text(_nameCtrl.text, maxLength: _kMaxNameLength);
-    Share.share(
-      'Découvrez $name sur THIX Portfolio Business 🚀\n$url\n'
-      'ID : ${_createdId!.raw}',
-      subject: 'Mon site THIX — $name',
-    );
+    final isFr = _lang(context) == 'fr';
+    final subject = isFr ? 'Mon site THIX — $name' : 'My THIX site — $name';
+    final body = isFr
+        ? 'Découvrez $name sur THIX Portfolio Business 🚀\n$url\nID : ${_createdId!.raw}'
+        : 'Discover $name on THIX Portfolio Business 🚀\n$url\nID: ${_createdId!.raw}';
+    Share.share(body, subject: subject);
     HapticFeedback.lightImpact();
   }
 
@@ -376,7 +378,6 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
       child: Row(
@@ -384,10 +385,13 @@ class _TopBar extends StatelessWidget {
           Semantics(
             button: true,
             label: onClose != null
-                ? l10n.t('common_close')
-                : l10n.t('common_back'),
+                ? _s(context, 'Fermer', 'Close')
+                : _s(context, 'Retour', 'Back'),
             child: IconButton(
-              icon: Icon(onClose != null ? Icons.close_rounded : Icons.arrow_back_rounded,
+              icon: Icon(
+                  onClose != null
+                      ? Icons.close_rounded
+                      : Icons.arrow_back_rounded,
                   color: _Prism.ink),
               onPressed: () {
                 HapticFeedback.selectionClick();
@@ -453,7 +457,6 @@ class _FormStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
       children: [
@@ -461,7 +464,11 @@ class _FormStep extends StatelessWidget {
         const SizedBox(height: 20),
 
         // Titre
-        Text(l10n.t('biz_create_title'),
+        Text(
+            _s(
+                context,
+                'Créons votre site THIX Portfolio',
+                "Let's create your THIX Portfolio site"),
             style: const TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.w900,
@@ -469,7 +476,11 @@ class _FormStep extends StatelessWidget {
                 height: 1.15,
                 letterSpacing: -0.4)),
         const SizedBox(height: 8),
-        Text(l10n.t('biz_create_subtitle'),
+        Text(
+            _s(
+                context,
+                'Renseignez les informations de base. Vous pourrez tout modifier plus tard.',
+                'Fill in the basic information. You can change everything later.'),
             style: const TextStyle(
                 fontSize: 14,
                 color: _Prism.inkSoft,
@@ -484,18 +495,25 @@ class _FormStep extends StatelessWidget {
             children: [
               _PrismField(
                 controller: nameCtrl,
-                label: l10n.t('biz_create_field_name'),
-                hint: l10n.t('biz_create_field_name_hint'),
+                label: _s(context, "Nom de l'entreprise", 'Business name'),
+                hint: _s(context, 'Ex. Kin Digital Services',
+                    'E.g. Kin Digital Services'),
                 icon: Icons.business_rounded,
                 textCapitalization: TextCapitalization.words,
                 maxLength: _kMaxNameLength,
                 validator: (v) {
                   final s = (v ?? '').trim();
                   if (s.length < _kMinNameLength) {
-                    return l10n.t('biz_create_error_name_too_short');
+                    return _s(
+                        context,
+                        'Le nom doit contenir au moins $_kMinNameLength caractères.',
+                        'Name must be at least $_kMinNameLength characters.');
                   }
                   if (s.length > _kMaxNameLength) {
-                    return l10n.t('biz_create_error_name_too_long');
+                    return _s(
+                        context,
+                        'Le nom est trop long (max $_kMaxNameLength caractères).',
+                        'Name is too long (max $_kMaxNameLength characters).');
                   }
                   return null;
                 },
@@ -505,8 +523,9 @@ class _FormStep extends StatelessWidget {
               // ✅ FIX CI v4 : validator optionnel (nullable) pour champs facultatifs
               _PrismField(
                 controller: sectorCtrl,
-                label: l10n.t('biz_create_field_sector'),
-                hint: l10n.t('biz_create_field_sector_hint'),
+                label: _s(context, "Secteur d'activité", 'Business sector'),
+                hint: _s(context,
+                    'Ex. Technologie, Restauration…', 'E.g. Technology, Food…'),
                 icon: Icons.category_rounded,
                 textCapitalization: TextCapitalization.words,
                 maxLength: _kMaxSectorLength,
@@ -517,8 +536,8 @@ class _FormStep extends StatelessWidget {
 
               _PrismField(
                 controller: cityCtrl,
-                label: l10n.t('biz_create_field_city'),
-                hint: l10n.t('biz_create_field_city_hint'),
+                label: _s(context, 'Ville', 'City'),
+                hint: _s(context, 'Ex. Kinshasa', 'E.g. Kinshasa'),
                 icon: Icons.place_rounded,
                 textCapitalization: TextCapitalization.words,
                 maxLength: _kMaxCityLength,
@@ -567,7 +586,7 @@ class _FormStep extends StatelessWidget {
                       color: ThixPolicy.danger,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(l10n.t('common_retry'),
+                    child: Text(_s(context, 'Réessayer', 'Retry'),
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -584,7 +603,7 @@ class _FormStep extends StatelessWidget {
         // CTA principal
         Semantics(
           button: true,
-          label: l10n.t('biz_create_cta'),
+          label: _s(context, 'Créer mon site THIX', 'Create my THIX site'),
           child: SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -598,7 +617,8 @@ class _FormStep extends StatelessWidget {
                     borderRadius: BorderRadius.circular(18)),
                 shadowColor: ThixPolicy.primary.withValues(alpha: 0.4),
               ),
-              child: Text(l10n.t('biz_create_cta'),
+              child: Text(
+                  _s(context, 'Créer mon site THIX', 'Create my THIX site'),
                   style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
@@ -621,11 +641,10 @@ class _StepIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final labels = [
-      l10n.t('biz_create_step_info'),
-      l10n.t('biz_create_step_creating'),
-      l10n.t('biz_create_step_success'),
+      _s(context, 'Infos', 'Info'),
+      _s(context, 'Création', 'Creating'),
+      _s(context, 'Succès', 'Success'),
     ];
     return Row(
       children: List.generate(3, (i) {
@@ -702,7 +721,7 @@ class _PrismField extends StatelessWidget {
                     color: _Prism.border.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(AppLocalizations.of(context).t('common_optional'),
+                  child: Text(_s(context, 'Optionnel', 'Optional'),
                       style: const TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
@@ -754,7 +773,7 @@ class _PrismField extends StatelessWidget {
 }
 
 // ============================================================================
-// SÉLECTEUR DE PAYS (codes ISO, affichage FR)
+// SÉLECTEUR DE PAYS (codes ISO, affichage bilingue)
 // ============================================================================
 
 class _CountryPicker extends StatelessWidget {
@@ -762,24 +781,24 @@ class _CountryPicker extends StatelessWidget {
   final String value;
   final ValueChanged<String> onChanged;
 
-  static const Map<String, String> _labels = {
-    'CD': '🇨🇩  Congo (RDC)',
-    'CG': '🇨🇬  Congo (Brazzaville)',
-    'CI': '🇨🇮  Côte d\'Ivoire',
-    'SN': '🇸🇳  Sénégal',
-    'CM': '🇨🇲  Cameroun',
-    'FR': '🇫🇷  France',
-    'BE': '🇧🇪  Belgique',
-    'US': '🇺🇸  États-Unis',
+  static const Map<String, (String fr, String en)> _labels = {
+    'CD': ('🇨🇩  Congo (RDC)', '🇨🇩  Congo (DRC)'),
+    'CG': ('🇨🇬  Congo (Brazzaville)', '🇨🇬  Congo (Brazzaville)'),
+    'CI': ('🇨🇮  Côte d\'Ivoire', '🇨🇮  Ivory Coast'),
+    'SN': ('🇸🇳  Sénégal', '🇸🇳  Senegal'),
+    'CM': ('🇨🇲  Cameroun', '🇨🇲  Cameroon'),
+    'FR': ('🇫🇷  France', '🇫🇷  France'),
+    'BE': ('🇧🇪  Belgique', '🇧🇪  Belgium'),
+    'US': ('🇺🇸  États-Unis', '🇺🇸  United States'),
   };
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+    final isFr = _lang(context) == 'fr';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.t('biz_create_field_country'),
+        Text(_s(context, 'Pays', 'Country'),
             style: const TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w700, color: _Prism.ink)),
         const SizedBox(height: 8),
@@ -798,14 +817,20 @@ class _CountryPicker extends StatelessWidget {
               icon: const Icon(Icons.keyboard_arrow_down_rounded,
                   color: _Prism.inkMuted),
               items: _kCountryCodes
-                  .map((c) => DropdownMenuItem(
-                        value: c,
-                        child: Text(_labels[c] ?? c,
-                            style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: _Prism.ink)),
-                      ))
+                  .map((c) {
+                    final entry = _labels[c];
+                    final label = entry == null
+                        ? c
+                        : (isFr ? entry.$1 : entry.$2);
+                    return DropdownMenuItem(
+                      value: c,
+                      child: Text(label,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: _Prism.ink)),
+                    );
+                  })
                   .toList(),
               onChanged: (v) {
                 if (v != null) {
@@ -830,7 +855,6 @@ class _CreatingStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -863,7 +887,7 @@ class _CreatingStep extends StatelessWidget {
             ),
             const SizedBox(height: 32),
 
-            Text(l10n.t('biz_create_creating_title'),
+            Text(_s(context, 'Création en cours…', 'Creating…'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 22,
@@ -872,7 +896,11 @@ class _CreatingStep extends StatelessWidget {
                     letterSpacing: -0.3)),
             const SizedBox(height: 10),
 
-            Text(l10n.t('biz_create_creating_subtitle'),
+            Text(
+                _s(
+                    context,
+                    'Nous préparons votre espace THIX Portfolio. Cela prend quelques secondes.',
+                    "We're preparing your THIX Portfolio space. This takes a few seconds."),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 14,
@@ -947,7 +975,7 @@ class _SuccessStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+    final safeName = _Sanitizer.text(businessName, maxLength: 40);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
       children: [
@@ -980,7 +1008,7 @@ class _SuccessStep extends StatelessWidget {
         const SizedBox(height: 20),
 
         Center(
-          child: Text(l10n.t('biz_create_success_title'),
+          child: Text(_s(context, 'Félicitations 🎉', 'Congratulations 🎉'),
               textAlign: TextAlign.center,
               style: const TextStyle(
                   fontSize: 24,
@@ -992,8 +1020,10 @@ class _SuccessStep extends StatelessWidget {
         const SizedBox(height: 8),
         Center(
           child: Text(
-              l10n.t('biz_create_success_subtitle',
-                  args: [_Sanitizer.text(businessName, maxLength: 40)]),
+              _s(
+                  context,
+                  '« $safeName » est désormais en ligne sur THIX Portfolio.',
+                  '"$safeName" is now live on THIX Portfolio.'),
               textAlign: TextAlign.center,
               style: const TextStyle(
                   fontSize: 14,
@@ -1014,7 +1044,7 @@ class _SuccessStep extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Text(l10n.t('biz_create_your_id'),
+              Text(_s(context, 'VOTRE IDENTIFIANT THIX', 'YOUR THIX ID'),
                   style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
@@ -1042,7 +1072,7 @@ class _SuccessStep extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: onCopy,
                       icon: const Icon(Icons.content_copy_rounded, size: 16),
-                      label: Text(l10n.t('common_copy'),
+                      label: Text(_s(context, 'Copier', 'Copy'),
                           style: const TextStyle(
                               fontWeight: FontWeight.w800, fontSize: 13)),
                       style: OutlinedButton.styleFrom(
@@ -1059,7 +1089,7 @@ class _SuccessStep extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: onShare,
                       icon: const Icon(Icons.share_rounded, size: 16),
-                      label: Text(l10n.t('common_share'),
+                      label: Text(_s(context, 'Partager', 'Share'),
                           style: const TextStyle(
                               fontWeight: FontWeight.w800, fontSize: 13)),
                       style: OutlinedButton.styleFrom(
@@ -1098,22 +1128,26 @@ class _SuccessStep extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Center(
-          child: Text(l10n.t('biz_create_qr_hint'),
+          child: Text(
+              _s(context, 'Scannez pour ouvrir votre site',
+                  'Scan to open your site'),
               style: const TextStyle(
-                  fontSize: 12, color: _Prism.inkMuted, fontWeight: FontWeight.w600)),
+                  fontSize: 12,
+                  color: _Prism.inkMuted,
+                  fontWeight: FontWeight.w600)),
         ),
         const SizedBox(height: 26),
 
         // CTA principal : voir mon site
         Semantics(
           button: true,
-          label: l10n.t('biz_create_open_site'),
+          label: _s(context, 'Voir mon site', 'View my site'),
           child: SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: onOpen,
               icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: Text(l10n.t('biz_create_open_site'),
+              label: Text(_s(context, 'Voir mon site', 'View my site'),
                   style: const TextStyle(
                       fontSize: 15, fontWeight: FontWeight.w900)),
               style: ElevatedButton.styleFrom(
@@ -1134,7 +1168,8 @@ class _SuccessStep extends StatelessWidget {
           width: double.infinity,
           child: TextButton(
             onPressed: onHome,
-            child: Text(l10n.t('biz_create_go_home'),
+            child: Text(
+                _s(context, "Retour à l'accueil", 'Back to home'),
                 style: const TextStyle(
                     color: _Prism.inkSoft, fontWeight: FontWeight.w700)),
           ),
