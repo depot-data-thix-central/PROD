@@ -1,25 +1,27 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  THIX PORTFOLIO BUSINESS — PAGE PUBLIQUE « PROFIL ENTREPRISE INSTITUTIONNEL »
+//  THIX PORTFOLIO BUSINESS — PAGE PUBLIQUE « PROFIL ENTREPRISE PREMIUM »
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 6.0.0 — Novembre 2026 (Design Institutionnel & Épuré)
+//  Version  : 7.0.0 — Novembre 2026 (Design Premium Glassmorphism — 360°)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  ✅ v6.0 — Design Institutionnel & Corporate :
-//    • En-tête fixe épuré (logo, nom, badge vérifié, navigation, FR/EN, menu ⋮)
-//    • Hero compact marine + carrousel, CTA aux coins architecturaux
-//    • Bandeau de chiffres clés élégants + « Fiche d'identité » sans cadre
-//    • Bandes de sections alternées (Blanc / Gris froid), typographie soignée
-//    • « Voir plus » : texte repliable + fiche détail pour les textes longs
-//    • Pied de page marine profond (marque / navigation / contact)
-//    • FR / EN, 10 rubriques avancées (business_extras), images web robustes
-//    • 100 % des couleurs via BusinessTheme (Studio inchangé)
-//    • SUPPRESSION DES CADRES : Design basé sur l'espace, la typo et les alignements
+//  ✅ v7.0 — REDESIGN 360° « PREMIUM GLASS » (aligné THIX PRO / Studio) :
+//    • Glassmorphism partout : _Glass / _GlassIcon (blur + bordures + ombres)
+//    • Orbs décoratifs en arrière-plan → profondeur du verre
+//    • En-tête givré pinned (frosted) + nav pills + toggle FR/EN glass
+//    • Hero conservé (carrousel) mais sublimé : chips glass, CTA pills,
+//      barre de chiffres clés EN VERRE flottante dans le hero
+//    • Fiche d'identité : carte glass unique, grille 2 colonnes ALIGNÉE,
+//      icônes en squares glass, hairlines, spacing serré
+//    • Sections : cartes glass radius 22-24, images inset radius 16
+//    • FAB style THIX PRO : pill noire lisérée accent (or)
+//    • Footer COMPACT (une bande navy, ~200px)
+//    • FR / EN, 10 rubriques avancées, images web robustes
 // ════════════════════════════════════════════════════════════════════════════
-
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,7 +31,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import '../data/business_extras.dart';
 import '../data/business_repository.dart';
 import '../models/business_bundle.dart';
@@ -38,6 +39,12 @@ import '../widgets/reveal_on_scroll.dart';
 
 const String kThixPublicBaseUrl = 'https://thixid.com';
 const double _kMaxW = 1120;
+
+/// Noir studio (pills, FAB) — identique à THIX PRO.
+const Color _kInk = Color(0xFF0B0F14);
+
+/// Fond de page froid très clair.
+const Color _kBg = Color(0xFFF5F7FA);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n FR / EN
@@ -79,6 +86,7 @@ const Map<String, Map<String, String>> _i18n = {
     'profile': 'Profil',
     'identity': "Fiche d'identité",
     'overview': 'Présentation',
+    'step': 'Étape',
     'f_name': 'Dénomination',
     'f_sector': "Secteur d'activité",
     'f_hq': 'Siège',
@@ -126,6 +134,7 @@ const Map<String, Map<String, String>> _i18n = {
     'profile': 'Profile',
     'identity': 'Company profile',
     'overview': 'Overview',
+    'step': 'Step',
     'f_name': 'Company name',
     'f_sector': 'Industry',
     'f_hq': 'Headquarters',
@@ -161,16 +170,13 @@ String _t(String lang, String key) => _i18n[lang]?[key] ?? key;
 class _LangScope extends InheritedWidget {
   const _LangScope({required this.code, required super.child});
   final String code;
-
   static String of(BuildContext c) =>
       c.dependOnInheritedWidgetOfExactType<_LangScope>()?.code ?? 'fr';
-
   @override
   bool updateShouldNotify(_LangScope old) => old.code != code;
 }
 
 String _tr(BuildContext c, String key) => _t(_LangScope.of(c), key);
-
 String _tt(BuildContext c, String title) =>
     _LangScope.of(c) == 'en' ? (_titlesEn[title.trim()] ?? title) : title;
 
@@ -185,7 +191,6 @@ String _fmtDate(String lang, DateTime d) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _DragScrollBehavior extends MaterialScrollBehavior {
   const _DragScrollBehavior();
   @override
@@ -214,22 +219,12 @@ Future<void> _openTel(String phone) => launchUrl(
 Future<void> _openMail(String mail) => launchUrl(Uri.parse('mailto:$mail'),
     mode: LaunchMode.externalApplication);
 
-BorderRadius _radius(BuildContext c) =>
-    Theme.of(c).extension<BusinessThemeExt>()?.radius ??
-    BorderRadius.circular(4);
-
-/// Rayon des cartes : architectural et sobre (max 8px).
-BorderRadius _cardR(BuildContext c) =>
-    BorderRadius.circular(_radius(c).topLeft.x.clamp(2.0, 8.0));
-
 Color _accent(BuildContext c) =>
     Theme.of(c).extension<BusinessThemeExt>()?.accent ??
     Theme.of(c).colorScheme.tertiary;
 
-Color _onColor(Color c) =>
-    ThemeData.estimateBrightnessForColor(c) == Brightness.dark
-        ? Colors.white
-        : const Color(0xFF111827);
+Color _hair(BuildContext c) =>
+    Theme.of(c).colorScheme.outlineVariant.withValues(alpha: 0.35);
 
 String _compact(int n) {
   if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
@@ -250,6 +245,185 @@ String _country(String lang, String code) {
   return lang == 'fr' ? v.$1 : v.$2;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BRIQUES GLASS (cœur du design premium)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Panneau de verre dépoli : blur + dégradé translucide + bordure lumineuse.
+class _Glass extends StatelessWidget {
+  const _Glass({
+    required this.child,
+    this.radius,
+    this.padding,
+    this.blur = 14,
+    this.tint,
+    this.dark = false,
+    this.border,
+    this.shadow = true,
+  });
+  final Widget child;
+  final BorderRadius? radius;
+  final EdgeInsetsGeometry? padding;
+  final double blur;
+  final Color? tint;
+  final bool dark;
+  final Border? border;
+  final bool shadow;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = radius ?? BorderRadius.circular(24);
+    final Gradient? g = tint != null
+        ? null
+        : LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: dark
+                ? [
+                    Colors.white.withValues(alpha: 0.16),
+                    Colors.white.withValues(alpha: 0.06),
+                  ]
+                : [
+                    Colors.white.withValues(alpha: 0.74),
+                    Colors.white.withValues(alpha: 0.46),
+                  ],
+          );
+    return ClipRRect(
+      borderRadius: r,
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: tint,
+            gradient: g,
+            borderRadius: r,
+            border: border ??
+                Border.all(
+                  color: dark
+                      ? Colors.white.withValues(alpha: 0.22)
+                      : Colors.white.withValues(alpha: 0.75),
+                  width: 1,
+                ),
+            boxShadow: shadow
+                ? [
+                    BoxShadow(
+                      color: const Color(0x140B0F14),
+                      blurRadius: 34,
+                      offset: const Offset(0, 16),
+                    ),
+                  ]
+                : null,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Bouton icône circulaire en verre (clair ou sombre).
+class _GlassIcon extends StatelessWidget {
+  const _GlassIcon({
+    required this.icon,
+    this.onTap,
+    this.dark = false,
+    this.size = 40,
+    this.color,
+  });
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool dark;
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return _Tap(
+      onTap: onTap,
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: dark
+                  ? Colors.white.withValues(alpha: 0.16)
+                  : Colors.white.withValues(alpha: 0.62),
+              border: Border.all(
+                color: dark
+                    ? Colors.white.withValues(alpha: 0.25)
+                    : Colors.white.withValues(alpha: 0.8),
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: size * 0.48,
+              color: color ?? (dark ? Colors.white : scheme.onSurface),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Orbes décoratifs fixes → le verre a quelque chose à flouter.
+class _Orbs extends StatelessWidget {
+  const _Orbs();
+  static Widget _orb(double s, Color c, double o) => Container(
+        width: s,
+        height: s,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [c.withValues(alpha: o), c.withValues(alpha: 0)],
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = _accent(context);
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: OverflowBox(
+          alignment: Alignment.topLeft,
+          maxWidth: double.infinity,
+          maxHeight: double.infinity,
+          child: SizedBox(
+            width: MediaQuery.sizeOf(context).width,
+            height: MediaQuery.sizeOf(context).height,
+            child: Stack(
+              children: [
+                Positioned(
+                    top: -140,
+                    right: -160,
+                    child: _orb(520, accent, 0.16)),
+                Positioned(
+                    top: 420,
+                    left: -200,
+                    child: _orb(480, scheme.primary, 0.10)),
+                Positioned(
+                    bottom: -120,
+                    right: -140,
+                    child: _orb(460, accent, 0.10)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Images / taps / layout / animations
+// ─────────────────────────────────────────────────────────────────────────────
 class _ImgFallback extends StatelessWidget {
   const _ImgFallback();
   @override
@@ -304,9 +478,11 @@ void _viewImage(BuildContext context, String url) {
             top: 12,
             right: 12,
             child: SafeArea(
-              child: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
+              child: _GlassIcon(
+                icon: Icons.close_rounded,
+                dark: true,
+                size: 44,
+                onTap: () => Navigator.of(context).pop(),
               ),
             ),
           ),
@@ -320,7 +496,6 @@ class _Tap extends StatelessWidget {
   const _Tap({required this.child, this.onTap});
   final Widget child;
   final VoidCallback? onTap;
-
   @override
   Widget build(BuildContext context) {
     if (onTap == null) return child;
@@ -352,7 +527,6 @@ class _Rise extends StatelessWidget {
   final Widget child;
   final int delay;
   final double dy;
-
   @override
   Widget build(BuildContext context) {
     final total = 650 + delay;
@@ -370,41 +544,21 @@ class _Rise extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Briques UI institutionnelles (Sans cadres, typographie soignée)
+// Atomes UI premium
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _Card extends StatelessWidget {
-  const _Card({required this.child, this.padding, this.color});
-  final Widget child;
-  final EdgeInsetsGeometry? padding;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final r = _cardR(context);
-    return ClipRRect(
-      borderRadius: r,
-      child: ColoredBox(
-        color: color ?? Colors.transparent,
-        child: padding == null ? child : Padding(padding: padding!, child: child),
-      ),
-    );
-  }
-}
-
 class _Pill extends StatelessWidget {
   const _Pill(this.text, {this.big = false});
   final String text;
   final bool big;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10, vertical: big ? 5 : 3),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: big ? 6 : 4),
       decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant, width: 1),
-        borderRadius: BorderRadius.circular(4),
+        color: Colors.white.withValues(alpha: 0.6),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         text.toUpperCase(),
@@ -455,7 +609,7 @@ class _Avatar extends StatelessWidget {
           ? BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.white,
-              border: Border.all(color: ring!, width: 1),
+              border: Border.all(color: ring!, width: 1.5),
             )
           : null,
       child: ClipOval(
@@ -474,7 +628,6 @@ class _MoreLink extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final IconData? icon;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -486,7 +639,7 @@ class _MoreLink extends StatelessWidget {
           Text(label.toUpperCase(),
               style: TextStyle(
                   color: scheme.primary,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                   fontSize: 11,
                   letterSpacing: 1.2)),
           const SizedBox(width: 6),
@@ -539,7 +692,9 @@ class _ClampText extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(text,
-                maxLines: maxLines, overflow: TextOverflow.ellipsis, style: st),
+                maxLines: maxLines,
+                overflow: TextOverflow.ellipsis,
+                style: st),
             if (over)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -558,14 +713,12 @@ class _ExpandText extends StatefulWidget {
   final String text;
   final int maxLines;
   final TextStyle? style;
-
   @override
   State<_ExpandText> createState() => _ExpandTextState();
 }
 
 class _ExpandTextState extends State<_ExpandText> {
   bool _open = false;
-
   @override
   Widget build(BuildContext context) {
     final st = widget.style ??
@@ -589,7 +742,7 @@ class _ExpandTextState extends State<_ExpandText> {
             ),
             if (over)
               Padding(
-                padding: const EdgeInsets.only(top: 16),
+                padding: const EdgeInsets.only(top: 14),
                 child: _MoreLink(
                   label: _tr(c, _open ? 'see_less' : 'see_more'),
                   icon: _open
@@ -605,7 +758,7 @@ class _ExpandTextState extends State<_ExpandText> {
   }
 }
 
-/// Fiche détail (texte complet) pour les cartes.
+/// Fiche détail (texte complet) — bottom sheet en verre.
 void _showDetail(
   BuildContext context, {
   required String title,
@@ -620,84 +773,101 @@ void _showDetail(
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    constraints: const BoxConstraints(maxWidth: 760),
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: 0.45),
     builder: (ctx) {
       final scheme = Theme.of(ctx).colorScheme;
-      return ConstrainedBox(
-        constraints:
-            BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.84),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (image != null && image.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: SizedBox(
-                      height: 240,
-                      width: double.infinity,
-                      child: _img(image),
-                    ),
-                  ),
-                ),
-              if (chip != null && chip.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _Pill(chip),
-                ),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                      height: 1.2)),
-              if (subtitle != null && subtitle.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(subtitle,
-                      style: TextStyle(
-                          fontSize: 14, color: scheme.onSurfaceVariant)),
-                ),
-              if (text != null && text.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                SelectableText(text,
-                    style: Theme.of(ctx)
-                        .textTheme
-                        .bodyLarge
-                        ?.copyWith(height: 1.7)),
-              ],
-              const SizedBox(height: 32),
-              Row(
+      return _Glass(
+        radius: const BorderRadius.vertical(top: Radius.circular(28)),
+        blur: 24,
+        tint: const Color(0xF5FFFFFF),
+        shadow: false,
+        child: SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints:
+                BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.86),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (url != null && url.isNotEmpty) ...[
-                    FilledButton.icon(
-                      onPressed: () => _openUrl(url),
-                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                      label: Text(urlLabel ?? _t(lang, 'open')),
-                      style: FilledButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4)),
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: scheme.outlineVariant.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                  ],
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: Text(_t(lang, 'close')),
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
+                  ),
+                  if (image != null && image.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: SizedBox(
+                          height: 240,
+                          width: double.infinity,
+                          child: _img(image),
+                        ),
+                      ),
                     ),
+                  if (chip != null && chip.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _Pill(chip),
+                    ),
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.8,
+                          height: 1.2)),
+                  if (subtitle != null && subtitle.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(subtitle,
+                          style: TextStyle(
+                              fontSize: 14, color: scheme.onSurfaceVariant)),
+                    ),
+                  if (text != null && text.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    SelectableText(text,
+                        style: Theme.of(ctx)
+                            .textTheme
+                            .bodyLarge
+                            ?.copyWith(height: 1.7)),
+                  ],
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      if (url != null && url.isNotEmpty) ...[
+                        FilledButton.icon(
+                          onPressed: () => _openUrl(url),
+                          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                          label: Text(urlLabel ?? _t(lang, 'open')),
+                          style: FilledButton.styleFrom(
+                            shape: const StadiumBorder(),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: Text(_t(lang, 'close')),
+                        style: OutlinedButton.styleFrom(
+                          shape: const StadiumBorder(),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       );
@@ -706,8 +876,9 @@ void _showDetail(
 }
 
 Widget _sectionHeader(BuildContext context, String title, {Widget? trailing}) {
+  final scheme = Theme.of(context).colorScheme;
   return Padding(
-    padding: const EdgeInsets.only(bottom: 48),
+    padding: const EdgeInsets.only(bottom: 36),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -715,15 +886,24 @@ Widget _sectionHeader(BuildContext context, String title, {Widget? trailing}) {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(width: 32, height: 2, color: _accent(context)),
-              const SizedBox(height: 16),
+              Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _accent(context),
+                ),
+              ),
               Text(
                 _tt(context, title),
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                      height: 1.2,
-                    ),
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
+                  height: 1.15,
+                  color: scheme.onSurface,
+                ),
               ),
             ],
           ),
@@ -737,7 +917,6 @@ Widget _sectionHeader(BuildContext context, String title, {Widget? trailing}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Page racine
 // ─────────────────────────────────────────────────────────────────────────────
-
 class BusinessPublicPage extends ConsumerWidget {
   const BusinessPublicPage({super.key, required this.thixId});
   final String thixId;
@@ -770,32 +949,32 @@ class BusinessPublicPage extends ConsumerWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // Skeleton / introuvable
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _PublicSkeleton extends StatelessWidget {
   const _PublicSkeleton();
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    Widget block(double h) => Container(
+    Widget block(double h, [double r = 24]) => Container(
           height: h,
-          margin: const EdgeInsets.only(bottom: 24),
+          margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(r),
           ),
         );
     return Scaffold(
+      backgroundColor: _kBg,
       body: Shimmer.fromColors(
         baseColor: scheme.surfaceContainerHighest,
         highlightColor: scheme.surface,
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            Container(height: 72, color: Colors.white),
-            Container(height: 400, color: Colors.white),
+            Container(height: 68, color: Colors.white),
+            Container(height: 420, color: Colors.white),
             Padding(
               padding: const EdgeInsets.all(24),
-              child: Column(children: [block(100), block(240), block(180)]),
+              child: Column(children: [block(90), block(240), block(180)]),
             ),
           ],
         ),
@@ -818,43 +997,52 @@ class _PublicNotFound extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.storefront_outlined,
-                  size: 84, color: theme.colorScheme.outline),
-              const SizedBox(height: 24),
-              Text(
-                invalid ? 'Identifiant invalide' : 'Entreprise introuvable',
-                style: theme.textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                invalid
-                    ? '« $thixId » n\'est pas un THIX ID Business valide.'
-                    : 'Aucune entreprise publiée ne correspond à « $thixId ».',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 32),
-              if (onRetry != null)
-                FilledButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Réessayer / Retry'),
-                  style: FilledButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4)),
-                  ),
+      backgroundColor: _kBg,
+      body: Stack(
+        children: [
+          const _Orbs(),
+          Center(
+            child: _Glass(
+              padding: const EdgeInsets.all(40),
+              radius: BorderRadius.circular(28),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.storefront_outlined,
+                        size: 72, color: theme.colorScheme.outline),
+                    const SizedBox(height: 24),
+                    Text(
+                      invalid ? 'Identifiant invalide' : 'Entreprise introuvable',
+                      style: theme.textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      invalid
+                          ? '« $thixId » n\'est pas un THIX ID Business valide.'
+                          : 'Aucune entreprise publiée ne correspond à « $thixId ».',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 32),
+                    if (onRetry != null)
+                      FilledButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Réessayer / Retry'),
+                        style: FilledButton.styleFrom(
+                          shape: const StadiumBorder(),
+                        ),
+                      ),
+                  ],
                 ),
-            ],
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -863,7 +1051,6 @@ class _PublicNotFound extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // SITE
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _Blk {
   const _Blk(this.id, this.label, this.child);
   final String id;
@@ -896,7 +1083,6 @@ String _titleOf(BusinessSectionContent c) => switch (c) {
 class _BusinessSite extends ConsumerStatefulWidget {
   const _BusinessSite({required this.bundle});
   final BusinessBundle bundle;
-
   @override
   ConsumerState<_BusinessSite> createState() => _BusinessSiteState();
 }
@@ -945,7 +1131,7 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
       ctx,
       duration: const Duration(milliseconds: 650),
       curve: Curves.easeInOutCubic,
-      alignment: 0.1,
+      alignment: 0.08,
     );
   }
 
@@ -954,14 +1140,12 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     final theme = bundle.theme;
     final scheme = Theme.of(context).colorScheme;
     final lang = _lang;
-
     final sections = bundle.visibleSections;
     final extras = ref
         .watch(businessExtrasProvider(bundle.business.id))
         .maybeWhen(data: (d) => d, orElse: () => <BizExtra>[]);
     final visibleExtras = extras.where((e) => e.visible && e.hasContent).toList()
       ..sort((a, b) => a.position.compareTo(b.position));
-
     final main = sections
         .where((s) =>
             s.type != BusinessSectionType.contact && !_isEmpty(s.content))
@@ -970,7 +1154,6 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
         .where((s) =>
             s.type == BusinessSectionType.contact && !_isEmpty(s.content))
         .toList();
-
     final blocks = <_Blk>[
       _Blk('profile', _t(lang, 'profile'),
           _ProfileBlock(business: bundle.business)),
@@ -992,80 +1175,88 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
         _Blk('s-${s.id}', _label(_titleOf(s.content)),
             _SectionRenderer(section: s)),
     ];
-
     final firstSection = blocks.length > 1 ? blocks[1].id : blocks.first.id;
 
     return _LangScope(
       code: lang,
       child: Scaffold(
-        backgroundColor: scheme.surface,
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _openContactSheet,
-          icon: const Icon(Icons.chat_bubble_outline_rounded),
-          label: Text(_t(lang, 'contact'),
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600, letterSpacing: 0.5)),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        backgroundColor: _kBg,
+        floatingActionButton: _ContactFab(
+          label: _t(lang, 'contact'),
+          accent: theme.accent ?? const Color(0xFFD9A441),
+          onTap: _openContactSheet,
         ),
         body: ScrollConfiguration(
           behavior: const _DragScrollBehavior(),
-          child: CustomScrollView(
-            controller: _scroll,
-            slivers: [
-              SliverAppBar(
-                pinned: true,
-                automaticallyImplyLeading: false,
-                toolbarHeight: 72,
-                backgroundColor: scheme.surface,
-                surfaceTintColor: Colors.transparent,
-                scrolledUnderElevation: 0,
-                shadowColor: Colors.transparent,
-                titleSpacing: 0,
-                title: _headerTitle(context, blocks),
-                bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(1),
-                  child: Container(
-                      height: 1, color: scheme.outlineVariant.withOpacity(0.5)),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _Hero(
-                  bundle: bundle,
-                  images: _heroImages(),
-                  onContact: _openContactSheet,
-                  onDiscover: () => _goTo(firstSection),
-                ),
-              ),
-              SliverToBoxAdapter(child: _Figures(bundle: bundle)),
-              SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    for (var i = 0; i < blocks.length; i++)
-                      _Band(
-                        index: i,
-                        child: KeyedSubtree(
-                          key: _key(blocks[i].id),
-                          child: RevealOnScroll(
-                            style: theme.animationStyle,
-                            staggerIndex: 0,
-                            child: blocks[i].child,
-                          ),
+          child: Stack(
+            children: [
+              const _Orbs(),
+              CustomScrollView(
+                controller: _scroll,
+                slivers: [
+                  SliverAppBar(
+                    pinned: true,
+                    automaticallyImplyLeading: false,
+                    toolbarHeight: 68,
+                    backgroundColor: Colors.white.withValues(alpha: 0.55),
+                    surfaceTintColor: Colors.transparent,
+                    scrolledUnderElevation: 0,
+                    shadowColor: Colors.transparent,
+                    titleSpacing: 0,
+                    flexibleSpace: ClipRect(
+                      child: BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                        child: Container(
+                          color: Colors.white.withValues(alpha: 0.01),
                         ),
                       ),
-                  ],
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _Footer(
-                  bundle: bundle,
-                  links: [
-                    for (final b in blocks) (b.label, () => _goTo(b.id)),
-                  ],
-                  onTop: () => _scroll.animateTo(0,
-                      duration: const Duration(milliseconds: 800),
-                      curve: Curves.easeInOutCubic),
-                ),
+                    ),
+                    title: _headerTitle(context, blocks),
+                    bottom: PreferredSize(
+                      preferredSize: const Size.fromHeight(1),
+                      child: Container(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.6)),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: _Hero(
+                      bundle: bundle,
+                      images: _heroImages(),
+                      onContact: _openContactSheet,
+                      onDiscover: () => _goTo(firstSection),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < blocks.length; i++)
+                          _Band(
+                            index: i,
+                            child: KeyedSubtree(
+                              key: _key(blocks[i].id),
+                              child: RevealOnScroll(
+                                style: theme.animationStyle,
+                                staggerIndex: 0,
+                                child: blocks[i].child,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: _Footer(
+                      bundle: bundle,
+                      links: [
+                        for (final b in blocks) (b.label, () => _goTo(b.id)),
+                      ],
+                      onTop: () => _scroll.animateTo(0,
+                          duration: const Duration(milliseconds: 800),
+                          curve: Curves.easeInOutCubic),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1074,60 +1265,71 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     );
   }
 
-  // ── En-tête ──
+  // ── En-tête givré ──
   Widget _headerTitle(BuildContext context, List<_Blk> blocks) {
     final scheme = Theme.of(context).colorScheme;
     final b = bundle.business;
     final wide = MediaQuery.sizeOf(context).width >= 960;
     final canPop = Navigator.of(context).canPop();
-
-    final nameRow = Flexible(
+    final accent = _accent(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
+          if (canPop) ...[
+            _GlassIcon(
+                icon: Icons.arrow_back_rounded,
+                onTap: () => Navigator.of(context).maybePop()),
+            const SizedBox(width: 10),
+          ],
+          if (!wide) ...[
+            _GlassIcon(
+                icon: Icons.menu_rounded, onTap: () => _openMenu(blocks)),
+            const SizedBox(width: 10),
+          ],
+          _Avatar(url: b.logoUrl, name: b.name, radius: 17, ring: accent),
+          const SizedBox(width: 10),
           Flexible(
-            child: Text(
-              b.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                  letterSpacing: -0.3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        b.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            letterSpacing: -0.3),
+                      ),
+                    ),
+                    if (b.verified) ...[
+                      const SizedBox(width: 6),
+                      const Icon(Icons.verified_rounded,
+                          size: 15, color: Color(0xFF22C55E)),
+                    ],
+                  ],
+                ),
+                if (b.sector != null && b.sector!.trim().isNotEmpty)
+                  Text(
+                    b.sector!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        letterSpacing: 0.6,
+                        color: scheme.onSurfaceVariant),
+                  ),
+              ],
             ),
           ),
-          if (b.verified) ...[
-            const SizedBox(width: 6),
-            const Icon(Icons.verified_rounded,
-                size: 16, color: Color(0xFF22C55E)),
-          ],
-        ],
-      ),
-    );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        children: [
-          if (canPop)
-            IconButton(
-              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
-          if (!wide)
-            IconButton(
-              tooltip: _t(_lang, 'menu'),
-              icon: const Icon(Icons.menu_rounded),
-              onPressed: () => _openMenu(blocks),
-            ),
-          _Avatar(url: b.logoUrl, name: b.name, radius: 18),
-          const SizedBox(width: 12),
           if (wide) ...[
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 260),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [nameRow])),
-            const SizedBox(width: 32),
+            const SizedBox(width: 24),
             Expanded(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -1138,39 +1340,48 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                       TextButton(
                         onPressed: () => _goTo(blk.id),
                         style: TextButton.styleFrom(
-                          foregroundColor: scheme.onSurface,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          foregroundColor: scheme.onSurfaceVariant,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          shape: const StadiumBorder(),
                         ),
                         child: Text(blk.label.toUpperCase(),
                             style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 10.5,
                                 letterSpacing: 1.2)),
                       ),
                   ],
                 ),
               ),
             ),
-          ] else
-            Expanded(child: Row(children: [nameRow])),
-          Tooltip(
-            message: _t(_lang, 'lang_tip'),
-            child: TextButton(
-              onPressed: () =>
-                  setState(() => _lang = _lang == 'fr' ? 'en' : 'fr'),
-              style: TextButton.styleFrom(
-                minimumSize: const Size(44, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+            const SizedBox(width: 8),
+          ],
+          _Tap(
+            onTap: () => setState(() => _lang = _lang == 'fr' ? 'en' : 'fr'),
+            child: Tooltip(
+              message: _t(_lang, 'lang_tip'),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.85)),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(_lang == 'fr' ? 'EN' : 'FR',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.0,
+                        fontSize: 11,
+                        color: scheme.onSurface)),
               ),
-              child: Text(_lang == 'fr' ? 'EN' : 'FR',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.0,
-                      fontSize: 12)),
             ),
           ),
+          const SizedBox(width: 10),
           PopupMenuButton<int>(
-            icon: const Icon(Icons.more_vert_rounded),
+            icon: _GlassIcon(icon: Icons.more_vert_rounded),
             onSelected: (v) {
               if (v == 0) _copyId();
               if (v == 1) _showQr();
@@ -1212,37 +1423,61 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     final lang = _lang;
     showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
       isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints:
-              BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.7),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Text(_t(lang, 'menu').toUpperCase(),
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5)),
-              ),
-              for (final blk in blocks)
-                ListTile(
-                  leading: const Icon(Icons.chevron_right_rounded, size: 18),
-                  title: Text(blk.label,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w500, fontSize: 15)),
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    Future.delayed(
-                        const Duration(milliseconds: 300), () => _goTo(blk.id));
-                  },
+      builder: (ctx) => _Glass(
+        radius: const BorderRadius.vertical(top: Radius.circular(28)),
+        blur: 22,
+        tint: const Color(0xF2FFFFFF),
+        shadow: false,
+        child: SafeArea(
+          child: ConstrainedBox(
+            constraints:
+                BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.7),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Text(_t(lang, 'menu').toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.6)),
+                ),
+                for (final blk in blocks)
+                  ListTile(
+                    shape: const StadiumBorder(),
+                    leading: Icon(Icons.chevron_right_rounded,
+                        size: 18, color: _accent(ctx)),
+                    title: Text(blk.label,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 15)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      Future.delayed(
+                          const Duration(milliseconds: 300),
+                          () => _goTo(blk.id));
+                    },
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1271,41 +1506,49 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     final lang = _lang;
     showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(bundle.business.name),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: scheme.outlineVariant),
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: _Glass(
+          padding: const EdgeInsets.all(28),
+          radius: BorderRadius.circular(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(bundle.business.name,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 18)),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: QrImageView(
+                  data: bundle.business.thixId,
+                  version: QrVersions.auto,
+                  size: 200,
+                  backgroundColor: Colors.white,
+                ),
               ),
-              child: QrImageView(
-                data: bundle.business.thixId,
-                version: QrVersions.auto,
-                size: 200,
-                backgroundColor: Colors.white,
+              const SizedBox(height: 16),
+              SelectableText(
+                bundle.business.thixId,
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: scheme.primary,
+                    letterSpacing: 0.5),
               ),
-            ),
-            const SizedBox(height: 16),
-            SelectableText(
-              bundle.business.thixId,
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: scheme.primary,
-                  letterSpacing: 0.5),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(_t(lang, 'close')),
+              const SizedBox(height: 20),
+              OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: OutlinedButton.styleFrom(shape: const StadiumBorder()),
+                child: Text(_t(lang, 'close')),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1319,59 +1562,130 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
-      constraints: const BoxConstraints(maxWidth: 680),
-      builder: (sheetCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: channels.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(_t(lang, 'no_channel')),
-                )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '${_t(lang, 'contact_prefix')} ${bundle.business.name}',
-                      style: Theme.of(sheetCtx)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 16),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            for (final c in channels) _ContactTile(channel: c),
-                          ],
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      builder: (sheetCtx) => _Glass(
+        radius: const BorderRadius.vertical(top: Radius.circular(28)),
+        blur: 22,
+        tint: const Color(0xF2FFFFFF),
+        shadow: false,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            child: channels.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(_t(lang, 'no_channel')),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 20),
+                          decoration: BoxDecoration(
+                            color: Theme.of(sheetCtx)
+                                .colorScheme
+                                .outlineVariant
+                                .withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      Text(
+                        '${_t(lang, 'contact_prefix')} ${bundle.business.name}',
+                        style: Theme.of(sheetCtx)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              for (var i = 0; i < channels.length; i++)
+                                _ContactTile(
+                                  channel: channels[i],
+                                  last: i == channels.length - 1,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Bande de section (Blanc pur / Gris très clair en alternance).
+/// FAB « Contacter » style THIX PRO : pill noire lisérée accent.
+class _ContactFab extends StatelessWidget {
+  const _ContactFab({
+    required this.label,
+    required this.accent,
+    required this.onTap,
+  });
+  final String label;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Tap(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          gradient: const LinearGradient(
+            colors: [_kInk, Color(0xFF1B2430)],
+          ),
+          border: Border.all(color: accent.withValues(alpha: 0.9), width: 1.4),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withValues(alpha: 0.35),
+              blurRadius: 26,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat_bubble_outline_rounded, size: 18, color: accent),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  letterSpacing: 0.6),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Bande de section : espace respirant, fond laissé aux orbes + verre.
 class _Band extends StatelessWidget {
   const _Band({required this.index, required this.child});
   final int index;
   final Widget child;
-
   @override
   Widget build(BuildContext context) {
-    // Alternance institutionnelle : Blanc et Gris froid subtil (#F9FAFB)
-    final bg = index.isOdd ? const Color(0xFFF9FAFB) : Colors.white;
-    return Container(
-      width: double.infinity,
-      color: bg,
-      padding: const EdgeInsets.symmetric(vertical: 80),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 56),
       child: _Wrap(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1383,8 +1697,17 @@ class _Band extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HERO (compact)
+// HERO (carrousel conservé, sublimé glass)
 // ─────────────────────────────────────────────────────────────────────────────
+List<(int, String)> _stats(BuildContext context, BusinessBundle bundle) {
+  final b = bundle.business;
+  return <(int, String)>[
+    if (b.ageYears != null && b.ageYears! > 0) (b.ageYears!, _tr(context, 'years')),
+    if (b.employees != null && b.employees! > 0)
+      (b.employees!, _tr(context, 'staff')),
+    if ((bundle.stats?.views ?? 0) > 0) (bundle.stats!.views, _tr(context, 'visits')),
+  ];
+}
 
 class _Hero extends StatelessWidget {
   const _Hero({
@@ -1393,7 +1716,6 @@ class _Hero extends StatelessWidget {
     required this.onContact,
     required this.onDiscover,
   });
-
   final BusinessBundle bundle;
   final List<String> images;
   final VoidCallback onContact;
@@ -1404,108 +1726,134 @@ class _Hero extends StatelessWidget {
     final theme = bundle.theme;
     final b = bundle.business;
     final size = MediaQuery.sizeOf(context);
-    final height = math.min(math.max(400.0, size.height * 0.45), 520.0);
+    final height = math.min(math.max(460.0, size.height * 0.52), 600.0);
     final narrow = size.width < 700;
-    final navy = Color.lerp(theme.primary, Colors.black, 0.65)!;
-    final meta = [b.sector, b.city]
-        .whereType<String>()
-        .where((e) => e.trim().isNotEmpty)
-        .join('  •  ');
-
+    final navy = Color.lerp(theme.primary, Colors.black, 0.55)!;
+    final accent = theme.accent ?? const Color(0xFFD9A441);
+    final stats = _stats(context, bundle);
+    final meta = [
+      if (b.sector != null && b.sector!.trim().isNotEmpty) b.sector!.trim(),
+      if (b.city != null && b.city!.trim().isNotEmpty) b.city!.trim(),
+      if (b.sinceYear != null) '${_tr(context, 'since')} ${b.sinceYear}',
+    ];
     return SizedBox(
       height: height,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _HeroCarousel(images: images, colors: theme.heroGradient),
+          _HeroCarousel(
+            images: images,
+            colors: theme.heroGradient,
+            indicatorBottom: stats.isNotEmpty ? 108 : 24,
+          ),
+          // Scrim vertical navy
           IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  stops: const [0, 0.6, 1],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0, 0.45, 1],
                   colors: [
-                    navy.withValues(alpha: 0.96),
-                    navy.withValues(alpha: 0.65),
-                    navy.withValues(alpha: 0.15),
+                    navy.withValues(alpha: 0.55),
+                    navy.withValues(alpha: 0.25),
+                    navy.withValues(alpha: 0.92),
                   ],
                 ),
               ),
             ),
           ),
+          // Glow accent
+          IgnorePointer(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Container(
+                width: 420,
+                height: 420,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    accent.withValues(alpha: 0.28),
+                    accent.withValues(alpha: 0),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+          // Contenu
           Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: _kMaxW),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 48),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
+                    constraints: const BoxConstraints(maxWidth: 660),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (b.verified)
                           _Rise(
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 20),
+                            child: _Glass(
+                              dark: true,
+                              shadow: false,
+                              blur: 10,
+                              radius: BorderRadius.circular(999),
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(2),
-                                border: Border.all(
-                                    color: Colors.white.withOpacity(0.3),
-                                    width: 1),
-                              ),
+                                  horizontal: 14, vertical: 8),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.verified_rounded,
-                                      size: 14, color: Colors.white),
+                                  Icon(Icons.verified_rounded,
+                                      size: 13, color: accent),
                                   const SizedBox(width: 8),
                                   Text(
                                     _tr(context, 'verified'),
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 1.2,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.4,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                           ),
-                        if (meta.isNotEmpty)
+                        if (meta.isNotEmpty) ...[
+                          const SizedBox(height: 18),
                           _Rise(
                             delay: 60,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: Row(
-                                children: [
-                                  Container(
-                                      width: 24, height: 2, color: theme.accent),
-                                  const SizedBox(width: 12),
-                                  Flexible(
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final m in meta)
+                                  _Glass(
+                                    dark: true,
+                                    shadow: false,
+                                    blur: 8,
+                                    radius: BorderRadius.circular(999),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 6),
                                     child: Text(
-                                      meta.toUpperCase(),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                      m.toUpperCase(),
                                       style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.85),
-                                        fontSize: 11,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.88),
+                                        fontSize: 10,
                                         fontWeight: FontWeight.w600,
-                                        letterSpacing: 2.0,
+                                        letterSpacing: 1.6,
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
+                              ],
                             ),
                           ),
+                        ],
+                        const SizedBox(height: 18),
                         _Rise(
                           delay: 120,
                           child: Text(
@@ -1514,16 +1862,16 @@ class _Hero extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: narrow ? 36 : 56,
-                              height: 1.05,
+                              fontSize: narrow ? 38 : 58,
+                              height: 1.02,
                               fontWeight: FontWeight.w800,
-                              letterSpacing: -1.5,
+                              letterSpacing: -2,
                             ),
                           ),
                         ),
                         if (b.claim != null && b.claim!.trim().isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(top: 16),
+                            padding: const EdgeInsets.only(top: 14),
                             child: _Rise(
                               delay: 200,
                               child: Text(
@@ -1531,19 +1879,19 @@ class _Hero extends StatelessWidget {
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.90),
-                                  fontSize: narrow ? 16 : 20,
-                                  height: 1.4,
+                                  color: Colors.white.withValues(alpha: 0.88),
+                                  fontSize: narrow ? 15 : 18,
+                                  height: 1.5,
                                   fontWeight: FontWeight.w400,
                                 ),
                               ),
                             ),
                           ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 28),
                         _Rise(
                           delay: 280,
                           child: Wrap(
-                            spacing: 16,
+                            spacing: 12,
                             runSpacing: 12,
                             children: [
                               FilledButton.icon(
@@ -1553,33 +1901,41 @@ class _Hero extends StatelessWidget {
                                     size: 16),
                                 label: Text(_tr(context, 'contact_us'),
                                     style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.5)),
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.4)),
                                 style: FilledButton.styleFrom(
                                   backgroundColor: Colors.white,
                                   foregroundColor: navy,
+                                  elevation: 0,
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 24, vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(2)),
+                                      horizontal: 26, vertical: 16),
+                                  shape: const StadiumBorder(),
                                 ),
                               ),
-                              OutlinedButton.icon(
-                                onPressed: onDiscover,
-                                icon: const Icon(Icons.arrow_forward_rounded,
-                                    size: 16),
-                                label: Text(_tr(context, 'discover'),
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.5)),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  side: const BorderSide(
-                                      color: Colors.white, width: 1),
+                              _Tap(
+                                onTap: onDiscover,
+                                child: _Glass(
+                                  dark: true,
+                                  shadow: false,
+                                  blur: 10,
+                                  radius: BorderRadius.circular(999),
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 24, vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(2)),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.arrow_forward_rounded,
+                                          size: 16, color: Colors.white),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        _tr(context, 'discover'),
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 0.4),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
@@ -1592,6 +1948,73 @@ class _Hero extends StatelessWidget {
               ),
             ),
           ),
+          // Barre de chiffres clés en verre
+          if (stats.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 20,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _kMaxW),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _Glass(
+                      dark: true,
+                      blur: 18,
+                      radius: BorderRadius.circular(20),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 14),
+                      child: Row(
+                        children: [
+                          for (var i = 0; i < stats.length; i++) ...[
+                            if (i > 0)
+                              Container(
+                                  width: 1,
+                                  height: 36,
+                                  color: Colors.white.withValues(alpha: 0.18)),
+                            Expanded(
+                              child: TweenAnimationBuilder<double>(
+                                tween: Tween<double>(
+                                    begin: 0, end: stats[i].$1.toDouble()),
+                                duration: const Duration(milliseconds: 1400),
+                                curve: Curves.easeOutCubic,
+                                builder: (_, v, __) => Column(
+                                  children: [
+                                    Text(
+                                      _compact(v.round()),
+                                      style: const TextStyle(
+                                        fontSize: 26,
+                                        fontWeight: FontWeight.w300,
+                                        color: Colors.white,
+                                        letterSpacing: -1.0,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      stats[i].$2.toUpperCase(),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 1.4,
+                                        color: Colors.white
+                                            .withValues(alpha: 0.65),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1599,10 +2022,14 @@ class _Hero extends StatelessWidget {
 }
 
 class _HeroCarousel extends StatefulWidget {
-  const _HeroCarousel({required this.images, required this.colors});
+  const _HeroCarousel({
+    required this.images,
+    required this.colors,
+    this.indicatorBottom = 24,
+  });
   final List<String> images;
   final List<Color> colors;
-
+  final double indicatorBottom;
   @override
   State<_HeroCarousel> createState() => _HeroCarouselState();
 }
@@ -1662,7 +2089,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: 24,
+            bottom: widget.indicatorBottom,
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: _kMaxW),
@@ -1673,12 +2100,12 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                       for (var i = 0; i < imgs.length; i++)
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
-                          margin: const EdgeInsets.only(right: 8),
-                          width: i == _index ? 32 : 12,
-                          height: 2,
+                          margin: const EdgeInsets.only(right: 6),
+                          width: i == _index ? 26 : 10,
+                          height: 3,
                           decoration: BoxDecoration(
                             color: i == _index ? Colors.white : Colors.white38,
-                            borderRadius: BorderRadius.circular(1),
+                            borderRadius: BorderRadius.circular(2),
                           ),
                         ),
                     ],
@@ -1693,86 +2120,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chiffres clés
+// FICHE D'IDENTITÉ — carte glass, grille ALIGNÉE compacte
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _Figures extends StatelessWidget {
-  const _Figures({required this.bundle});
-  final BusinessBundle bundle;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final b = bundle.business;
-    final items = <(int, String)>[
-      if (b.ageYears != null && b.ageYears! > 0)
-        (b.ageYears!, _tr(context, 'years')),
-      if (b.employees != null && b.employees! > 0)
-        (b.employees!, _tr(context, 'staff')),
-      if ((bundle.stats?.views ?? 0) > 0)
-        (bundle.stats!.views, _tr(context, 'visits')),
-    ];
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(vertical: 64),
-      child: _Wrap(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Row(
-            children: [
-              for (var i = 0; i < items.length; i++) ...[
-                if (i > 0)
-                  Container(
-                      width: 1,
-                      height: 60,
-                      color: scheme.outlineVariant.withOpacity(0.5)),
-                Expanded(
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(
-                        begin: 0, end: items[i].$1.toDouble()),
-                    duration: const Duration(milliseconds: 1400),
-                    curve: Curves.easeOutCubic,
-                    builder: (_, v, __) => Column(
-                      children: [
-                        Text(
-                          _compact(v.round()),
-                          style: TextStyle(
-                            fontSize: 42,
-                            fontWeight: FontWeight.w300,
-                            color: scheme.onSurface,
-                            letterSpacing: -1.0,
-                            height: 1.0,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          items[i].$2.toUpperCase(),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 1.5,
-                              color: scheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FICHE D'IDENTITÉ (profil entreprise)
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _ProfileBlock extends StatelessWidget {
   const _ProfileBlock({required this.business});
   final Business business;
@@ -1786,7 +2135,6 @@ class _ProfileBlock extends StatelessWidget {
       if (b.city != null && b.city!.trim().isNotEmpty) b.city!.trim(),
       if (b.country.trim().isNotEmpty) _country(lang, b.country),
     ].join(', ');
-
     final rows = <(IconData, String, String, VoidCallback?)>[
       (Icons.apartment_rounded, _tr(context, 'f_name'), b.name, null),
       if (b.sector != null && b.sector!.trim().isNotEmpty)
@@ -1796,142 +2144,154 @@ class _ProfileBlock extends StatelessWidget {
       if (b.sinceYear != null)
         (Icons.event_rounded, _tr(context, 'f_since'), '${b.sinceYear}', null),
       if (b.employees != null)
-        (
-          Icons.groups_rounded,
-          _tr(context, 'f_staff'),
-          '${b.employees} ${_tr(context, 'staff')}',
-          null
-        ),
+        (Icons.groups_rounded, _tr(context, 'f_staff'),
+            '${b.employees} ${_tr(context, 'staff')}', null),
       if (b.website != null && b.website!.trim().isNotEmpty)
-        (
-          Icons.language_rounded,
-          _tr(context, 'f_web'),
-          b.website!,
-          () => _openUrl(b.website)
-        ),
+        (Icons.language_rounded, _tr(context, 'f_web'), b.website!,
+            () => _openUrl(b.website)),
       if (b.phone != null && b.phone!.trim().isNotEmpty)
-        (
-          Icons.phone_rounded,
-          _tr(context, 'f_phone'),
-          b.phone!,
-          () => _openTel(b.phone!)
-        ),
+        (Icons.phone_rounded, _tr(context, 'f_phone'), b.phone!,
+            () => _openTel(b.phone!)),
       if (b.email != null && b.email!.trim().isNotEmpty)
-        (
-          Icons.mail_rounded,
-          _tr(context, 'f_email'),
-          b.email!,
-          () => _openMail(b.email!)
-        ),
-      (
-        Icons.tag_rounded,
-        _tr(context, 'f_id'),
-        b.thixId,
-        () async {
-          await Clipboard.setData(ClipboardData(text: b.thixId));
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              behavior: SnackBarBehavior.floating,
-              content: Text('${_tr(context, 'copied')}${b.thixId}')));
-        }
-      ),
+        (Icons.mail_rounded, _tr(context, 'f_email'), b.email!,
+            () => _openMail(b.email!)),
+      (Icons.tag_rounded, _tr(context, 'f_id'), b.thixId, () async {
+        await Clipboard.setData(ClipboardData(text: b.thixId));
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text('${_tr(context, 'copied')}${b.thixId}')));
+      }),
       if (b.verified)
-        (
-          Icons.verified_rounded,
-          _tr(context, 'f_status'),
-          _tr(context, 'verified_status'),
-          null
-        ),
+        (Icons.verified_rounded, _tr(context, 'f_status'),
+            _tr(context, 'verified_status'), null),
     ];
-
     final desc = b.description?.trim() ?? '';
+
+    Widget colList(List<(IconData, String, String, VoidCallback?)> list) =>
+        Column(
+          children: [
+            for (var i = 0; i < list.length; i++)
+              _SpecRow(row: list[i], last: i == list.length - 1),
+          ],
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(context, _tr(context, 'identity')),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (desc.isNotEmpty) ...[
-              Text(_tr(context, 'overview').toUpperCase(),
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1.5,
-                      color: scheme.onSurfaceVariant)),
-              const SizedBox(height: 16),
-              _ExpandText(desc, maxLines: 4),
-              const SizedBox(height: 48),
-              Container(height: 1, color: scheme.outlineVariant.withOpacity(0.5)),
-              const SizedBox(height: 32),
+        _Glass(
+          radius: BorderRadius.circular(28),
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (desc.isNotEmpty) ...[
+                Text(_tr(context, 'overview').toUpperCase(),
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.6,
+                        color: scheme.onSurfaceVariant)),
+                const SizedBox(height: 12),
+                _ExpandText(desc, maxLines: 4),
+                const SizedBox(height: 20),
+                Container(height: 1, color: _hair(context)),
+                const SizedBox(height: 8),
+              ],
+              LayoutBuilder(
+                builder: (c, cs) {
+                  if (cs.maxWidth <= 720) return colList(rows);
+                  final half = (rows.length / 2).ceil();
+                  final colA = rows.take(half).toList();
+                  final colB = rows.skip(half).toList();
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: colList(colA)),
+                      const SizedBox(width: 40),
+                      Expanded(child: colList(colB)),
+                    ],
+                  );
+                },
+              ),
             ],
-            LayoutBuilder(
-              builder: (c, cs) {
-                final cols = cs.maxWidth > 720 ? 2 : 1;
-                const gap = 48.0;
-                final w = (cs.maxWidth - gap * (cols - 1)) / cols;
-                return Wrap(
-                  spacing: gap,
-                  runSpacing: 8,
-                  children: [
-                    for (final r in rows)
-                      SizedBox(width: w, child: _InfoRow(row: r)),
-                  ],
-                );
-              },
-            ),
-          ],
+          ),
         ),
       ],
     );
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.row});
+class _SpecRow extends StatelessWidget {
+  const _SpecRow({required this.row, required this.last});
   final (IconData, String, String, VoidCallback?) row;
+  final bool last;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final ok = row.$1 == Icons.verified_rounded;
-    final iconColor = ok ? const Color(0xFF16A34A) : scheme.onSurface;
     return _Tap(
       onTap: row.$4,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Column(
           children: [
-            Icon(row.$1, size: 20, color: iconColor),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(row.$2.toUpperCase(),
-                      style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2,
-                          color: scheme.onSurfaceVariant)),
-                  const SizedBox(height: 4),
-                  Text(row.$3,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: row.$4 != null && !ok
-                              ? scheme.primary
-                              : scheme.onSurface)),
-                ],
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: ok
+                        ? const Color(0xFF16A34A).withValues(alpha: 0.10)
+                        : scheme.primary.withValues(alpha: 0.08),
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.8)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    row.$1,
+                    size: 18,
+                    color: ok ? const Color(0xFF16A34A) : scheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(row.$2.toUpperCase(),
+                          style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.3,
+                              color: scheme.onSurfaceVariant)),
+                      const SizedBox(height: 3),
+                      Text(row.$3,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: row.$4 != null && !ok
+                                  ? scheme.primary
+                                  : scheme.onSurface)),
+                    ],
+                  ),
+                ),
+                if (row.$4 != null && !ok)
+                  Icon(Icons.arrow_outward_rounded,
+                      size: 15, color: scheme.onSurfaceVariant),
+              ],
             ),
-            if (row.$4 != null && !ok)
-              Icon(Icons.arrow_outward_rounded,
-                  size: 16, color: scheme.onSurfaceVariant),
+            if (!last)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Container(height: 1, color: _hair(context)),
+              ),
           ],
         ),
       ),
@@ -1940,16 +2300,15 @@ class _InfoRow extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Section horizontale (glisser gauche ↔ droite + flèches)
+// Section horizontale (glisser + flèches glass)
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _HSection extends StatefulWidget {
   const _HSection({
     required this.title,
     required this.height,
     required this.count,
     required this.builder,
-    this.gap = 32,
+    this.gap = 24,
   });
   final String title;
   final double height;
@@ -1963,7 +2322,6 @@ class _HSection extends StatefulWidget {
 
 class _HSectionState extends State<_HSection> {
   final ScrollController _c = ScrollController();
-
   @override
   void dispose() {
     _c.dispose();
@@ -1979,46 +2337,31 @@ class _HSectionState extends State<_HSection> {
         curve: Curves.easeOutCubic);
   }
 
-  Widget _arrow(BuildContext context, IconData icon, VoidCallback f) {
-    final scheme = Theme.of(context).colorScheme;
-    return _Tap(
-      onTap: f,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: scheme.outlineVariant, width: 1),
-        ),
-        child: Icon(icon, size: 20, color: scheme.onSurface),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final arrows = widget.count > 1
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _arrow(context, Icons.chevron_left_rounded, () => _go(-1)),
-              const SizedBox(width: 12),
-              _arrow(context, Icons.chevron_right_rounded, () => _go(1)),
+              _GlassIcon(
+                  icon: Icons.chevron_left_rounded, onTap: () => _go(-1)),
+              const SizedBox(width: 10),
+              _GlassIcon(
+                  icon: Icons.chevron_right_rounded, onTap: () => _go(1)),
             ],
           )
         : null;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(context, widget.title, trailing: arrows),
         SizedBox(
-          height: widget.height + 20,
+          height: widget.height + 24,
           child: ListView.separated(
             controller: _c,
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            padding: const EdgeInsets.symmetric(vertical: 12),
             itemCount: widget.count,
             separatorBuilder: (_, __) => SizedBox(width: widget.gap),
             itemBuilder: widget.builder,
@@ -2032,11 +2375,9 @@ class _HSectionState extends State<_HSection> {
 // ─────────────────────────────────────────────────────────────────────────────
 // RENDERER DE SECTIONS STANDARD
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _SectionRenderer extends StatelessWidget {
   const _SectionRenderer({required this.section});
   final BusinessSection section;
-
   @override
   Widget build(BuildContext context) {
     final content = section.content;
@@ -2065,20 +2406,18 @@ class _SectionRenderer extends StatelessWidget {
 class _AboutSection extends StatelessWidget {
   const _AboutSection({required this.content});
   final AboutContent content;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final url = content.imageUrl;
     final hasImage = url != null && url.isNotEmpty;
-
     final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(context, content.title),
         if (content.tagline != null && content.tagline!.trim().isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: 24),
+            padding: const EdgeInsets.only(bottom: 20),
             child: Text(
               content.tagline!,
               style: TextStyle(
@@ -2091,28 +2430,30 @@ class _AboutSection extends StatelessWidget {
           ),
         _ExpandText(content.body,
             maxLines: 7,
-            style: TextStyle(
-                fontSize: 16, height: 1.8, color: scheme.onSurface)),
+            style:
+                TextStyle(fontSize: 16, height: 1.8, color: scheme.onSurface)),
       ],
     );
-
     if (!hasImage) return text;
-
     return LayoutBuilder(
       builder: (context, cs) {
         final image = _Tap(
           onTap: () => _viewImage(context, url),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: _img(url),
+          child: _Glass(
+            padding: const EdgeInsets.all(8),
+            radius: BorderRadius.circular(24),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(height: 320, width: double.infinity, child: _img(url)),
+            ),
           ),
         );
         if (cs.maxWidth <= 760) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(height: 300, width: double.infinity, child: image),
-              const SizedBox(height: 40),
+              image,
+              const SizedBox(height: 36),
               text,
             ],
           );
@@ -2122,7 +2463,7 @@ class _AboutSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(width: imgW, child: image),
-            const SizedBox(width: 60),
+            const SizedBox(width: 56),
             Expanded(child: text),
           ],
         );
@@ -2135,66 +2476,85 @@ class _AboutSection extends StatelessWidget {
 class _ServicesSection extends StatelessWidget {
   const _ServicesSection({required this.content});
   final ServicesContent content;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return _HSection(
       title: content.title,
-      height: 360,
+      height: 350,
       count: content.items.length,
-      gap: 40,
       builder: (ctx, i) {
         final s = content.items[i];
         final hasImg = s.imageUrl != null && s.imageUrl!.isNotEmpty;
         void more() => _showDetail(ctx,
-            title: s.title,
-            image: s.imageUrl,
-            chip: s.price,
-            text: s.description);
-        return SizedBox(
-          width: 280,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                height: 180,
-                width: double.infinity,
-                child: hasImg
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: _img(s.imageUrl!))
-                    : ColoredBox(
-                        color: scheme.surfaceContainerHighest,
-                        child: Icon(Icons.business_center_rounded,
-                            size: 40, color: scheme.onSurfaceVariant),
-                      ),
-              ),
-              const SizedBox(height: 20),
-              Text(s.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 18,
-                      letterSpacing: -0.3)),
-              const SizedBox(height: 8),
-              if (s.description != null &&
-                  s.description!.trim().isNotEmpty)
-                _ClampText(s.description!,
-                    maxLines: 3,
-                    onMore: more,
-                    style: TextStyle(
-                        height: 1.6, color: scheme.onSurfaceVariant)),
-              const Spacer(),
-              if (s.price != null && s.price!.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(s.price!,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, color: scheme.primary)),
+            title: s.title, image: s.imageUrl, chip: s.price, text: s.description);
+        return _Glass(
+          radius: BorderRadius.circular(22),
+          padding: const EdgeInsets.all(10),
+          child: SizedBox(
+            width: 292,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: 170,
+                    width: double.infinity,
+                    child: hasImg
+                        ? _img(s.imageUrl!)
+                        : ColoredBox(
+                            color: scheme.surfaceContainerHighest,
+                            child: Icon(Icons.business_center_rounded,
+                                size: 38, color: scheme.onSurfaceVariant),
+                          ),
+                  ),
                 ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 16, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(s.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              letterSpacing: -0.3)),
+                      const SizedBox(height: 8),
+                      if (s.description != null &&
+                          s.description!.trim().isNotEmpty)
+                        _ClampText(s.description!,
+                            maxLines: 3,
+                            onMore: more,
+                            style: TextStyle(
+                                height: 1.6,
+                                fontSize: 13.5,
+                                color: scheme.onSurfaceVariant)),
+                      const Spacer(),
+                      if (s.price != null && s.price!.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _accent(ctx).withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(s.price!,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                    color: scheme.primary)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -2206,14 +2566,13 @@ class _ServicesSection extends StatelessWidget {
 class _ProductsSection extends StatelessWidget {
   const _ProductsSection({required this.content});
   final ProductsContent content;
-
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return _HSection(
       title: content.title,
-      height: 380,
+      height: 370,
       count: content.items.length,
-      gap: 40,
       builder: (ctx, i) {
         final p = content.items[i];
         void more() => _showDetail(ctx,
@@ -2222,50 +2581,62 @@ class _ProductsSection extends StatelessWidget {
             chip: p.price,
             text: p.description,
             url: p.url);
-        return SizedBox(
-          width: 250,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: (p.imageUrl == null || p.imageUrl!.isEmpty)
-                      ? const _ImgFallback()
-                      : ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: _Tap(onTap: more, child: _img(p.imageUrl!)),
+        return _Glass(
+          radius: BorderRadius.circular(22),
+          padding: const EdgeInsets.all(10),
+          child: SizedBox(
+            width: 252,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: 190,
+                    width: double.infinity,
+                    child: (p.imageUrl == null || p.imageUrl!.isEmpty)
+                        ? const _ImgFallback()
+                        : _Tap(onTap: more, child: _img(p.imageUrl!)),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 14, 8, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(p.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15.5,
+                              letterSpacing: -0.2)),
+                      if (p.price != null && p.price!.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(p.price!,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: scheme.primary)),
                         ),
+                      if (p.description != null &&
+                          p.description!.trim().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: _ClampText(p.description!,
+                              maxLines: 2,
+                              onMore: more,
+                              style: TextStyle(
+                                  height: 1.6,
+                                  fontSize: 13,
+                                  color: scheme.onSurfaceVariant)),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text(p.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                      letterSpacing: -0.2)),
-              if (p.price != null && p.price!.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(p.price!,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(ctx).colorScheme.primary)),
-                ),
-              if (p.description != null &&
-                  p.description!.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _ClampText(p.description!,
-                      maxLines: 2,
-                      onMore: more,
-                      style: TextStyle(
-                          height: 1.6,
-                          color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -2277,50 +2648,53 @@ class _ProductsSection extends StatelessWidget {
 class _GallerySection extends StatelessWidget {
   const _GallerySection({required this.content});
   final GalleryContent content;
-
   @override
   Widget build(BuildContext context) {
     return _HSection(
       title: content.title,
-      height: 260,
+      height: 268,
       count: content.images.length,
-      gap: 16,
+      gap: 18,
       builder: (ctx, i) {
         final img = content.images[i];
-        return SizedBox(
-          width: 360,
-          child: _Tap(
-            onTap: () => _viewImage(ctx, img.url),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _img(img.url),
-                  if (img.caption != null && img.caption!.isNotEmpty)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Colors.black87],
+        return _Glass(
+          radius: BorderRadius.circular(22),
+          padding: const EdgeInsets.all(8),
+          child: SizedBox(
+            width: 356,
+            child: _Tap(
+              onTap: () => _viewImage(ctx, img.url),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _img(img.url),
+                    if (img.caption != null && img.caption!.isNotEmpty)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(16, 28, 16, 14),
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.transparent, Colors.black87],
+                            ),
                           ),
+                          child: Text(img.caption!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13.5)),
                         ),
-                        child: Text(img.caption!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 14)),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -2334,54 +2708,56 @@ class _GallerySection extends StatelessWidget {
 class _TeamSection extends StatelessWidget {
   const _TeamSection({required this.content});
   final TeamContent content;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return _HSection(
       title: content.title,
-      height: 280,
+      height: 288,
       count: content.members.length,
-      gap: 40,
       builder: (ctx, i) {
         final m = content.members[i];
         final hasBio = m.bio != null && m.bio!.trim().isNotEmpty;
         void more() => _showDetail(ctx,
             title: m.name, subtitle: m.role, image: m.photoUrl, text: m.bio);
-        return SizedBox(
-          width: 220,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _Avatar(
-                  url: m.photoUrl,
-                  name: m.name,
-                  radius: 48,
-                  ring: scheme.primary),
-              const SizedBox(height: 20),
-              Text(m.name,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600, fontSize: 16)),
-              if (m.role != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(m.role!,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 13, color: scheme.onSurfaceVariant)),
-                ),
-              if (hasBio)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: _MoreLink(
-                      label: _tr(ctx, 'view_profile'), onTap: more),
-                ),
-            ],
+        return _Glass(
+          radius: BorderRadius.circular(22),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: SizedBox(
+            width: 224,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _Avatar(
+                    url: m.photoUrl,
+                    name: m.name,
+                    radius: 46,
+                    ring: _accent(ctx)),
+                const SizedBox(height: 18),
+                Text(m.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 15.5)),
+                if (m.role != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(m.role!,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                  ),
+                if (hasBio)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: _MoreLink(
+                        label: _tr(ctx, 'view_profile'), onTap: more),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -2393,16 +2769,14 @@ class _TeamSection extends StatelessWidget {
 class _NewsSection extends StatelessWidget {
   const _NewsSection({required this.content});
   final NewsContent content;
-
   @override
   Widget build(BuildContext context) {
     final lang = _LangScope.of(context);
     final scheme = Theme.of(context).colorScheme;
     return _HSection(
       title: content.title,
-      height: 420,
+      height: 410,
       count: content.posts.length,
-      gap: 40,
       builder: (ctx, i) {
         final p = content.posts[i];
         final hasImg = p.imageUrl != null && p.imageUrl!.isNotEmpty;
@@ -2416,74 +2790,87 @@ class _NewsSection extends StatelessWidget {
             text: p.excerpt,
             url: p.url,
             urlLabel: _tr(ctx, 'read_full'));
-        return SizedBox(
-          width: 340,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (hasImg)
-                Stack(
-                  children: [
-                    SizedBox(
-                      height: 200,
-                      width: double.infinity,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: _Tap(onTap: more, child: _img(p.imageUrl!)),
+        return _Glass(
+          radius: BorderRadius.circular(22),
+          padding: const EdgeInsets.all(10),
+          child: SizedBox(
+            width: 336,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (hasImg)
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          height: 190,
+                          width: double.infinity,
+                          child: _Tap(onTap: more, child: _img(p.imageUrl!)),
+                        ),
                       ),
-                    ),
-                    if (date != null)
-                      Positioned(
-                        left: 16,
-                        top: 16,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.95),
-                            borderRadius: BorderRadius.circular(2),
+                      if (date != null)
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: _Glass(
+                            dark: true,
+                            shadow: false,
+                            blur: 8,
+                            radius: BorderRadius.circular(999),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            child: Text(date.toUpperCase(),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1.0)),
                           ),
+                        ),
+                    ],
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (date != null && !hasImg)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
                           child: Text(date.toUpperCase(),
                               style: TextStyle(
-                                  color: scheme.onSurface,
-                                  fontSize: 10,
+                                  fontSize: 10.5,
+                                  color: scheme.onSurfaceVariant,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.0)),
                         ),
-                      ),
-                  ],
+                      Text(p.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              letterSpacing: -0.3,
+                              height: 1.3)),
+                      const SizedBox(height: 10),
+                      if (hasText)
+                        _ClampText(p.excerpt!,
+                                   maxLines: 3,
+                            onMore: more,
+                            showLink: false,
+                            style: TextStyle(
+                                height: 1.6,
+                                fontSize: 13.5,
+                                color: scheme.onSurfaceVariant)),
+                      const Spacer(),
+                      if (hasText || (p.url != null && p.url!.isNotEmpty))
+                        _MoreLink(label: _tr(ctx, 'read_full'), onTap: more),
+                    ],
+                  ),
                 ),
-              const SizedBox(height: 20),
-              if (date != null && !hasImg)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(date.toUpperCase(),
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.0)),
-                ),
-              Text(p.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 18,
-                      letterSpacing: -0.3,
-                      height: 1.3)),
-              const SizedBox(height: 12),
-              if (hasText)
-                _ClampText(p.excerpt!,
-                    maxLines: 3,
-                    onMore: more,
-                    showLink: false,
-                    style: TextStyle(
-                        height: 1.6, color: scheme.onSurfaceVariant)),
-              const Spacer(),
-              if (hasText || (p.url != null && p.url!.isNotEmpty))
-                _MoreLink(label: _tr(ctx, 'read_full'), onTap: more),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -2495,77 +2882,80 @@ class _NewsSection extends StatelessWidget {
 class _TestimonialsSection extends StatelessWidget {
   const _TestimonialsSection({required this.content});
   final TestimonialsContent content;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return _HSection(
       title: content.title,
-      height: 300,
+      height: 308,
       count: content.items.length,
-      gap: 48,
+      gap: 28,
       builder: (ctx, idx) {
         final t = content.items[idx];
         void more() => _showDetail(ctx,
             title: t.author ?? '', subtitle: t.role, text: t.quote);
-        return SizedBox(
-          width: 380,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.format_quote_rounded,
-                  color: _accent(ctx), size: 32),
-              const SizedBox(height: 16),
-              _ClampText(
-                t.quote,
-                maxLines: 5,
-                onMore: more,
-                style: Theme.of(ctx)
-                    .textTheme
-                    .bodyLarge
-                    ?.copyWith(height: 1.6, fontStyle: FontStyle.italic),
-              ),
-              const Spacer(),
-              Divider(height: 32, color: scheme.outlineVariant),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (t.author != null)
-                          Text(t.author!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 14)),
-                        if (t.role != null)
-                          Text(t.role!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: scheme.onSurfaceVariant)),
-                      ],
+        return _Glass(
+          radius: BorderRadius.circular(22),
+          padding: const EdgeInsets.all(26),
+          child: SizedBox(
+            width: 376,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.format_quote_rounded,
+                    color: _accent(ctx), size: 30),
+                const SizedBox(height: 14),
+                _ClampText(
+                  t.quote,
+                  maxLines: 5,
+                  onMore: more,
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(height: 1.6, fontStyle: FontStyle.italic),
+                ),
+                const Spacer(),
+                Divider(height: 28, color: _hair(ctx)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (t.author != null)
+                            Text(t.author!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 14)),
+                          if (t.role != null)
+                            Text(t.role!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (t.rating != null)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var i = 0; i < 5; i++)
-                          Icon(
-                            i < t.rating!
-                                ? Icons.star_rounded
-                                : Icons.star_border_rounded,
-                            size: 16,
-                            color: _accent(ctx),
-                          ),
-                      ],
-                    ),
-                ],
-              ),
-            ],
+                    if (t.rating != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < 5; i++)
+                            Icon(
+                              i < t.rating!
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              size: 15,
+                              color: _accent(ctx),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -2592,49 +2982,66 @@ IconData _contactIcon(ContactChannelType type) {
 }
 
 class _ContactTile extends StatelessWidget {
-  const _ContactTile({required this.channel});
+  const _ContactTile({required this.channel, this.last = false});
   final ContactChannel channel;
+  final bool last;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final c = channel;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: () async {
-          final uri = c.launchUri;
-          if (uri != null) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-          child: Row(
-            children: [
-              Icon(_contactIcon(c.type), size: 20, color: scheme.onSurface),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(c.label ?? c.type.name,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 14)),
-                    const SizedBox(height: 4),
-                    Text(c.value,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 13, color: scheme.onSurfaceVariant)),
-                  ],
+    return _Tap(
+      onTap: () async {
+        final uri = c.launchUri;
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.08),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.8)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(_contactIcon(c.type),
+                      size: 18, color: scheme.primary),
                 ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(c.label ?? c.type.name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13.5)),
+                      const SizedBox(height: 3),
+                      Text(c.value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_outward_rounded,
+                    size: 16, color: scheme.onSurfaceVariant),
+              ],
+            ),
+            if (!last)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Container(height: 1, color: _hair(context)),
               ),
-              Icon(Icons.arrow_outward_rounded,
-                  size: 18, color: scheme.onSurfaceVariant),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -2644,17 +3051,24 @@ class _ContactTile extends StatelessWidget {
 class _ContactSection extends StatelessWidget {
   const _ContactSection({required this.content});
   final ContactContent content;
-
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(context, content.title),
-        Column(
-          children: [
-            for (final c in content.channels) _ContactTile(channel: c),
-          ],
+        _Glass(
+          radius: BorderRadius.circular(24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Column(
+            children: [
+              for (var i = 0; i < content.channels.length; i++)
+                _ContactTile(
+                  channel: content.channels[i],
+                  last: i == content.channels.length - 1,
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -2662,15 +3076,13 @@ class _ContactSection extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10 RUBRIQUES AVANCÉES (photos + vidéos)
+// 10 RUBRIQUES AVANCÉES (photos + vidéos) — cartes glass
 // ─────────────────────────────────────────────────────────────────────────────
-
 String _v(Map<String, String> m, String k) => (m[k] ?? '').trim();
 
 class _ExtraSection extends StatelessWidget {
   const _ExtraSection({required this.extra});
   final BizExtra extra;
-
   @override
   Widget build(BuildContext context) {
     final spec = kBizKindByKey[extra.kind];
@@ -2680,30 +3092,28 @@ class _ExtraSection extends StatelessWidget {
         .where((i) => (i['title'] ?? '').trim().isNotEmpty)
         .toList();
     if (items.isEmpty) return const SizedBox.shrink();
-
     final custom = extra.title?.trim() ?? '';
     final title =
         custom.isNotEmpty ? custom : (lang == 'en' ? spec.en : spec.fr);
-
     switch (spec.layout) {
       case BizLayout.logo:
         return _HSection(
           title: title,
-          height: 150,
+          height: 168,
           count: items.length,
           builder: (_, i) => _LogoCard(item: items[i]),
         );
       case BizLayout.steps:
         return _HSection(
           title: title,
-          height: 340,
+          height: 330,
           count: items.length,
           builder: (_, i) => _StepCard(item: items[i], number: i + 1),
         );
       case BizLayout.standard:
         return _HSection(
           title: title,
-          height: 450,
+          height: 440,
           count: items.length,
           builder: (_, i) => _StdCard(item: items[i], kind: spec.key),
         );
@@ -2714,41 +3124,44 @@ class _ExtraSection extends StatelessWidget {
 class _LogoCard extends StatelessWidget {
   const _LogoCard({required this.item});
   final Map<String, String> item;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final img = _v(item, 'image');
     final sub = _v(item, 'subtitle');
     final link = _v(item, 'link');
-    return SizedBox(
-      width: 180,
-      child: _Tap(
-        onTap: link.isEmpty ? null : () => _openUrl(link),
-        child: Column(
-          children: [
-            Expanded(
-              child: img.isEmpty
-                  ? Icon(Icons.business_rounded,
-                      size: 40, color: scheme.primary)
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: _img(img, fit: BoxFit.contain)),
-            ),
-            const SizedBox(height: 16),
-            Text(_v(item, 'title'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 13)),
-            if (sub.isNotEmpty)
-              Text(sub,
+    return _Glass(
+      radius: BorderRadius.circular(18),
+      padding: const EdgeInsets.all(12),
+      child: SizedBox(
+        width: 176,
+        child: _Tap(
+          onTap: link.isEmpty ? null : () => _openUrl(link),
+          child: Column(
+            children: [
+              Expanded(
+                child: img.isEmpty
+                    ? Icon(Icons.business_rounded,
+                        size: 38, color: scheme.primary)
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: _img(img, fit: BoxFit.contain)),
+              ),
+              const SizedBox(height: 12),
+              Text(_v(item, 'title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant)),
-          ],
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 12.5)),
+              if (sub.isNotEmpty)
+                Text(sub,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 10.5, color: scheme.onSurfaceVariant)),
+            ],
+          ),
         ),
       ),
     );
@@ -2759,7 +3172,6 @@ class _StepCard extends StatelessWidget {
   const _StepCard({required this.item, required this.number});
   final Map<String, String> item;
   final int number;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -2768,56 +3180,62 @@ class _StepCard extends StatelessWidget {
     void more() => _showDetail(context,
         title: _v(item, 'title'),
         image: img,
-        chip: '${_tr(context, 'f_since') == '' ? '' : ''}$number',
+        chip: '${_tr(context, 'step')} $number',
         text: text);
-    return SizedBox(
-      width: 290,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (img.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: SizedBox(
-                  height: 140, width: double.infinity, child: _img(img)),
-            ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  border: Border.all(color: scheme.outlineVariant, width: 1),
-                  shape: BoxShape.circle,
+    return _Glass(
+      radius: BorderRadius.circular(22),
+      padding: const EdgeInsets.all(18),
+      child: SizedBox(
+        width: 288,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (img.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox(
+                    height: 130, width: double.infinity, child: _img(img)),
+              ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _accent(context).withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text('$number',
+                      style: TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14)),
                 ),
-                child: Text('$number',
-                    style: TextStyle(
-                        color: scheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14)),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(_v(item, 'title'),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        letterSpacing: -0.2)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (text.isNotEmpty)
-            _ClampText(text,
-                maxLines: 4,
-                onMore: more,
-                style: TextStyle(
-                    height: 1.6, color: scheme.onSurfaceVariant)),
-        ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(_v(item, 'title'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15.5,
+                          letterSpacing: -0.2)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (text.isNotEmpty)
+              _ClampText(text,
+                  maxLines: 4,
+                  onMore: more,
+                  style: TextStyle(
+                      height: 1.6,
+                      fontSize: 13.5,
+                      color: scheme.onSurfaceVariant)),
+          ],
+        ),
       ),
     );
   }
@@ -2827,7 +3245,6 @@ class _StdCard extends StatelessWidget {
   const _StdCard({required this.item, required this.kind});
   final Map<String, String> item;
   final String kind;
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -2838,7 +3255,6 @@ class _StdCard extends StatelessWidget {
     final text = _v(item, 'text');
     final link = _v(item, 'link');
     final isVideoKind = kind == 'videos';
-    final isPricing = kind == 'pricing';
     final ctaLabel =
         kind == 'careers' ? _tr(context, 'apply') : _tr(context, 'learn_more');
     final target = link.isNotEmpty ? link : video;
@@ -2853,116 +3269,127 @@ class _StdCard extends StatelessWidget {
         text: text,
         url: target,
         urlLabel: targetLabel);
-    return SizedBox(
-      width: 300,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 180,
-            width: double.infinity,
-            child: _Tap(
-              onTap: () {
-                if (video.isNotEmpty) {
-                  _openUrl(video);
-                } else if (img.isNotEmpty) {
-                  _viewImage(context, img);
-                }
-              },
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (img.isNotEmpty)
-                      _img(img)
-                    else
-                      ColoredBox(
-                        color: scheme.surfaceContainerHighest,
-                        child: Icon(
+    return _Glass(
+      radius: BorderRadius.circular(22),
+      padding: const EdgeInsets.all(10),
+      child: SizedBox(
+        width: 296,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 172,
+              width: double.infinity,
+              child: _Tap(
+                onTap: () {
+                  if (video.isNotEmpty) {
+                    _openUrl(video);
+                  } else if (img.isNotEmpty) {
+                    _viewImage(context, img);
+                  }
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (img.isNotEmpty)
+                        _img(img)
+                      else
+                        ColoredBox(
+                          color: scheme.surfaceContainerHighest,
+                          child: Icon(
                             video.isNotEmpty
                                 ? Icons.movie_creation_outlined
                                 : kBizKindByKey[kind]?.icon ??
                                     Icons.image_outlined,
-                            size: 38,
+                            size: 36,
                             color: scheme.onSurfaceVariant),
-                      ),
-                    if (video.isNotEmpty)
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.9),
-                              shape: BoxShape.circle),
-                          child: Icon(Icons.play_arrow_rounded,
-                              color: scheme.onSurface, size: 28),
                         ),
-                      ),
-                  ],
+                      if (video.isNotEmpty)
+                        Center(
+                          child: _Glass(
+                            shadow: false,
+                            blur: 8,
+                            radius: BorderRadius.circular(999),
+                            padding: const EdgeInsets.all(10),
+                            child: Icon(Icons.play_arrow_rounded,
+                                color: scheme.onSurface, size: 26),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Text(_v(item, 'title'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 17,
-                  letterSpacing: -0.3)),
-          if (sub.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(sub,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 13, color: scheme.onSurfaceVariant)),
+              padding: const EdgeInsets.fromLTRB(8, 14, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_v(item, 'title'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          letterSpacing: -0.3)),
+                  if (sub.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(sub,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                    ),
+                  if (meta.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(meta.toUpperCase(),
+                          style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                              color: scheme.primary)),
+                    ),
+                  if (text.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: _ClampText(text,
+                          maxLines: 3,
+                          onMore: more,
+                          style: TextStyle(
+                              height: 1.6,
+                              fontSize: 13.5,
+                              color: scheme.onSurfaceVariant)),
+                    ),
+                  const Spacer(),
+                  if (target.isNotEmpty || (isVideoKind && video.isNotEmpty))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _MoreLink(
+                          label: targetLabel, onTap: () => _openUrl(target)),
+                    ),
+                ],
+              ),
             ),
-          if (meta.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(meta.toUpperCase(),
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: scheme.primary)),
-            ),
-          if (text.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: _ClampText(text,
-                  maxLines: 3,
-                  onMore: more,
-                  style: TextStyle(
-                      height: 1.6, color: scheme.onSurfaceVariant)),
-            ),
-          const Spacer(),
-          if (target.isNotEmpty || (isVideoKind && video.isNotEmpty))
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: _MoreLink(
-                  label: targetLabel, onTap: () => _openUrl(target)),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FOOTER
+// FOOTER COMPACT (une seule bande navy)
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _Footer extends StatelessWidget {
   const _Footer({
     required this.bundle,
     required this.links,
     required this.onTop,
   });
-
   final BusinessBundle bundle;
   final List<(String, VoidCallback)> links;
   final VoidCallback onTop;
@@ -2971,115 +3398,95 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = bundle.theme;
     final b = bundle.business;
-    final navy = Color.lerp(theme.primary, Colors.black, 0.75)!;
+    final navy = Color.lerp(theme.primary, Colors.black, 0.72)!;
+    final accent = theme.accent ?? const Color(0xFFD9A441);
     final lang = _LangScope.of(context);
 
-    Widget colTitle(String s) => Padding(
-          padding: const EdgeInsets.only(bottom: 24),
-          child: Text(s.toUpperCase(),
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5)),
-        );
-
-    final where = [
-      if (b.city != null && b.city!.trim().isNotEmpty) b.city!.trim(),
-      if (b.country.trim().isNotEmpty) _country(lang, b.country),
-    ].join(', ');
-
-    Widget contactRow(IconData icon, String text, VoidCallback? onTap) =>
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _Tap(
-            onTap: onTap,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon, size: 16, color: Colors.white70),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(text,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 13.5)),
-                ),
-              ],
-            ),
-          ),
-        );
-
-    final brand = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final brand = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            _Avatar(url: b.logoUrl, name: b.name, radius: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(b.name,
-                  maxLines: 2,
+        _Avatar(url: b.logoUrl, name: b.name, radius: 18, ring: accent),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(b.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16)),
+                  ),
+                  if (b.verified) ...[
+                    const SizedBox(width: 6),
+                    const Icon(Icons.verified_rounded,
+                        size: 14, color: Color(0xFF22C55E)),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(b.thixId,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 18)),
-            ),
-          ],
-        ),
-        if (b.claim != null && b.claim!.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: Text(b.claim!,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.72),
-                    fontSize: 13.5,
-                    height: 1.5)),
-          ),
-        const SizedBox(height: 24),
-        SelectableText(
-          b.thixId,
-          style: TextStyle(
-              color: theme.accent,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-              fontSize: 13),
-        ),
-      ],
-    );
-
-    final nav = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        colTitle(_tr(context, 'nav')),
-        for (final l in links.take(9))
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _Tap(
-              onTap: l.$2,
-              child: Text(l.$1,
                   style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w400)),
-            ),
+                      color: accent,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4,
+                      fontSize: 11)),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final nav = Wrap(
+      spacing: 18,
+      runSpacing: 10,
+      children: [
+        for (final l in links.take(8))
+          _Tap(
+            onTap: l.$2,
+            child: Text(l.$1,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500)),
           ),
       ],
     );
 
-    final contact = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final contactIcons = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        colTitle(_tr(context, 'contact_info')),
-        if (where.isNotEmpty) contactRow(Icons.place_rounded, where, null),
-        if (b.phone != null && b.phone!.trim().isNotEmpty)
-          contactRow(Icons.phone_rounded, b.phone!, () => _openTel(b.phone!)),
-        if (b.email != null && b.email!.trim().isNotEmpty)
-          contactRow(Icons.mail_rounded, b.email!, () => _openMail(b.email!)),
+        if (b.phone != null && b.phone!.trim().isNotEmpty) ...[
+          _GlassIcon(
+              dark: true,
+              size: 38,
+              icon: Icons.phone_rounded,
+              onTap: () => _openTel(b.phone!)),
+          const SizedBox(width: 10),
+        ],
+        if (b.email != null && b.email!.trim().isNotEmpty) ...[
+          _GlassIcon(
+              dark: true,
+              size: 38,
+              icon: Icons.mail_rounded,
+              onTap: () => _openMail(b.email!)),
+          const SizedBox(width: 10),
+        ],
         if (b.website != null && b.website!.trim().isNotEmpty)
-          contactRow(
-              Icons.language_rounded, b.website!, () => _openUrl(b.website)),
+          _GlassIcon(
+              dark: true,
+              size: 38,
+              icon: Icons.language_rounded,
+              onTap: () => _openUrl(b.website)),
       ],
     );
 
@@ -3088,24 +3495,24 @@ class _Footer extends StatelessWidget {
       color: navy,
       child: Column(
         children: [
-          Container(height: 2, color: theme.accent),
+          Container(height: 2, color: accent),
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 64, 24, 96),
+            padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),
             child: _Wrap(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   LayoutBuilder(
                     builder: (c, cs) {
-                      if (cs.maxWidth > 760) {
+                      if (cs.maxWidth > 860) {
                         return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Expanded(flex: 4, child: brand),
-                            const SizedBox(width: 48),
-                            Expanded(flex: 3, child: nav),
-                            const SizedBox(width: 48),
-                            Expanded(flex: 4, child: contact),
+                            const SizedBox(width: 32),
+                            Expanded(flex: 5, child: nav),
+                            const SizedBox(width: 32),
+                            contactIcons,
                           ],
                         );
                       }
@@ -3113,69 +3520,49 @@ class _Footer extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           brand,
-                          const SizedBox(height: 40),
+                          const SizedBox(height: 24),
                           nav,
-                          const SizedBox(height: 40),
-                          contact,
+                          const SizedBox(height: 24),
+                          contactIcons,
                         ],
                       );
                     },
                   ),
-                  const SizedBox(height: 48),
-                  const Divider(color: Colors.white12, height: 1),
                   const SizedBox(height: 24),
+                  Container(height: 1, color: Colors.white12),
+                  const SizedBox(height: 16),
                   Wrap(
                     alignment: WrapAlignment.spaceBetween,
                     crossAxisAlignment: WrapCrossAlignment.center,
-                    runSpacing: 16,
+                    runSpacing: 12,
                     spacing: 16,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '© ${DateTime.now().year} ${b.name}. ${_tr(context, 'rights')}',
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.65),
-                                fontSize: 12),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.verified_rounded,
-                                  size: 13,
-                                  color: Colors.white.withValues(alpha: 0.65)),
-                              const SizedBox(width: 8),
-                              Text(
-                                _tr(context, 'powered'),
-                                style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.65),
-                                    fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ],
+                      Text(
+                        '© ${DateTime.now().year} ${b.name}. ${_t(lang, 'rights')} · ${_t(lang, 'powered')}',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 11),
                       ),
                       _Tap(
                         onTap: onTop,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
+                              horizontal: 14, vertical: 8),
                           decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(2),
-                              border: Border.all(color: Colors.white24)),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white24),
+                          ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(Icons.arrow_upward_rounded,
-                                  size: 16, color: Colors.white),
-                              const SizedBox(width: 8),
+                                  size: 14, color: Colors.white),
+                              const SizedBox(width: 6),
                               Text(_tr(context, 'top'),
                                   style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
                                       letterSpacing: 1.0)),
                             ],
                           ),
@@ -3196,14 +3583,12 @@ class _Footer extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // Extension Theme (style + radius + accent)
 // ─────────────────────────────────────────────────────────────────────────────
-
 class BusinessThemeExt extends ThemeExtension<BusinessThemeExt> {
   const BusinessThemeExt({
     required this.style,
     required this.radius,
     this.accent,
   });
-
   final BusinessAnimationStyle style;
   final BorderRadius radius;
   final Color? accent;
