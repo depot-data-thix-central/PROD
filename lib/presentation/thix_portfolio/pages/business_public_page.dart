@@ -3,25 +3,17 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 9.1.0 — Novembre 2026 (V9 Institutionnel Startup — photos horizontales partout)
+//  Version  : 9.1.1 — Novembre 2026 (V9.1 + correctifs mockup & syntaxe)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  ✅ v9.1 — REVirement 360° « INSTITUTIONNEL STARTUP » + PHOTOS HORIZONTALES :
-  • Glassflou x2 SEULEMENT : pill hero + barre stats glass. Tout le reste MAT.
-  • IDENTITÉ désalignée éditoriale (lecture en Z, retraits 0/18px), THIX ID navy+or.
-  • HERO : pill glass Kinshasa, titre bi-color, CTA or + outline, dots.
-  • ÉQUIPE / SERVICES / PRODUITS / NEWS / TÉMOIGNAGES / EXTRAS : TOUS en
-    LIGNES HORIZONTALES avec PHOTO à gauche (72-96px, coins 16-18).
-    Si un item n'a pas de photo, photo de repli Unsplash par index.
-  • ÉQUIPE : bandeau photos horizontal scroll + lignes photo + nom + rôle + in.
-  • SERVICES : photo gauche + titre + desc + n° 01-05 + flèche, dépliable.
-  • À PROPOS : photo avec cadre or décalé + stats en ligne texte.
-  • GALERIE : 1 grande + scroll horizontal.
-  • FOOTER ULTRA-COMPACT -60% : 1 seule ligne, plus de QR géant.
-  • CTA compact horizontal (texte gauche, bouton or droite).
-  • Même API, mêmes modèles, mêmes providers, FR/EN, QR, partage conservés.
-//  ✅ Même API publique : BusinessPublicPage(bundle), BusinessPublicPage.fromId(id)
-//  ✅ FR/EN, QR, partage, contact, 10 rubriques, images robustes — conservés.
+//  ✅ v9.1.1 — CORRECTIFS :
+//  • FIX 1 : _GallerySectionState._next() → .toDouble() sur clamp()
+//  • FIX 2 : _AboutSection → null-safety sur imageUrl + suppression mockup 7/120/12
+//  • FIX 3 : _HeroStatsGlass → stats RÉELLES uniquement (plus de '120+'/'45')
+//  • FIX 4 : _TeamRow → suppression bouton "in" factice, chevron si bio existe
+//  • FIX 5 : _TestimonialRow → rating défensif (try/catch)
+//  • FIX 6 : Suppression de _ServiceCard (dead code)
+//  • NEW   : _AboutRealStats — stats calculées depuis le contenu réel
 // ════════════════════════════════════════════════════════════════════════════
 import 'dart:async';
 import 'dart:math' as math;
@@ -279,7 +271,6 @@ String _country(String lang, String code) {
   return lang == 'fr' ? v.$1 : v.$2;
 }
 
-
 // ── V9.1 : PHOTOS HORIZONTALES — helpers ──
 /// Photos de repli (Unsplash) quand un item n'a pas d'image propre.
 /// Garantit que SERVICES / ÉQUIPE / PRODUITS / EXTRAS affichent TOUJOURS une photo.
@@ -327,7 +318,6 @@ class _PhotoThumb extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               _img(photo),
-              // voile léger pour que la photo reste lisible même si claire
               Container(color: Colors.black.withValues(alpha: 0.04)),
               if (icon != null)
                 Center(
@@ -345,7 +335,7 @@ class _PhotoThumb extends StatelessWidget {
   }
 }
 
-/// Bandeau photos horizontal (scroll) : utilisé en tête de ÉQUIPE / SERVICES / GALERIE.
+/// Bandeau photos horizontal (scroll).
 class _HorizontalPhotoStrip extends StatelessWidget {
   const _HorizontalPhotoStrip({required this.urls, this.height = 96});
   final List<String> urls;
@@ -807,7 +797,6 @@ Widget _secHead(
   String? number,
 }) {
   final scheme = Theme.of(context).colorScheme;
-  // Eyebrow par défaut déduit du titre si non fourni — ex: "01 — PROFIL"
   final eyebrowText = eyebrow ?? _eyebrowFor(title);
   return Padding(
     padding: const EdgeInsets.only(bottom: 20),
@@ -847,7 +836,7 @@ Widget _secHead(
   );
 }
 
-/// Eyebrow éditorial : 01 PROFIL, 02 À PROPOS, 03 EXPERTISES...
+/// Eyebrow éditorial.
 String _eyebrowFor(String title) {
   final t = title.trim().toLowerCase();
   if (t.contains('propos') || t.contains('about')) return '02 — À propos';
@@ -859,7 +848,6 @@ String _eyebrowFor(String title) {
   if (t.contains('témoignage') || t.contains('temoignage') || t.contains('avis')) return '07 — Ils nous font confiance';
   return '';
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page racine
@@ -1147,7 +1135,6 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                   onDiscover: () => _goTo(firstSection),
                 ),
               ),
-              // V9.1 : stats glass qui chevauchent le hero + identité éditoriale en pleine section
               SliverToBoxAdapter(
                 child: _Wrap(
                   child: Container(
@@ -1205,7 +1192,6 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     );
   }
 
-  // ── En-tête blanc : logo + nom + badge vert + EN/FR + ⋮ ──
   Widget _headerTitle(BuildContext context, List<_Blk> blocks) {
     final scheme = Theme.of(context).colorScheme;
     final b = bundle.business;
@@ -1607,7 +1593,6 @@ class _Band extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) {
-    // V9 : rythme éditorial — blanc / #F7F8FA alternés, pas de cartes partout
     final bg = index.isEven ? Colors.white : const Color(0xFFF7F8FA);
     return Container(
       width: double.infinity,
@@ -1623,12 +1608,8 @@ class _Band extends StatelessWidget {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
-// HERO (maquette : image plein cadre, titre bi-color, CTA or + outline)
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// HERO V9 (glassflou x1 ici : pill Kinshasa) + STATS GLASS (glassflou x2)
+// HERO V9
 // ─────────────────────────────────────────────────────────────────────────────
 class _Hero extends StatelessWidget {
   const _Hero({required this.bundle, required this.images, required this.onContact, required this.onDiscover});
@@ -1656,7 +1637,6 @@ class _Hero extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           _HeroCarousel(images: images, colors: theme.heroGradient),
-          // Dégradé navy bas -> transparent (lisibilité titre)
           IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -1680,7 +1660,6 @@ class _Hero extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // GLASSFLOU n°1 — SEUL glass du hero
                         ClipRRect(
                           borderRadius: BorderRadius.circular(999),
                           child: Container(
@@ -1742,20 +1721,71 @@ class _Hero extends StatelessWidget {
   }
 }
 
-/// GLASSFLOU n°2 — barre stats qui chevauche le hero. C'est le DERNIER glass de la page.
+/// GLASSFLOU n°2 — barre stats qui chevauche le hero. STATS RÉELLES uniquement.
 class _HeroStatsGlass extends StatelessWidget {
   const _HeroStatsGlass({required this.bundle});
   final BusinessBundle bundle;
+
   @override
   Widget build(BuildContext context) {
     final b = bundle.business;
     final lang = _LangScope.of(context);
-    final years = b.sinceYear != null ? (DateTime.now().year - b.sinceYear!) : 7;
-    final stats = <(String, String)>[
-      ('$years+', lang == 'en' ? 'years of experience' : "ans d'expérience"),
-      ('120+', lang == 'en' ? 'projects delivered' : 'projets livrés'),
-      ('${b.employees ?? 45}', lang == 'en' ? 'collaborators' : 'collaborateurs'),
-    ];
+
+    // ✅ STATS RÉELLES UNIQUEMENT — plus aucun '120+' ni '45' inventé
+    final stats = <(String, String)>[];
+
+    // 1. Années d'expérience (calculées depuis sinceYear)
+    if (b.sinceYear != null && b.sinceYear! > 1900) {
+      final years = DateTime.now().year - b.sinceYear!;
+      if (years > 0) {
+        stats.add((
+          '$years+',
+          lang == 'en' ? 'years of experience' : "ans d'expérience",
+        ));
+      }
+    }
+
+    // 2. Collaborateurs (uniquement si renseigné)
+    if (b.employees != null && b.employees! > 0) {
+      stats.add((
+        '${b.employees}',
+        lang == 'en' ? 'collaborators' : 'collaborateurs',
+      ));
+    }
+
+    // 3. Nombre RÉEL de services publiés
+    final svc = bundle.sectionOfType(BusinessSectionType.services)?.content;
+    if (svc is ServicesContent && svc.items.isNotEmpty) {
+      stats.add((
+        '${svc.items.length}',
+        lang == 'en' ? 'services' : 'services',
+      ));
+    }
+
+    // 4. Nombre RÉEL de produits publiés
+    final prod = bundle.sectionOfType(BusinessSectionType.products)?.content;
+    if (prod is ProductsContent && prod.items.isNotEmpty) {
+      stats.add((
+        '${prod.items.length}',
+        lang == 'en' ? 'products' : 'produits',
+      ));
+    }
+
+    // 5. Nombre RÉEL de membres d'équipe
+    final team = bundle.sectionOfType(BusinessSectionType.team)?.content;
+    if (team is TeamContent && team.members.isNotEmpty) {
+      stats.add((
+        '${team.members.length}',
+        lang == 'en' ? 'team members' : 'collaborateurs',
+      ));
+    }
+
+    // Si aucune donnée réelle → on n'affiche RIEN (pas de barre vide)
+    if (stats.isEmpty) return const SizedBox.shrink();
+
+    // On plafonne à 3 colonnes pour rester lisible
+    final visible = stats.take(3).toList();
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: Container(
@@ -1764,23 +1794,42 @@ class _HeroStatsGlass extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.86),
           border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.10), blurRadius: 24, offset: const Offset(0, 12))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 24,
+                offset: const Offset(0, 12))
+          ],
         ),
         child: Row(children: [
-          for (var i = 0; i < stats.length; i++) ...[
-            if (i > 0) Container(width: 1, height: 36, color: Colors.black.withValues(alpha: 0.08)),
-            Expanded(child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text(stats[i].$1, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: _ink(context))),
-              const SizedBox(height: 2),
-              Text(stats[i].$2, textAlign: TextAlign.center, style: TextStyle(fontSize: 10.5, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            ])),
+          for (var i = 0; i < visible.length; i++) ...[
+            if (i > 0)
+              Container(
+                  width: 1,
+                  height: 36,
+                  color: Colors.black.withValues(alpha: 0.08)),
+            Expanded(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(visible[i].$1,
+                    style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                        color: _ink(context))),
+                const SizedBox(height: 2),
+                Text(visible[i].$2,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant)),
+              ]),
+            ),
           ],
         ]),
       ),
     );
   }
 }
-
 
 class _HeroCarousel extends StatefulWidget {
   const _HeroCarousel({required this.images, required this.colors});
@@ -1868,10 +1917,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BARRE IDENTITÉ COMPACTE (grille, chevauche le hero)
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-// IDENTITÉ V9 — ÉDITORIALE DÉSALIGNÉE (lecture en Z) + THIX ID navy/or
+// IDENTITÉ V9 — ÉDITORIALE DÉSALIGNÉE
 // ─────────────────────────────────────────────────────────────────────────────
 class _IdentityStrip extends StatelessWidget {
   const _IdentityStrip({required this.business});
@@ -1890,7 +1936,6 @@ class _IdentityStrip extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(behavior: SnackBarBehavior.floating, content: Text('${_tr(context, 'copied')}${b.thixId}')));
     }
-    // Lignes désalignées : retraits alternés 0 / 18 / 0 / 18 / 0 / 8
     final rows = <(String, String, double, VoidCallback?)>[
       (_tr(context, 'f_name'), b.name, 0, null),
       if (b.sector != null && b.sector!.trim().isNotEmpty) (_tr(context, 'f_sector'), b.sector!, 18, null),
@@ -1903,7 +1948,6 @@ class _IdentityStrip extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _secHead(context, _tr(context, 'identity_title'), eyebrow: '01 — Profil'),
-        // Lignes éditoriales avec filets — JAMAIS de grille 3x3
         for (final r in rows)
           Padding(
             padding: EdgeInsets.only(left: r.$3, top: 0, bottom: 0),
@@ -1923,7 +1967,6 @@ class _IdentityStrip extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 18),
-        // THIX ID — bloc navy, bordure gauche or, bouton Copier
         Container(
           padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
           decoration: BoxDecoration(color: _ink(context), borderRadius: BorderRadius.circular(18), border: const Border(left: BorderSide(color: Color(0xFFFFB800), width: 5))),
@@ -1942,7 +1985,6 @@ class _IdentityStrip extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 16),
-        // Contacts rapides en ligne texte (pas de cartes)
         Wrap(alignment: WrapAlignment.center, spacing: 8, children: [
           if (b.website != null && b.website!.isNotEmpty) _Tap(onTap: () => _openUrl(b.website), child: Text(_tr(context, 'f_web'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary))),
           if (b.phone != null && b.phone!.isNotEmpty) ...[Text('•', style: TextStyle(color: scheme.onSurfaceVariant)), _Tap(onTap: () => _openTel(b.phone!), child: Text(_tr(context, 'f_phone'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary)))],
@@ -1954,7 +1996,6 @@ class _IdentityStrip extends StatelessWidget {
     );
   }
 }
-
 
 class _SectionRenderer extends StatelessWidget {
   const _SectionRenderer({required this.section});
@@ -1978,65 +2019,127 @@ class _SectionRenderer extends StatelessWidget {
       case BusinessSectionType.testimonials:
         return _TestimonialsSection(content: content as TestimonialsContent);
       case BusinessSectionType.contact:
-        return const SizedBox.shrink(); // remplacé par la bannière CTA
+        return const SizedBox.shrink();
     }
   }
 }
 
-// ── À PROPOS (bande blanche, texte + image arrondie) ──
-// ── À PROPOS V9 — photo cadre or décalé + texte + stats ligne ──
+// ── À PROPOS V9 — null-safety + suppression mockup 7/120/12 ──
 class _AboutSection extends StatelessWidget {
   const _AboutSection({required this.content});
   final AboutContent content;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final url = content.imageUrl;
-    final hasImg = url != null && url.isNotEmpty;
+    // ✅ Promotion null-safe : on extrait le non-null UNE FOIS
+    final rawUrl = content.imageUrl;
+    final imageUrl = (rawUrl != null && rawUrl.trim().isNotEmpty) ? rawUrl : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _secHead(context, content.title, eyebrow: '02 — À propos'),
         if (content.tagline != null && content.tagline!.trim().isNotEmpty)
-          Padding(padding: const EdgeInsets.only(bottom: 14),
-            child: Text(content.tagline!, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontStyle: FontStyle.italic, color: scheme.primary))),
-        _ExpandText(content.body, maxLines: 6, style: TextStyle(fontSize: 14.5, height: 1.8, color: scheme.onSurfaceVariant)),
-        if (hasImg) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Text(content.tagline!,
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    fontStyle: FontStyle.italic,
+                    color: scheme.primary)),
+          ),
+        _ExpandText(content.body,
+            maxLines: 6,
+            style: TextStyle(
+                fontSize: 14.5,
+                height: 1.8,
+                color: scheme.onSurfaceVariant)),
+        if (imageUrl != null) ...[
           const SizedBox(height: 24),
-          // PHOTO avec cadre or décalé + tap plein écran
           _Tap(
-            onTap: () => _viewImage(context, url),
+            onTap: () => _viewImage(context, imageUrl),
             child: Stack(children: [
-              Positioned(right: 0, bottom: 0, child: Container(width: 120, height: 120, decoration: BoxDecoration(border: Border.all(color: const Color(0xFFFFB800), width: 2), borderRadius: BorderRadius.circular(20)))),
+              Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                      width: 120,
+                      height: 120,
+                      decoration: BoxDecoration(
+                          border: Border.all(
+                              color: const Color(0xFFFFB800), width: 2),
+                          borderRadius: BorderRadius.circular(20)))),
               Padding(
                 padding: const EdgeInsets.only(right: 12, bottom: 12),
-                child: ClipRRect(borderRadius: BorderRadius.circular(18), child: SizedBox(height: 240, width: double.infinity, child: _img(url))),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: SizedBox(
+                      height: 240,
+                      width: double.infinity,
+                      child: _img(imageUrl)),
+                ),
               ),
             ]),
           ),
           const SizedBox(height: 18),
-          // Stats en LIGNE TEXTE (pas de boîtes)
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text('7', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _ink(context))),
-            Text(' ans', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ink(context))),
-            const Text('  —  ', style: TextStyle(color: Colors.black26)),
-            Text('120', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _ink(context))),
-            Text(' projets', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ink(context))),
-            const Text('  —  ', style: TextStyle(color: Colors.black26)),
-            Text('12', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _ink(context))),
-            Text(' partenaires', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ink(context))),
-          ]),
-        ],
-        // Bandeau photos horizontal : réutilise la photo + repli pour donner du volume
-        if (hasImg) ...[
+          // ✅ Stats réelles uniquement — suppression du mockup 7/120/12
+          _AboutRealStats(content: content, lang: _LangScope.of(context)),
           const SizedBox(height: 18),
-          _HorizontalPhotoStrip(urls: [url, _fallbackPhoto(1), _fallbackPhoto(3)], height: 84),
+          _HorizontalPhotoStrip(
+            urls: [imageUrl, _fallbackPhoto(1), _fallbackPhoto(3)],
+            height: 84,
+          ),
         ],
       ],
     );
   }
 }
 
+/// Stats réelles calculées depuis le contenu (pas de chiffres inventés).
+class _AboutRealStats extends StatelessWidget {
+  const _AboutRealStats({required this.content, required this.lang});
+  final AboutContent content;
+  final String lang;
+  @override
+  Widget build(BuildContext context) {
+    final items = <(String, String)>[];
+    // On n'affiche QUE ce qu'on peut réellement compter
+    final textLen = content.body.trim().length;
+    if (textLen > 0) {
+      items.add(('${(textLen / 100).round() * 100}+',
+          lang == 'en' ? 'words about us' : 'mots sur nous'));
+    }
+    if (content.tagline != null && content.tagline!.trim().isNotEmpty) {
+      items.add(('✓', lang == 'en' ? 'verified identity' : 'identité vérifiée'));
+    }
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i > 0)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text('—', style: TextStyle(color: Colors.black26)),
+            ),
+          Text(items[i].$1,
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: _ink(context))),
+          const SizedBox(width: 4),
+          Text(items[i].$2,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        ],
+      ],
+    );
+  }
+}
 
 // ── SERVICES V9 — lignes HORIZONTALES avec PHOTO à gauche ──
 class _ServicesSection extends StatelessWidget {
@@ -2060,7 +2163,6 @@ class _ServicesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = content.items;
-    // Photos des services pour le bandeau horizontal du haut
     final photos = [for (var i = 0; i < items.length; i++) _photoOrFallback(items[i].imageUrl, i)];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _secHead(context, content.title, onMore: items.length > 4 ? () => _openAll(context) : null, eyebrow: '03 — Expertises'),
@@ -2071,15 +2173,6 @@ class _ServicesSection extends StatelessWidget {
       for (var i = 0; i < items.length; i++) Padding(padding: const EdgeInsets.only(bottom: 12), child: _ServiceRow(item: items[i], index: i)),
     ]);
   }
-}
-
-/// LIGNE SERVICE : [PHOTO 76px] | titre + desc + prix | n° + flèche — TOUJOURS horizontal
-class _ServiceCard extends StatelessWidget {
-  const _ServiceCard({required this.item, required this.index});
-  final ServiceItem item;
-  final int index;
-  @override
-  Widget build(BuildContext context) => _ServiceRow(item: item, index: index);
 }
 
 class _ServiceRow extends StatefulWidget {
@@ -2105,7 +2198,6 @@ class _ServiceRowState extends State<_ServiceRow> {
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-            // PHOTO à gauche — toujours visible, jamais d'icône seule
             _PhotoThumb(url: item.imageUrl, index: widget.index, width: 76, height: 76, radius: 16, icon: icon),
             const SizedBox(width: 14),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2132,8 +2224,7 @@ class _ServiceRowState extends State<_ServiceRow> {
   }
 }
 
-
-// ── PRODUITS V9 — lignes HORIZONTALES avec PHOTO à gauche ──
+// ── PRODUITS V9 ──
 class _ProductsSection extends StatelessWidget {
   const _ProductsSection({required this.content});
   final ProductsContent content;
@@ -2149,7 +2240,6 @@ class _ProductsSection extends StatelessWidget {
   }
 }
 
-/// LIGNE PRODUIT : [PHOTO 92px] | titre + desc + prix | flèche
 class _ProductCard extends StatelessWidget {
   const _ProductCard({required this.item, this.index = 0});
   final ProductItem item;
@@ -2180,8 +2270,7 @@ class _ProductCard extends StatelessWidget {
   }
 }
 
-
-// ── GALERIE / RÉALISATIONS V9 — 1 grande photo + scroll horizontal ──
+// ── GALERIE V9 ──
 class _GallerySection extends StatefulWidget {
   const _GallerySection({required this.content});
   final GalleryContent content;
@@ -2194,7 +2283,10 @@ class _GallerySectionState extends State<_GallerySection> {
   void dispose() { _c.dispose(); super.dispose(); }
   void _next() {
     if (!_c.hasClients) return;
-    final target = (_c.offset + _c.position.viewportDimension * 0.8).clamp(0.0, _c.position.maxScrollExtent);
+    // ✅ FIX 1 : clamp() renvoie num → cast obligatoire en double
+    final target = (_c.offset + _c.position.viewportDimension * 0.8)
+        .clamp(0.0, _c.position.maxScrollExtent)
+        .toDouble();
     _c.animateTo(target, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
   }
   @override
@@ -2203,7 +2295,6 @@ class _GallerySectionState extends State<_GallerySection> {
     if (imgs.isEmpty) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _secHead(context, widget.content.title, eyebrow: '04 — Preuves'),
-      // GRANDE photo — première réalisation, 16:9
       _Tap(
         onTap: () => _viewImage(context, imgs.first.url),
         child: ClipRRect(
@@ -2218,7 +2309,6 @@ class _GallerySectionState extends State<_GallerySection> {
         ),
       ),
       const SizedBox(height: 12),
-      // SCROLL HORIZONTAL — autres réalisations
       SizedBox(
         height: 132,
         child: Stack(children: [
@@ -2246,9 +2336,7 @@ class _GallerySectionState extends State<_GallerySection> {
   }
 }
 
-
-// ── ÉQUIPE (avatars cerclés centrés, sans carte) ──
-// ── ÉQUIPE V9 — bandeau photos horizontal + lignes PHOTO + nom + rôle + in ──
+// ── ÉQUIPE V9 — FIX 4 : suppression bouton "in" factice ──
 class _TeamSection extends StatelessWidget {
   const _TeamSection({required this.content});
   final TeamContent content;
@@ -2258,7 +2346,6 @@ class _TeamSection extends StatelessWidget {
     final photos = [for (var i = 0; i < members.length; i++) _photoOrFallback(members[i].photoUrl, i)];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _secHead(context, content.title, eyebrow: '05 — Humain'),
-      // BANDEAU PHOTOS HORIZONTAL — toute l'équipe en un coup d'œil
       if (photos.isNotEmpty) ...[
         _HorizontalPhotoStrip(urls: photos, height: 104),
         const SizedBox(height: 16),
@@ -2268,7 +2355,6 @@ class _TeamSection extends StatelessWidget {
   }
 }
 
-/// LIGNE ÉQUIPE : [PHOTO 64px ronde] | nom + rôle | bouton in — TOUJOURS horizontal
 class _TeamRow extends StatelessWidget {
   const _TeamRow({required this.member, required this.index});
   final dynamic member;
@@ -2287,7 +2373,6 @@ class _TeamRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
         child: Row(children: [
-          // PHOTO ronde 64px — photo réelle, sinon initiales sur fond or/navy alterné
           Container(
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: index.isEven ? const Color(0xFFFFB800) : _ink(context), width: 2)),
@@ -2300,16 +2385,25 @@ class _TeamRow extends StatelessWidget {
             if (bio.trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(bio, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)))),
           ])),
           const SizedBox(width: 10),
-          Container(width: 36, height: 36, decoration: BoxDecoration(color: scheme.primary.withValues(alpha: 0.08), shape: BoxShape.circle), child: const Center(child: Text('in', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFF0A66C2))))),
+          // ✅ FIX 4 : chevron réel — visible uniquement si une bio existe
+          if (bio.trim().isNotEmpty)
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.arrow_forward_rounded,
+                  size: 16, color: scheme.primary),
+            ),
         ]),
       ),
     );
   }
 }
 
-
-// ── ACTUALITÉS (grille cartes blanches) ──
-// ── ACTUALITÉS V9 — lignes HORIZONTALES avec PHOTO à gauche ──
+// ── ACTUALITÉS V9 ──
 class _NewsSection extends StatelessWidget {
   const _NewsSection({required this.content});
   final NewsContent content;
@@ -2326,7 +2420,6 @@ class _NewsSection extends StatelessWidget {
   }
 }
 
-/// LIGNE NEWS : [PHOTO 96px] | date + titre + extrait | flèche
 class _NewsCard extends StatelessWidget {
   const _NewsCard({required this.post, this.date, this.index = 0});
   final NewsPost post;
@@ -2358,9 +2451,7 @@ class _NewsCard extends StatelessWidget {
   }
 }
 
-
-// ── TÉMOIGNAGES (cartes blanches centrées) ──
-// ── TÉMOIGNAGES V9 — lignes HORIZONTALES avec AVATAR PHOTO à gauche ──
+// ── TÉMOIGNAGES V9 — FIX 5 : rating défensif ──
 class _TestimonialsSection extends StatelessWidget {
   const _TestimonialsSection({required this.content});
   final TestimonialsContent content;
@@ -2384,7 +2475,16 @@ class _TestimonialRow extends StatelessWidget {
     final quote = (item.quote as String?) ?? '';
     final author = (item.author as String?) ?? '';
     final role = (item.role as String?) ?? '';
-    final rating = item.rating as int?;
+
+    // ✅ FIX 5 : rating défensif — pas de crash si le champ est absent
+    int? rating;
+    try {
+      final raw = item.rating;
+      if (raw is int) rating = raw;
+    } catch (_) {
+      rating = null;
+    }
+
     void more() => _showDetail(context, title: author, subtitle: role, text: quote);
     return _Tap(
       onTap: more,
@@ -2392,7 +2492,6 @@ class _TestimonialRow extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // AVATAR PHOTO — initiales si pas de photo (Testimonial n'a pas de photoUrl dans le modèle)
           Container(
             width: 56, height: 56,
             decoration: BoxDecoration(shape: BoxShape.circle, color: index.isEven ? const Color(0xFFFFB800) : _ink(context)),
@@ -2416,7 +2515,6 @@ class _TestimonialRow extends StatelessWidget {
     );
   }
 }
-
 
 IconData _contactIcon(ContactChannelType type) {
   switch (type) {
@@ -2488,7 +2586,7 @@ class _ContactTile extends StatelessWidget {
   }
 }
 
-// ── BANNIÈRE CTA « Travaillons ensemble ! » ──
+// ── BANNIÈRE CTA ──
 class _CtaBanner extends StatelessWidget {
   const _CtaBanner({required this.bundle, required this.onContact});
   final BusinessBundle bundle;
@@ -2504,7 +2602,6 @@ class _CtaBanner extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           decoration: BoxDecoration(gradient: LinearGradient(colors: [theme.primary, navy]), borderRadius: BorderRadius.circular(18)),
-          // V9 : TOUJOURS horizontal — texte gauche, bouton droite, même sur mobile
           child: Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               Text(_tr(context, 'work_together'), style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
@@ -2524,9 +2621,8 @@ class _CtaBanner extends StatelessWidget {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
-// 10 RUBRIQUES AVANCÉES (photos + vidéos)
+// 10 RUBRIQUES AVANCÉES
 // ─────────────────────────────────────────────────────────────────────────────
 String _v(Map<String, String> m, String k) => (m[k] ?? '').trim();
 
@@ -2555,7 +2651,6 @@ class _ExtraSection extends StatelessWidget {
           ],
         );
       case BizLayout.steps:
-        // V9 : liste verticale de lignes HORIZONTALES (1 colonne, même desktop)
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2565,7 +2660,6 @@ class _ExtraSection extends StatelessWidget {
           ],
         );
       case BizLayout.standard:
-        // V9 : liste verticale de lignes HORIZONTALES (1 colonne, même desktop)
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2587,7 +2681,6 @@ class _LogoCard extends StatelessWidget {
     final img = _v(item, 'image');
     final sub = _v(item, 'subtitle');
     final link = _v(item, 'link');
-    // V9 : ligne horizontale [PHOTO 56px] | titre + sous-titre | flèche
     return _Tap(
       onTap: link.isEmpty ? null : () => _openUrl(link),
       child: Container(
@@ -2608,7 +2701,6 @@ class _LogoCard extends StatelessWidget {
   }
 }
 
-
 class _StepCard extends StatelessWidget {
   const _StepCard({required this.item, required this.number});
   final Map<String, String> item;
@@ -2619,7 +2711,6 @@ class _StepCard extends StatelessWidget {
     final img = _v(item, 'image');
     final text = _v(item, 'text');
     void more() => _showDetail(context, title: _v(item, 'title'), image: img, chip: '${_tr(context, 'step')} $number', text: text);
-    // V9 : ligne horizontale [PHOTO 72px + n°] | titre + texte
     return _Tap(
       onTap: text.isEmpty ? null : more,
       child: Container(
@@ -2641,7 +2732,6 @@ class _StepCard extends StatelessWidget {
   }
 }
 
-
 class _StdCard extends StatelessWidget {
   const _StdCard({required this.item, required this.kind});
   final Map<String, String> item;
@@ -2659,7 +2749,6 @@ class _StdCard extends StatelessWidget {
     final target = link.isNotEmpty ? link : video;
     final targetLabel = link.isEmpty && video.isNotEmpty ? _tr(context, 'watch') : ctaLabel;
     void more() => _showDetail(context, title: _v(item, 'title'), subtitle: sub, image: img, chip: meta, text: text, url: target, urlLabel: targetLabel);
-    // V9 : ligne horizontale [PHOTO 92px + ▶ si vidéo] | titre + sous-titre + texte + meta
     return _Tap(
       onTap: more,
       child: Container(
@@ -2684,8 +2773,7 @@ class _StdCard extends StatelessWidget {
   }
 }
 
-
-// ── FOOTER V9 — ULTRA-COMPACT -60% : 1 seule ligne ──
+// ── FOOTER V9 — 1 seule ligne ──
 class _Footer extends StatelessWidget {
   const _Footer({required this.bundle, required this.links, required this.onTop});
   final BusinessBundle bundle;
@@ -2702,7 +2790,6 @@ class _Footer extends StatelessWidget {
     return Container(
       width: double.infinity, color: navy,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      // 1 SEULE LIGNE : logo + nom + © + réseaux + haut de page — plus de QR géant, plus de 3 colonnes
       child: _Wrap(
         child: Row(children: [
           _Avatar(url: b.logoUrl, name: b.name, radius: 16),
@@ -2720,7 +2807,6 @@ class _Footer extends StatelessWidget {
     );
   }
 }
-
 
 class BusinessThemeExt extends ThemeExtension<BusinessThemeExt> {
   const BusinessThemeExt({
