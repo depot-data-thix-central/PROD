@@ -3,7 +3,7 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_studio_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.3.0 — Novembre 2026
+//  Version  : 1.3.1 — Novembre 2026 (i18n FR/EN inline)
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/edit/:id
@@ -11,6 +11,7 @@
 //  ✅ v1.3 : + carte « Rubriques avancées » (10 rubriques, photos + vidéos)
 //  ✅ v1.2 : upload de photos PARTOUT (À propos, Services, Produits, Galerie,
 //            Équipe, Actualités, Logo / Cover).
+//  ✅ v1.3.1 : i18n FR/EN inline — import l10n/app_localizations.dart retiré.
 //
 //  Upload → bucket Supabase `business-media` (public).
 //  Fonctionnalités préservées : identité, visibilité/ordre des sections,
@@ -28,12 +29,41 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../data/business_repository.dart';
 import '../models/business_bundle.dart';
-import '../models/business_theme.dart';
 import 'business_extras_studio.dart';
+
+// ─── i18n minimaliste FR/EN ─────────────────────────────────────────────────
+String _lang(BuildContext c) =>
+    Localizations.localeOf(c).languageCode.toLowerCase();
+
+/// Retourne la chaîne française si la locale courante est `fr`, sinon l'anglaise.
+String _s(BuildContext c, String fr, String en) =>
+    _lang(c) == 'fr' ? fr : en;
+
+/// Helper pour les types de contact (fallback sur `name` si non traduit).
+String _contactLabel(BuildContext c, ContactChannelType t) {
+  switch (t.name) {
+    case 'phone':
+      return _s(c, 'Téléphone', 'Phone');
+    case 'email':
+      return _s(c, 'Email', 'Email');
+    case 'whatsapp':
+      return _s(c, 'WhatsApp', 'WhatsApp');
+    case 'website':
+      return _s(c, 'Site web', 'Website');
+    case 'address':
+      return _s(c, 'Adresse', 'Address');
+    case 'instagram':
+      return _s(c, 'Instagram', 'Instagram');
+    case 'facebook':
+      return _s(c, 'Facebook', 'Facebook');
+    default:
+      return t.name;
+  }
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 const String _kThemeRoute = '/business/theme';
 String _kPublicRoute(String thixId) => '/b/$thixId';
@@ -148,9 +178,9 @@ class _ImageField extends StatelessWidget {
                               child: Icon(Icons.broken_image_outlined,
                                   size: 18, color: _Prism.inkMuted)),
                         )
-                      : ColoredBox(
+                      : const ColoredBox(
                           color: _Prism.border,
-                          child: const Icon(Icons.image_outlined,
+                          child: Icon(Icons.image_outlined,
                               size: 18, color: _Prism.inkMuted),
                         ),
                 ),
@@ -187,8 +217,7 @@ class _ImageField extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: IconButton(
-                    tooltip:
-                        AppLocalizations.of(context).t('biz_studio_upload'),
+                    tooltip: _s(context, 'Téléverser une image', 'Upload an image'),
                     icon: uploading
                         ? const SizedBox(
                             width: 16,
@@ -281,7 +310,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       _StudioLogger.error('load', e);
       if (!mounted) return;
       setState(() => _loading = false);
-      _snack('Erreur de chargement : $e', error: true);
+      _snack(_s(context, 'Erreur de chargement : $e', 'Load error: $e'),
+          error: true);
     }
   }
 
@@ -322,21 +352,18 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
         _business = saved;
         _saving = false;
       });
-      _snack(AppLocalizations.of(context).t('biz_studio_saved'));
+      _snack(_s(context, 'Enregistré ✓', 'Saved ✓'));
     } catch (e) {
       _StudioLogger.error('saveIdentity', e);
       if (!mounted) return;
       setState(() => _saving = false);
-      _snack(
-          AppLocalizations.of(context).t('biz_studio_error', args: ['$e']),
-          error: true);
+      _snack(_s(context, 'Erreur : $e', 'Error: $e'), error: true);
     }
   }
 
   // ── Upload logo / cover ──
   Future<void> _pickAndUpload({required bool isLogo}) async {
     if (_business == null) return;
-    final l10n = AppLocalizations.of(context);
     setState(() => _saving = true);
     try {
       final url = await pickAndUploadImage(context, folder: widget.businessId);
@@ -355,12 +382,13 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
         _business = saved;
         _saving = false;
       });
-      _snack(l10n.t('biz_studio_saved'));
+      _snack(_s(context, 'Enregistré ✓', 'Saved ✓'));
     } catch (e) {
       _StudioLogger.error('upload', e);
       if (!mounted) return;
       setState(() => _saving = false);
-      _snack(l10n.t('biz_studio_upload_error', args: ['$e']), error: true);
+      _snack(_s(context, 'Échec de l\'upload : $e', 'Upload failed: $e'),
+          error: true);
     }
   }
 
@@ -373,9 +401,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       setState(() => _sections = saved);
     } catch (e) {
       _StudioLogger.error('persistSections', e);
-      _snack(
-          AppLocalizations.of(context).t('biz_studio_error', args: ['$e']),
-          error: true);
+      _snack(_s(context, 'Erreur : $e', 'Error: $e'), error: true);
     }
   }
 
@@ -412,13 +438,12 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
     next[index] = next[index].copyWith(content: result);
     setState(() => _sections = next);
     await _persistSections(next);
-    _snack(AppLocalizations.of(context).t('biz_studio_section_saved'));
+    _snack(_s(context, 'Section enregistrée', 'Section saved'));
   }
 
   // ── Publication ──
   Future<void> _togglePublish() async {
     if (_business == null) return;
-    final l10n = AppLocalizations.of(context);
     setState(() => _saving = true);
     try {
       final saved = _business!.isPublished
@@ -430,8 +455,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
         _saving = false;
       });
       _snack(saved.isPublished
-          ? l10n.t('biz_studio_published')
-          : l10n.t('biz_studio_unpublished'));
+          ? _s(context, 'Site publié ✓', 'Site published ✓')
+          : _s(context, 'Site dépublié', 'Site unpublished'));
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -442,12 +467,10 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
   // ── Build ──
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
     if (_loading) {
       return Scaffold(
         backgroundColor: _Prism.bg,
-        appBar: AppBar(title: Text(l10n.t('biz_studio_title'))),
+        appBar: AppBar(title: Text(_s(context, 'Studio', 'Studio'))),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -456,31 +479,32 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
     if (b == null) {
       return Scaffold(
         backgroundColor: _Prism.bg,
-        appBar: AppBar(title: Text(l10n.t('biz_studio_title'))),
-        body: Center(child: Text(l10n.t('biz_mine_error_title'))),
+        appBar: AppBar(title: Text(_s(context, 'Studio', 'Studio'))),
+        body: Center(
+            child: Text(_s(context, 'Chargement impossible', 'Load failed'))),
       );
     }
 
     return Scaffold(
       backgroundColor: _Prism.bg,
       appBar: AppBar(
-        title: Text(l10n.t('biz_studio_title'),
+        title: Text(_s(context, 'Studio', 'Studio'),
             style: const TextStyle(fontWeight: FontWeight.w800)),
         actions: [
           IconButton(
-            tooltip: l10n.t('biz_studio_preview'),
+            tooltip: _s(context, 'Aperçu', 'Preview'),
             icon: const Icon(Icons.open_in_new_rounded),
             onPressed: () => context.push(_kPublicRoute(b.thixId)),
           ),
           IconButton(
-            tooltip: l10n.t('biz_studio_theme'),
+            tooltip: _s(context, 'Thème & style', 'Theme & style'),
             icon: const Icon(Icons.palette_rounded),
             onPressed: () => context.push('$_kThemeRoute/${b.id}'),
           ),
           IconButton(
             tooltip: b.isPublished
-                ? l10n.t('biz_studio_unpublish')
-                : l10n.t('biz_studio_publish'),
+                ? _s(context, 'Dépublier', 'Unpublish')
+                : _s(context, 'Publier', 'Publish'),
             icon: Icon(b.isPublished
                 ? Icons.cloud_off_rounded
                 : Icons.cloud_upload_rounded),
@@ -495,40 +519,48 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           const SizedBox(height: 16),
 
           _StudioCard(
-            title: l10n.t('biz_studio_identity'),
+            title: _s(context, 'Identité', 'Identity'),
             icon: Icons.badge_rounded,
             child: Column(
               children: [
-                _tf(_name, l10n.t('biz_studio_field_name')),
-                _tf(_claim, l10n.t('biz_studio_claim')),
-                _tf(_description, l10n.t('biz_studio_description'),
+                _tf(_name, _s(context, "Nom de l'entreprise", 'Business name')),
+                _tf(_claim, _s(context, 'Slogan', 'Tagline')),
+                _tf(_description, _s(context, 'Description', 'Description'),
                     maxLines: 4),
                 Row(
                   children: [
                     Expanded(
-                        child: _tf(_sector, l10n.t('biz_studio_sector'))),
+                        child: _tf(
+                            _sector, _s(context, 'Secteur', 'Sector'))),
                     const SizedBox(width: 10),
-                    Expanded(child: _tf(_city, l10n.t('biz_studio_city'))),
+                    Expanded(child: _tf(_city, _s(context, 'Ville', 'City'))),
                   ],
                 ),
                 Row(
                   children: [
                     Expanded(
-                        child: _tf(_sinceYear, l10n.t('biz_studio_since'),
+                        child: _tf(
+                            _sinceYear,
+                            _s(context, 'Année de création',
+                                'Year founded'),
                             numeric: true)),
                     const SizedBox(width: 10),
                     Expanded(
                         child: _tf(
-                            _employees, l10n.t('biz_studio_employees'),
+                            _employees,
+                            _s(context, 'Employés', 'Employees'),
                             numeric: true)),
                   ],
                 ),
-                _tf(_website, l10n.t('biz_studio_website')),
+                _tf(_website, _s(context, 'Site web', 'Website')),
                 Row(
                   children: [
-                    Expanded(child: _tf(_phone, l10n.t('biz_studio_phone'))),
+                    Expanded(
+                        child:
+                            _tf(_phone, _s(context, 'Téléphone', 'Phone'))),
                     const SizedBox(width: 10),
-                    Expanded(child: _tf(_email, l10n.t('biz_studio_email'))),
+                    Expanded(
+                        child: _tf(_email, _s(context, 'Email', 'Email'))),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -542,7 +574,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.save_rounded, size: 18),
-                    label: Text(l10n.t('biz_studio_save')),
+                    label: Text(_s(context, 'Enregistrer', 'Save')),
                   ),
                 ),
               ],
@@ -551,19 +583,19 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           const SizedBox(height: 16),
 
           _StudioCard(
-            title: l10n.t('biz_studio_media'),
+            title: _s(context, 'Médias', 'Media'),
             icon: Icons.image_rounded,
             child: Column(
               children: [
                 _MediaRow(
-                  label: l10n.t('biz_studio_logo'),
+                  label: _s(context, 'Logo', 'Logo'),
                   imageUrl: b.logoUrl,
                   round: true,
                   onChange: () => _pickAndUpload(isLogo: true),
                 ),
                 const SizedBox(height: 12),
                 _MediaRow(
-                  label: l10n.t('biz_studio_cover'),
+                  label: _s(context, 'Couverture', 'Cover'),
                   imageUrl: b.coverUrl,
                   round: false,
                   onChange: () => _pickAndUpload(isLogo: false),
@@ -574,7 +606,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           const SizedBox(height: 16),
 
           _StudioCard(
-            title: l10n.t('biz_studio_sections'),
+            title: _s(context, 'Sections', 'Sections'),
             icon: Icons.view_agenda_rounded,
             child: Column(
               children: [
@@ -641,7 +673,6 @@ class _StatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final published = business.isPublished;
     return Container(
       padding: const EdgeInsets.all(14),
@@ -669,8 +700,8 @@ class _StatusBanner extends StatelessWidget {
               children: [
                 Text(
                   published
-                      ? l10n.t('biz_mine_filter_published')
-                      : l10n.t('biz_mine_filter_draft'),
+                      ? _s(context, 'Publié', 'Published')
+                      : _s(context, 'Brouillon', 'Draft'),
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     color: published
@@ -750,7 +781,6 @@ class _MediaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final has = imageUrl != null && imageUrl!.isNotEmpty;
     return Row(
       children: [
@@ -768,9 +798,9 @@ class _MediaRow extends StatelessWidget {
                     errorWidget: (_, __, ___) =>
                         const ColoredBox(color: _Prism.border),
                   )
-                : ColoredBox(
+                : const ColoredBox(
                     color: _Prism.border,
-                    child: const Icon(Icons.add_photo_alternate_outlined,
+                    child: Icon(Icons.add_photo_alternate_outlined,
                         color: _Prism.inkMuted),
                   ),
           ),
@@ -786,7 +816,7 @@ class _MediaRow extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onChange,
                 icon: const Icon(Icons.photo_camera_rounded, size: 16),
-                label: Text(l10n.t('biz_studio_change'),
+                label: Text(_s(context, 'Changer', 'Change'),
                     style: const TextStyle(fontSize: 12)),
                 style: OutlinedButton.styleFrom(
                   padding:
@@ -846,7 +876,7 @@ class _SectionRow extends StatelessWidget {
     }
   }
 
-  String _title(AppLocalizations l10n) {
+  String _title(BuildContext context) {
     final c = section.content;
     if (c is AboutContent) return c.title;
     if (c is ServicesContent) return c.title;
@@ -856,12 +886,29 @@ class _SectionRow extends StatelessWidget {
     if (c is NewsContent) return c.title;
     if (c is TestimonialsContent) return c.title;
     if (c is ContactContent) return c.title;
-    return section.type.name;
+    // Fallback (ne devrait pas arriver) — nom de type traduit
+    switch (section.type) {
+      case BusinessSectionType.about:
+        return _s(context, 'À propos', 'About');
+      case BusinessSectionType.services:
+        return _s(context, 'Nos services', 'Services');
+      case BusinessSectionType.products:
+        return _s(context, 'Produits', 'Products');
+      case BusinessSectionType.gallery:
+        return _s(context, 'Galerie', 'Gallery');
+      case BusinessSectionType.team:
+        return _s(context, 'Équipe', 'Team');
+      case BusinessSectionType.news:
+        return _s(context, 'Actualités', 'News');
+      case BusinessSectionType.testimonials:
+        return _s(context, 'Témoignages', 'Testimonials');
+      case BusinessSectionType.contact:
+        return _s(context, 'Contact', 'Contact');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -869,7 +916,7 @@ class _SectionRow extends StatelessWidget {
           Icon(_icon, size: 20, color: ThixPolicy.primary),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(_title(l10n),
+            child: Text(_title(context),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -1003,7 +1050,6 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
 
   // Upload vers Storage puis injection de l'URL dans le controller
   Future<void> _pickFor(TextEditingController target, String key) async {
-    final l10n = AppLocalizations.of(context);
     setState(() => _uploadingKey = key);
     try {
       final url = await pickAndUploadImage(
@@ -1021,7 +1067,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
       if (!mounted) return;
       setState(() => _uploadingKey = '');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(l10n.t('biz_studio_upload_error', args: ['$e'])),
+        content: Text(_s(context, 'Échec de l\'upload : $e', 'Upload failed: $e')),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
       ));
@@ -1069,7 +1115,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
     switch (widget.section.type) {
       case BusinessSectionType.about:
         return AboutContent(
-          title: t.isEmpty ? 'À propos' : t,
+          title: t.isEmpty ? _s(context, 'À propos', 'About') : t,
           tagline: _tagline.text.trim().isEmpty ? null : _tagline.text.trim(),
           body: _body.text,
           imageUrl:
@@ -1077,7 +1123,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         );
       case BusinessSectionType.services:
         return ServicesContent(
-          title: t.isEmpty ? 'Nos services' : t,
+          title: t.isEmpty ? _s(context, 'Nos services', 'Services') : t,
           items: [
             for (final it in _items)
               if (_v(it, 0).isNotEmpty)
@@ -1091,7 +1137,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         );
       case BusinessSectionType.products:
         return ProductsContent(
-          title: t.isEmpty ? 'Produits' : t,
+          title: t.isEmpty ? _s(context, 'Produits', 'Products') : t,
           items: [
             for (final it in _items)
               if (_v(it, 0).isNotEmpty)
@@ -1106,7 +1152,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         );
       case BusinessSectionType.gallery:
         return GalleryContent(
-          title: t.isEmpty ? 'Galerie' : t,
+          title: t.isEmpty ? _s(context, 'Galerie', 'Gallery') : t,
           images: [
             for (final it in _items)
               if (_v(it, 0).isNotEmpty)
@@ -1118,7 +1164,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         );
       case BusinessSectionType.team:
         return TeamContent(
-          title: t.isEmpty ? 'Équipe' : t,
+          title: t.isEmpty ? _s(context, 'Équipe', 'Team') : t,
           members: [
             for (final it in _items)
               if (_v(it, 0).isNotEmpty)
@@ -1132,7 +1178,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         );
       case BusinessSectionType.news:
         return NewsContent(
-          title: t.isEmpty ? 'Actualités' : t,
+          title: t.isEmpty ? _s(context, 'Actualités', 'News') : t,
           posts: [
             for (final it in _items)
               if (_v(it, 0).isNotEmpty)
@@ -1146,7 +1192,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         );
       case BusinessSectionType.testimonials:
         return TestimonialsContent(
-          title: t.isEmpty ? 'Témoignages' : t,
+          title: t.isEmpty ? _s(context, 'Témoignages', 'Testimonials') : t,
           items: [
             for (final it in _items)
               if (_v(it, 0).isNotEmpty)
@@ -1160,7 +1206,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         );
       case BusinessSectionType.contact:
         return ContactContent(
-          title: t.isEmpty ? 'Contact' : t,
+          title: t.isEmpty ? _s(context, 'Contact', 'Contact') : t,
           channels: [
             for (var i = 0; i < _items.length; i++)
               if (_v(_items[i], 0).isNotEmpty)
@@ -1176,7 +1222,6 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final type = widget.section.type;
     final isList = type != BusinessSectionType.about;
 
@@ -1203,7 +1248,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(l10n.t('biz_studio_edit_section'),
+                    child: Text(_s(context, 'Modifier la section', 'Edit section'),
                         style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w900)),
                   ),
@@ -1220,16 +1265,17 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
                 controller: controller,
                 padding: const EdgeInsets.all(20),
                 children: [
-                  _sheetField(_title, l10n.t('biz_studio_field_title')),
+                  _sheetField(_title, _s(context, 'Titre', 'Title')),
                   if (type == BusinessSectionType.about) ...[
-                    _sheetField(_tagline, l10n.t('biz_studio_field_tagline')),
+                    _sheetField(_tagline, _s(context, 'Slogan', 'Tagline')),
                     _ImageField(
                       controller: _aboutImage,
-                      label: l10n.t('biz_studio_field_image_url'),
+                      label:
+                          _s(context, "URL de l'image", 'Image URL'),
                       uploading: _uploadingKey == 'about-img',
                       onPick: () => _pickFor(_aboutImage, 'about-img'),
                     ),
-                    _sheetField(_body, l10n.t('biz_studio_field_body'),
+                    _sheetField(_body, _s(context, 'Corps', 'Body'),
                         maxLines: 6),
                   ],
                   if (isList)
@@ -1269,12 +1315,12 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
                     OutlinedButton.icon(
                       onPressed: _addItem,
                       icon: const Icon(Icons.add_rounded, size: 18),
-                      label: Text(l10n.t('biz_studio_add_item')),
+                      label: Text(_s(context, 'Ajouter un élément', 'Add an item')),
                     ),
                   const SizedBox(height: 16),
                   FilledButton(
                     onPressed: () => Navigator.pop(context, _build()),
-                    child: Text(l10n.t('biz_studio_save')),
+                    child: Text(_s(context, 'Enregistrer', 'Save')),
                   ),
                 ],
               ),
@@ -1286,7 +1332,6 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
   }
 
   List<Widget> _fieldsFor(BusinessSectionType type, int i) {
-    final l10n = AppLocalizations.of(context);
     final it = _items[i];
     Widget f(int idx, String label, {int maxLines = 1}) =>
         _sheetField(it[idx], label, maxLines: maxLines);
@@ -1302,44 +1347,44 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
     switch (type) {
       case BusinessSectionType.services:
         return [
-          f(0, l10n.t('biz_studio_field_title')),
-          f(1, l10n.t('biz_studio_field_description'), maxLines: 3),
-          f(2, l10n.t('biz_studio_field_price')),
-          img(3, l10n.t('biz_studio_field_image_url'), 's$i-img'),
+          f(0, _s(context, 'Titre', 'Title')),
+          f(1, _s(context, 'Description', 'Description'), maxLines: 3),
+          f(2, _s(context, 'Prix', 'Price')),
+          img(3, _s(context, "URL de l'image", 'Image URL'), 's$i-img'),
         ];
       case BusinessSectionType.products:
         return [
-          f(0, l10n.t('biz_studio_field_title')),
-          f(1, l10n.t('biz_studio_field_description'), maxLines: 3),
-          f(2, l10n.t('biz_studio_field_price')),
-          img(3, l10n.t('biz_studio_field_image_url'), 'p$i-img'),
-          f(4, l10n.t('biz_studio_field_url')),
+          f(0, _s(context, 'Titre', 'Title')),
+          f(1, _s(context, 'Description', 'Description'), maxLines: 3),
+          f(2, _s(context, 'Prix', 'Price')),
+          img(3, _s(context, "URL de l'image", 'Image URL'), 'p$i-img'),
+          f(4, _s(context, 'Lien', 'Link')),
         ];
       case BusinessSectionType.gallery:
         return [
-          img(0, l10n.t('biz_studio_field_image_url'), 'g$i-img'),
-          f(1, l10n.t('biz_studio_field_caption')),
+          img(0, _s(context, "URL de l'image", 'Image URL'), 'g$i-img'),
+          f(1, _s(context, 'Légende', 'Caption')),
         ];
       case BusinessSectionType.team:
         return [
-          f(0, l10n.t('biz_studio_field_name')),
-          f(1, l10n.t('biz_studio_field_role')),
-          f(2, l10n.t('biz_studio_field_bio'), maxLines: 3),
-          img(3, l10n.t('biz_studio_field_photo_url'), 't$i-img'),
+          f(0, _s(context, 'Nom', 'Name')),
+          f(1, _s(context, 'Rôle', 'Role')),
+          f(2, _s(context, 'Biographie', 'Bio'), maxLines: 3),
+          img(3, _s(context, 'URL de la photo', 'Photo URL'), 't$i-img'),
         ];
       case BusinessSectionType.news:
         return [
-          f(0, l10n.t('biz_studio_field_title')),
-          f(1, l10n.t('biz_studio_field_excerpt'), maxLines: 3),
-          img(2, l10n.t('biz_studio_field_image_url'), 'n$i-img'),
-          f(3, l10n.t('biz_studio_field_link')),
+          f(0, _s(context, 'Titre', 'Title')),
+          f(1, _s(context, 'Résumé', 'Excerpt'), maxLines: 3),
+          img(2, _s(context, "URL de l'image", 'Image URL'), 'n$i-img'),
+          f(3, _s(context, 'Lien', 'Link')),
         ];
       case BusinessSectionType.testimonials:
         return [
-          f(0, l10n.t('biz_studio_field_quote'), maxLines: 4),
-          f(1, l10n.t('biz_studio_field_author')),
-          f(2, l10n.t('biz_studio_field_role')),
-          f(3, l10n.t('biz_studio_field_rating')),
+          f(0, _s(context, 'Citation', 'Quote'), maxLines: 4),
+          f(1, _s(context, 'Auteur', 'Author')),
+          f(2, _s(context, 'Rôle', 'Role')),
+          f(3, _s(context, 'Note (1-5)', 'Rating (1-5)')),
         ];
       case BusinessSectionType.contact:
         return [
@@ -1348,22 +1393,23 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
             child: DropdownButtonFormField<ContactChannelType>(
               initialValue: _contactTypes[i],
               decoration: InputDecoration(
-                labelText: l10n.t('biz_studio_field_type'),
+                labelText: _s(context, 'Type', 'Type'),
                 isDense: true,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
               items: [
                 for (final t in ContactChannelType.values)
-                  DropdownMenuItem(value: t, child: Text(t.name)),
+                  DropdownMenuItem(
+                      value: t, child: Text(_contactLabel(context, t))),
               ],
               onChanged: (v) {
                 if (v != null) setState(() => _contactTypes[i] = v);
               },
             ),
           ),
-          f(0, l10n.t('biz_studio_field_value')),
-          f(1, l10n.t('biz_studio_field_label')),
+          f(0, _s(context, 'Valeur', 'Value')),
+          f(1, _s(context, 'Label', 'Label')),
         ];
       default:
         return [];
