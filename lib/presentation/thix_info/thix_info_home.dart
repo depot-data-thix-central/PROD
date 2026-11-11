@@ -3,12 +3,9 @@
 // ✅ Branché sur la logique existante : newsProvider, downloadsProvider,
 //    podcastPlayerProvider, AdminRbacService, Supabase.
 // ✅ AUCUN mock-up : hero / récentes / vidéos / tendances / fil = prov.articles.
-//    - Tendances = tri réel par viewsCount.
-//    - Vidéos = podcasts où isVideoPodcast(a) == true.
-//    - Alertes = breaking réels (isBreaking).
-//    - Recherche / catégories / espaces = routes + fetchArticles existants.
-//    - Bookmark = bascule locale + loadSavedArticles() (voir _toggleSave).
-//    - Avatar / cloche = vraies données Supabase + breaking réels.
+// ✅ HERO EDGE-TO-EDGE : banner occupe 100% de la largeur, image bien cadrée.
+// ✅ FINITIONS PREMIUM : skeleton shimmer, pills animées, CTA shimmer,
+//    auto-play avec pause tactile, haptic feedback, slots notifications push.
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
@@ -17,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ✅ POLICY THIX APPLIQUÉE
@@ -24,6 +22,8 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/news_provider.dart';
 import '../../providers/downloads_provider.dart';
 import '../../providers/podcast_player_provider.dart';
+// ✅ Slot prêt pour push "À la une" — importera ton fichier quand tu l'enverras
+// import 'package:thix_id/presentation/thix_info/providers/hero_push_provider.dart';
 import '../../services/thix_downloader.dart';
 import '../../services/admin_rbac_service.dart';
 import '../../models/news_article.dart';
@@ -61,8 +61,7 @@ String _compactViews(int n) {
 }
 
 // ============================================================================
-// COMPOSANT RÉUTILISABLE : CARTE CLAIRE (remplace GlassBox sombre)
-// Gardé sous le même nom pour ne rien casser — rendu clair + ombre douce.
+// COMPOSANT RÉUTILISABLE : CARTE CLAIRE
 // ============================================================================
 class GlassBox extends StatelessWidget {
   final Widget child;
@@ -88,7 +87,7 @@ class GlassBox extends StatelessWidget {
 }
 
 // ============================================================================
-// 🎚️ ÉGALISEUR ANIMÉ (indicateur "en cours de lecture")
+// 🎚️ ÉGALISEUR ANIMÉ
 // ============================================================================
 class _EqualizerBars extends StatefulWidget {
   final double size;
@@ -133,6 +132,44 @@ class _SpaceDef {
 }
 
 // ============================================================================
+// 🏆 SKELETON HERO (shimmer premium type Facebook)
+// ============================================================================
+class _HeroSkeleton extends StatelessWidget {
+  const _HeroSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer.fromColors(
+      baseColor: const Color(0xFFE4E4E7),
+      highlightColor: const Color(0xFFF4F4F5),
+      child: Container(
+        height: 340,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 80, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(width: 80, height: 22, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))),
+              const SizedBox(height: 16),
+              Container(width: double.infinity, height: 24, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))),
+              const SizedBox(height: 8),
+              Container(width: 240, height: 24, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))),
+              const SizedBox(height: 16),
+              Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))),
+              const SizedBox(height: 6),
+              Container(width: 180, height: 14, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // PAGE PRINCIPALE : THIX INFO
 // ============================================================================
 class ThixInfoHome extends ConsumerStatefulWidget {
@@ -143,14 +180,15 @@ class ThixInfoHome extends ConsumerStatefulWidget {
 
 class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   String _cat = 'featured';
-  final PageController _pageCtrl = PageController(viewportFraction: 0.88);
+  // ✅ viewportFraction supprimé pour edge-to-edge
+  final PageController _pageCtrl = PageController();
   final ScrollController _breakingCtrl = ScrollController();
   final ScrollController _mainScrollCtrl = ScrollController();
   Timer? _timer; Timer? _breakingTimer; int _page = 0;
   bool _isAdmin = false; bool _adminChecked = false;
   bool _showAlertBanner = true;
+  bool _heroPaused = false; // ✅ pause auto-play quand l'utilisateur touche
   final Set<String> _savedIds = <String>{};
-  // Clés pour le scroll des raccourcis (Fil Info / Vidéos / Podcasts / Communiqués)
   final GlobalKey _feedKey = GlobalKey();
   final GlobalKey _videosKey = GlobalKey();
   final GlobalKey _podcastKey = GlobalKey();
@@ -180,7 +218,20 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
       ref.read(newsProvider).fetchArticles(category: 'all');
       ref.read(newsProvider).loadSavedArticles();
       _startAuto(); _startBreakingScroll(); _resolveIsAdmin();
+      _listenToHeroPush(); // ✅ écoute push "À la une"
     });
+  }
+
+  // ✅ SLOT PRÊT pour les notifications push "À la une"
+  // Quand tu m'enverras le fichier hero_push_provider.dart, cette méthode
+  // écoutera les articles promus et les injectera en tête du hero banner.
+  void _listenToHeroPush() {
+    // Exemple d'intégration future :
+    // ref.listen(heroPushProvider, (prev, next) {
+    //   if (next != null && mounted) {
+    //     setState(() { /* réorganiser la liste featured */ });
+    //   }
+    // });
   }
 
   Future<void> _resolveIsAdmin() async {
@@ -199,11 +250,11 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   void _startAuto() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!mounted) return;
+      if (!mounted || _heroPaused) return;
       final list = ref.read(newsProvider).articles.where((e) => e.isFeatured).toList();
       if (list.isEmpty || !_pageCtrl.hasClients) return;
       _page = (_page + 1) % list.length;
-      _pageCtrl.animateToPage(_page, duration: const Duration(milliseconds: 600), curve: Curves.easeOutCubic);
+      _pageCtrl.animateToPage(_page, duration: const Duration(milliseconds: 700), curve: Curves.easeOutCubic);
     });
   }
   void _startBreakingScroll() {
@@ -248,8 +299,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     ref.read(newsProvider).fetchArticles(category: slug == 'featured' ? 'all' : slug);
   }
 
-  // Bookmark : bascule locale + recharge les sauvegardes du provider.
-  // Si ton NewsProvider expose toggleSaved/saveArticle, remplace le corps par cet appel.
   void _toggleSave(NewsArticle a) {
     setState(() { if (_savedIds.contains(a.id)) { _savedIds.remove(a.id); } else { _savedIds.add(a.id); } });
     ref.read(newsProvider).loadSavedArticles();
@@ -343,8 +392,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
             SliverToBoxAdapter(child: _buildSearchBar()),
             if (breaking.isNotEmpty) SliverToBoxAdapter(key: _breakingKey, child: _buildFlashTicker(breaking)),
             SliverPersistentHeader(pinned: true, delegate: _CategoryHeaderDelegate(child: _buildCategories())),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            SliverToBoxAdapter(child: featured.isNotEmpty ? _buildHeroSection(featured) : _buildLoadingHero()),
+            SliverToBoxAdapter(child: featured.isNotEmpty ? _buildHeroSection(featured) : const _HeroSkeleton()),
             const SliverToBoxAdapter(child: SizedBox(height: 20)),
             SliverToBoxAdapter(child: _buildShortcuts()),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
@@ -449,168 +497,338 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     );
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // 🏆 HERO SECTION — EDGE-TO-EDGE + IMAGE BIEN CADRÉE
+  // ════════════════════════════════════════════════════════════════════════
   Widget _buildHeroSection(List<NewsArticle> list) {
-  return Column(children: [
-    SizedBox(height: 300,
-      child: PageView.builder(
-        controller: _pageCtrl, 
-        onPageChanged: (v) => setState(() => _page = v), 
-        itemCount: list.length,
-        itemBuilder: (_, i) {
-          final a = list[i];
-          return GestureDetector(
-            onTap: () => context.push('/thix-info/article/${a.id}'),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 12), // Marge augmentée pour séparer les cartes
+    return Column(children: [
+      SizedBox(
+        height: 340,
+        // ✅ PageView SANS viewportFraction → 100% largeur, edge-to-edge
+        child: PageView.builder(
+          controller: _pageCtrl,
+          onPageChanged: (v) {
+            HapticFeedback.selectionClick();
+            setState(() => _page = v);
+          },
+          itemCount: list.length,
+          itemBuilder: (_, i) => _buildHeroSlide(list[i], i),
+        ),
+      ),
+      const SizedBox(height: 14),
+      // ✅ PAGINATION PILLS ANIMÉES (premium)
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(list.length, (index) {
+            final isActive = _page == index;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: isActive ? 28 : 7,
+              height: 7,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20), 
-                color: Colors.white, 
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 8))]
+                color: isActive ? _kGoldDark : _kBorder,
+                borderRadius: BorderRadius.circular(4),
+                boxShadow: isActive
+                    ? [BoxShadow(color: _kGoldDark.withOpacity(0.4), blurRadius: 8, spreadRadius: 1)]
+                    : null,
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    // On définit des proportions strictes
-                    final imageWidth = constraints.maxWidth * 0.45; // L'image prend 45% à droite
-                    final textWidth = constraints.maxWidth * 0.60; // Le texte a de la place (60%) mais reste à gauche
-                    
-                    return Stack(
-                      children: [
-                        // 1. L'image, calée strictement à droite
-                        if (a.imageUrl != null)
-                          Positioned(
-                            top: 0, bottom: 0, right: 0,
-                            width: imageWidth,
-                            child: Image.network(
-                              a.imageUrl!, 
-                              fit: BoxFit.cover, 
-                              alignment: Alignment.centerLeft, // Aligne le focus de l'image vers le texte
-                              errorBuilder: (_, __, ___) => Container(color: _kBorder)
-                            ),
-                          ),
+            );
+          }),
+        ),
+      ),
+      const SizedBox(height: 8),
+    ]);
+  }
 
-                        // 2. Le dégradé pour lier l'image au fond blanc
-                        Positioned.fill(
-                          child: Container(
+  Widget _buildHeroSlide(NewsArticle a, int index) {
+    final categoryColor = _categoryColor(a.category);
+    return GestureDetector(
+      onTap: () => context.push('/thix-info/article/${a.id}'),
+      // ✅ Pause auto-play quand l'utilisateur touche
+      onPanDown: (_) => setState(() => _heroPaused = true),
+      onPanEnd: (_) => setState(() => _heroPaused = false),
+      onPanCancel: () => setState(() => _heroPaused = false),
+      child: Container(
+        // ✅ AUCUNE marge horizontale : edge-to-edge
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 24,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              return Stack(
+                children: [
+                  // ═══════════════════════════════════════════════
+                  // 1. IMAGE — OCCUPE TOUTE LA PARTIE DROITE
+                  //    fit: cover + alignment centerRight = bien cadrée
+                  // ═══════════════════════════════════════════════
+                  Positioned(
+                    top: 0,
+                    bottom: 0,
+                    right: 0,
+                    width: w * 0.55,
+                    child: a.imageUrl != null
+                        ? Image.network(
+                            a.imageUrl!,
+                            fit: BoxFit.cover,
+                            alignment: Alignment.centerRight,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: categoryColor.withOpacity(0.1),
+                              child: Icon(Icons.image_rounded, color: categoryColor.withOpacity(0.5), size: 48),
+                            ),
+                          )
+                        : Container(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                                stops: const [0.45, 0.75], // Le blanc pur s'arrête à 45%, transition jusqu'à 75%
-                                colors: [Colors.white, Colors.white.withOpacity(0.0)],
-                              )
-                            )
-                          )
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [categoryColor.withOpacity(0.15), categoryColor.withOpacity(0.35)],
+                              ),
+                            ),
+                          ),
+                  ),
+
+                  // ═══════════════════════════════════════════════
+                  // 2. GRADIENT DE FUSION (4 stops pour une transition
+                  //    douce entre le blanc du texte et l'image)
+                  // ═══════════════════════════════════════════════
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          stops: const [0.0, 0.40, 0.55, 1.0],
+                          colors: [
+                            Colors.white,
+                            Colors.white,
+                            Colors.white.withOpacity(0.0),
+                            Colors.white.withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ═══════════════════════════════════════════════
+                  // 3. OVERLAY DÉGRADÉ EN BAS (pour lisibilité CTA)
+                  // ═══════════════════════════════════════════════
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 100,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.15),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ═══════════════════════════════════════════════
+                  // 4. CONTENU TEXTE (côté gauche, hiérarchie premium)
+                  // ═══════════════════════════════════════════════
+                  Positioned(
+                    left: 20,
+                    top: 20,
+                    bottom: 20,
+                    width: w * 0.55,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // ── TOP : badge catégorie + tag "À LA UNE"
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: _kGold,
+                                    borderRadius: BorderRadius.circular(6),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: _kGold.withOpacity(0.4),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Text(
+                                    'À LA UNE',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.2,
+                                      color: _kInk,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: categoryColor.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: categoryColor.withOpacity(0.3)),
+                                  ),
+                                  child: Text(
+                                    a.category.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.8,
+                                      color: categoryColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            // ── TITRE (hiérarchie forte)
+                            Text(
+                              a.title,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.w900,
+                                height: 1.15,
+                                color: _kInk,
+                                letterSpacing: -0.4,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            // ── RÉSUMÉ
+                            if (a.summary != null && a.summary!.isNotEmpty)
+                              Text(
+                                a.summary!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  height: 1.45,
+                                  color: _kMuted,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                          ],
                         ),
 
-                        // 3. Le contenu (Texte élargi à gauche)
-                        Positioned(
-                          left: 16, top: 16, bottom: 16,
-                          width: textWidth, // Largeur contrôlée
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start, 
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween, // Pousse le bouton en bas
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), 
-                                    decoration: BoxDecoration(color: _kGold, borderRadius: BorderRadius.circular(6)), 
-                                    child: const Text('À LA UNE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1, color: _kInk))
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    a.title, 
-                                    maxLines: 3, 
-                                    overflow: TextOverflow.ellipsis, 
-                                    style: const TextStyle(
-                                      fontSize: 18, // Ajusté pour tenir dans la largeur
-                                      fontWeight: FontWeight.w900, 
-                                      height: 1.2, 
-                                      color: _kInk,
-                                      shadows: [Shadow(color: Colors.white, blurRadius: 6, offset: Offset(0, 0))] // Ombre pour lisibilité
-                                    )
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    a.summary ?? '', 
-                                    maxLines: 2, 
-                                    overflow: TextOverflow.ellipsis, 
-                                    style: const TextStyle(
-                                      fontSize: 12.5, 
-                                      height: 1.45, 
-                                      color: _kMuted, 
-                                      fontWeight: FontWeight.w500,
-                                      shadows: [Shadow(color: Colors.white, blurRadius: 6, offset: Offset(0, 0))]
-                                    )
-                                  ),
-                                ]
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.schedule_rounded, size: 13, color: _kMuted), 
-                                      const SizedBox(width: 4), 
-                                      Text(_formatTimeAgo(a.publishedAt), style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600)), 
-                                      const SizedBox(width: 12), 
-                                      const Icon(Icons.remove_red_eye_rounded, size: 13, color: _kMuted), 
-                                      const SizedBox(width: 4), 
-                                      Text(_compactViews(a.viewsCount), style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600))
-                                    ]
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), 
-                                    decoration: BoxDecoration(color: _kGold, borderRadius: BorderRadius.circular(20)), 
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min, 
-                                      children: [
-                                        Text("Lire l'article", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: _kInk)), 
-                                        SizedBox(width: 6), 
-                                        Icon(Icons.arrow_forward_rounded, size: 14, color: _kInk)
-                                      ]
-                                    )
-                                  ),
-                                ]
-                              )
-                            ]
+                        // ── BOTTOM : métadonnées + CTA
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.schedule_rounded, size: 13, color: _kMuted),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _formatTimeAgo(a.publishedAt),
+                                  style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(width: 12),
+                                const Icon(Icons.remove_red_eye_rounded, size: 13, color: _kMuted),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _compactViews(a.viewsCount),
+                                  style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            // ── CTA AVEC EFFET SHIMMER
+                            _ShimmerCta(
+                              label: "Lire l'article",
+                              onTap: () => context.push('/thix-info/article/${a.id}'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ═══════════════════════════════════════════════
+                  // 5. FLÈCHES DE NAVIGATION (bords gauche/droit)
+                  // ═══════════════════════════════════════════════
+                  if (index > 0)
+                    Positioned(
+                      left: 8,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: _heroArrow(
+                          Icons.chevron_left_rounded,
+                          () => _pageCtrl.previousPage(
+                            duration: const Duration(milliseconds: 500),
+                            curve: Curves.easeOutCubic,
                           ),
                         ),
-
-                        // Boutons de navigation (Flèches)
-                        Positioned(left: 4, top: 0, bottom: 0, child: Center(child: _heroArrow(Icons.chevron_left_rounded, () { if (_page > 0) _pageCtrl.previousPage(duration: const Duration(milliseconds: 400), curve: Curves.easeOut); }))),
-                        Positioned(right: 4, top: 0, bottom: 0, child: Center(child: _heroArrow(Icons.chevron_right_rounded, () { if (_page < list.length - 1) _pageCtrl.nextPage(duration: const Duration(milliseconds: 400), curve: Curves.easeOut); }))),
-                      ],
-                    );
-                  }
-                ),
-              ),
-            ),
-          );
-        },
+                      ),
+                    ),
+                  if (index < list.length - 1)
+                    Positioned(
+                      right: 8,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: _heroArrow(
+                          Icons.chevron_right_rounded,
+                          () => _pageCtrl.nextPage(
+                            duration: const Duration(milliseconds: 500),
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _heroArrow(IconData icon, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.95),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Icon(icon, size: 20, color: _kInk),
     ),
-    const SizedBox(height: 12),
-    Row(
-      mainAxisAlignment: MainAxisAlignment.center, 
-      children: List.generate(list.length, (index) {
-        final isActive = _page == index;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 300), 
-          margin: const EdgeInsets.symmetric(horizontal: 3), 
-          width: isActive ? 22 : 6, 
-          height: 6, 
-          decoration: BoxDecoration(color: isActive ? _kGoldDark : _kBorder, borderRadius: BorderRadius.circular(3))
-        );
-      })
-    ),
-  ]);
-}
-  Widget _heroArrow(IconData icon, VoidCallback onTap) => GestureDetector(onTap: onTap, child: Container(width: 28, height: 28, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6)]), child: Icon(icon, size: 18, color: _kInk)));
+  );
 
   Widget _buildShortcuts() {
     final items = [
@@ -889,8 +1107,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     }, childCount: list.length));
   }
 
-  Widget _buildLoadingHero() => Container(margin: const EdgeInsets.symmetric(horizontal: 16), height: 300, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)), child: const Center(child: CircularProgressIndicator(color: _kInk)));
-
   Widget _buildMiniPlayer() {
     final player = ref.watch(podcastPlayerProvider);
     final a = player.article;
@@ -916,6 +1132,96 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     );
   }
 
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🎨 CTA AVEC EFFET SHIMMER (bouton "Lire l'article" qui brille)
+// ════════════════════════════════════════════════════════════════════════════
+class _ShimmerCta extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _ShimmerCta({required this.label, required this.onTap});
+  @override
+  State<_ShimmerCta> createState() => _ShimmerCtaState();
+}
+
+class _ShimmerCtaState extends State<_ShimmerCta> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, child) {
+          // Shimmer qui traverse le bouton de gauche à droite
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: const [
+                  _kGold,
+                  Color(0xFFFFD54F),
+                  _kGold,
+                ],
+                stops: [
+                  (_ctrl.value - 0.3).clamp(0.0, 1.0),
+                  _ctrl.value.clamp(0.0, 1.0),
+                  (_ctrl.value + 0.3).clamp(0.0, 1.0),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: _kGold.withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    color: _kInk,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedBuilder(
+                  animation: _ctrl,
+                  builder: (context, _) => Transform.translate(
+                    offset: Offset(sin(_ctrl.value * 2 * pi) * 2, 0),
+                    child: const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 15,
+                      color: _kInk,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _PodcastPlayerSheet extends ConsumerWidget {
