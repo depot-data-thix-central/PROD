@@ -4,19 +4,22 @@
 // (compteurs réels like/commentaires), image adaptative, galerie, vidéo,
 // badges, audio, aperçu de lien, miniature vidéo, likers, boutons, réactions.
 //
-// v2.1 :
-//  ✅ FIX SYNTAXE — PcValidators.sanitize() : les '\n' étaient devenus de vrais
-//     retours à la ligne dans les chaînes (copier-coller) → erreur de parsing.
+// v2.2 :
+//  ✅ FIX MINIATURES VIDÉO NOIRES :
+//     - miniature NATIVE JPEG via video_thumbnail (déjà dans le pubspec)
+//     - edge function 'video-thumbnail' conservée (Web + secours)
+//     - fallback première frame avec RETRY (plus d'abandon silencieux)
+//     - placeholder lisible (spinner / icône) au lieu du dégradé noir
+//     - maxVideoFrameFallbacks 3 → 6
+//  ✅ FIX SYNTAXE : séquences '\r\n' / '\n' restaurées dans PcValidators.
 //  ✅ PcActionBtn accepte un [labelWidget] optionnel (compteurs animés).
 //  ✅ PcAnimatedCount : compteur avec pop animé.
-//  ✅ SpaceLiveBus + PcSpaceLiveBand + PcSpaceLiveBandHost : bande violette
-//     avec micro pulsant quand l'utilisateur est dans un Space audio.
-//
-// v1 : version originale.
-
+//  ✅ SpaceLiveBus + PcSpaceLiveBand + PcSpaceLiveBandHost.
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
+import 'dart:typed_data';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -29,6 +32,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -81,7 +86,8 @@ class PcConfig {
   static const int imageRatioCacheMax = 400;
   static const int maxLikersFetched = 5;
   static const int avatarFallbackSize = 256;
-  static const int maxVideoFrameFallbacks = 3;
+  // ✅ v2.2 : 3 → 6 (moins de miniatures noires dans les feeds denses)
+  static const int maxVideoFrameFallbacks = 6;
   static const double cardBottomBorderWidth = 1.0;
   static const double cardFirstTopBorderWidth = 1.5;
   static const String permalinkBase = 'https://thix.id/network/post/';
@@ -115,16 +121,17 @@ class PcLog {
 // ============================================================================
 class PcValidators {
   PcValidators._();
+
   static final RegExp _uuid = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
+
   static final RegExp _privateHost = RegExp(
     r'^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|::1$|fc00:|fd00:)',
     caseSensitive: false,
   );
 
-  // ✅ FIX SYNTAXE v2.1 : les '\n' / '\r\n' sont de nouveau de vraies séquences
-  // d'échappement (et non des retours à la ligne littéraux dans les chaînes).
+  // ✅ FIX SYNTAXE v2.1/v2.2 : '\r\n' / '\n' sont de vraies séquences d'échappement.
   static String sanitize(String? input, {int maxLength = PcConfig.maxSanitizedLength, bool multiline = true}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
@@ -135,7 +142,7 @@ class PcValidators {
         .replaceAll(RegExp(r'(javascript|data|vbscript):', caseSensitive: false), '')
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
     if (multiline) {
-      s = s.replaceAll(RegExp(r'[ \t]+\n'), '\n').replaceAll(RegExp(r'\n{3,}'), '\n\n');
+      s = s.replaceAll(RegExp(r'[ \t]+\n'), '\n').replaceAll(RegExp(r'\n{3,}'), '\n');
     } else {
       s = s.replaceAll(RegExp(r'\s+'), ' ');
     }
@@ -243,7 +250,6 @@ String pcTr(AppLocalizations l10n, String key, String fallback) {
 }
 
 bool _timeagoReady = false;
-
 String pcTimeAgo(BuildContext context, DateTime dt) {
   if (!_timeagoReady) {
     _timeagoReady = true;
@@ -318,7 +324,6 @@ Future<void> pcDownloadMedia(BuildContext context, String url) async {
   final ok = result == MediaSaveResult.saved;
   final msg = switch (result) {
     MediaSaveResult.saved => pcTr(l10n, 'post_download_saved', 'Enregistré dans votre galerie'),
-    // ✅ FIX SYNTAXE : guillemets doubles pour l'apostrophe "l'accès"
     MediaSaveResult.denied => pcTr(l10n, 'post_download_denied', "Autorisez l'accès aux photos dans les réglages"),
     _ => pcTr(l10n, 'post_download_failed', 'Impossible de télécharger'),
   };
@@ -362,18 +367,16 @@ class PcCache {
   final Map<String, bool> optimisticReposts = {};
   final Map<String, int> optimisticRepostCounts = {};
   final Map<String, PcCounts> counts = {};
+
   /// postId → code de réaction (like, love, haha, wow, fire)
   final Map<String, String> myReactions = {};
 
   List<String>? getLikers(String id) => _get(_likers, id);
   void setLikers(String id, List<String> v) => _set(_likers, id, v);
-
   Map<String, dynamic>? getLinkPreview(String url) => _get(_linkPreviews, url);
   void setLinkPreview(String url, Map<String, dynamic> d) => _set(_linkPreviews, url, d);
-
   String? getVideoThumb(String url) => _get(_videoThumbs, url);
   void setVideoThumb(String url, String t) => _set(_videoThumbs, url, t);
-
   double? getImageRatio(String url) => _imageRatios[url];
   void setImageRatio(String url, double r) {
     if (_imageRatios.length >= PcConfig.imageRatioCacheMax) _imageRatios.remove(_imageRatios.keys.first);
@@ -522,7 +525,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       comments = cn.comments;
     }
     if (liked && likes < 1) likes = 1;
-
     if (c.optimisticSaves.containsKey(post.id)) saved = c.optimisticSaves[post.id]!;
     if (c.optimisticReposts.containsKey(post.id)) {
       reposted = c.optimisticReposts[post.id]!;
@@ -618,7 +620,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       } else if (reallyLiked && state.likesCount < 1) {
         state = state.copyWith(likesCount: 1);
       }
-
       PcCache.instance.optimisticLikes[postId] = reallyLiked;
       PcCache.instance.optimisticLikeCounts[postId] = state.likesCount;
 
@@ -668,8 +669,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       try {
         final result = await service.togglePostLike(id).timeout(PcConfig.networkTimeout);
         if (_isDisposed) return;
-        // On ne fait PAS confiance à result.likesCount (peut valoir 0) :
-        // seul l'état liked est pris, le compteur est relu en base ensuite.
         state = state.copyWith(isLiked: result.liked);
         PcCache.instance.optimisticLikes[id] = result.liked;
       } catch (_) {
@@ -833,9 +832,6 @@ class PcAnimatedCount extends StatelessWidget {
 
 // ============================================================================
 // IMAGE ADAPTATIVE — ratio réel de la photo (façon Facebook)
-//   • ratio borné [minImageRatio, maxImageRatio]
-//   • si coupe nécessaire → coupe EN BAS (alignement haut), jamais en haut
-//   • ratio mémorisé → pas de saut de hauteur au re-scroll
 // ============================================================================
 class PcAdaptiveImage extends StatefulWidget {
   final String url;
@@ -1359,7 +1355,6 @@ class _PcFullScreenVideoPlayerState extends State<PcFullScreenVideoPlayer> {
     }
     final c = _controller;
     if (!_initialized || c == null) return const Center(child: CircularProgressIndicator(color: Colors.white));
-
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggleControls,
@@ -1440,6 +1435,7 @@ class PcStaticBadgeChip extends StatelessWidget {
   final PcBadgeStyle style;
   final String label;
   const PcStaticBadgeChip({super.key, required this.style, required this.label});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1505,7 +1501,6 @@ class _PcPulsingBadgeState extends State<PcPulsingBadge> with SingleTickerProvid
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(widget.style.icon, size: 15, color: Colors.white),
             const SizedBox(width: 7),
-            // ✅ FIX : "widget.label" (le label est sur PcPulsingBadge, pas sur PcBadgeStyle)
             Text(widget.label,
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.9, height: 1)),
           ]),
@@ -1528,8 +1523,9 @@ class PcActionBtn extends StatelessWidget {
     this.onLongPress,
     this.iconWidget,
     this.semanticsLabel,
-    this.labelWidget, // ✅ v2 : widget custom à la place du label texte
+    this.labelWidget,
   });
+
   final IconData icon;
   final String label;
   final Color color;
@@ -1636,7 +1632,6 @@ class _PcAudioPlayerState extends State<PcAudioPlayer> {
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
     final remaining = _duration - _position;
     final t2 = PcTheme.text2(context);
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -1725,6 +1720,7 @@ class _WaveformPainter extends CustomPainter {
   final Color color;
   _WaveformPainter({required this.progress, required this.color});
   static const int _bars = 40;
+
   @override
   void paint(Canvas canvas, Size size) {
     final bw = size.width / (_bars * 1.5);
@@ -1760,7 +1756,9 @@ class PcLinkPreview extends StatefulWidget {
 
 class _PcLinkPreviewState extends State<PcLinkPreview> {
   Map<String, dynamic>? _data;
+
   String get _domain => Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? '';
+
   String get _favicon {
     final host = Uri.tryParse(widget.url)?.host ?? '';
     return 'https://www.google.com/s2/favicons?domain=$host&sz=${PcConfig.avatarFallbackSize}';
@@ -1843,7 +1841,6 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
     final og = pcSafeImageUrl(_data?['image']?.toString());
     final yt = _ytThumb;
     if (title.isEmpty) title = yt != null ? 'YouTube' : _domain;
-
     return GestureDetector(
       onTap: _open,
       onLongPress: () => pcCopy(context, widget.url, pcTr(l10n, 'post_link_copied', 'Lien copié')),
@@ -1945,6 +1942,7 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
 
 // ============================================================================
 // MINIATURE VIDÉO (remplit son parent)
+// ✅ v2.2 : miniature NATIVE (video_thumbnail) → plus jamais d'écran noir
 // ============================================================================
 class PcVideoThumbTile extends StatefulWidget {
   final String videoUrl;
@@ -1958,46 +1956,119 @@ class PcVideoThumbTile extends StatefulWidget {
 
 class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
   static int _activeFrameReaders = 0;
+
   String? _thumbnailUrl;
+  Uint8List? _thumbBytes; // ✅ miniature native JPEG
   VideoPlayerController? _frameController;
   bool _frameReady = false;
   bool _countedActive = false;
+  bool _loadingThumb = true; // ✅ spinner pendant la génération
   Duration? _duration;
+  Timer? _retryTimer; // ✅ retry si slots lecteurs occupés
 
   @override
   void initState() {
     super.initState();
-    _thumbnailUrl = PcCache.instance.getVideoThumb(widget.videoUrl);
-    if (_thumbnailUrl == null) _loadThumbnail();
+    _loadThumbnail();
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    _frameController?.dispose();
+    if (_countedActive && _activeFrameReaders > 0) _activeFrameReaders--;
+    super.dispose();
+  }
+
+  // ── 1) Miniature NATIVE (Android/iOS) : extrait un vrai JPEG de la vidéo ──
+  Future<Uint8List?> _nativeThumb() async {
+    try {
+      return await VideoThumbnail.thumbnailData(
+        video: widget.videoUrl,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 640,
+        quality: 75,
+      ).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      PcLog.warn('Native thumbnail failed', {'error': '$e'});
+      return null;
+    }
+  }
+
+  // ── 2) Edge function (Web + secours mobile) ──
+  Future<String?> _edgeThumb() async {
+    try {
+      final r = await Supabase.instance.client.functions
+          .invoke('video-thumbnail', body: <String, dynamic>{'video_url': widget.videoUrl})
+          .timeout(PcConfig.videoThumbTimeout);
+      final data = r.data;
+      return data is Map ? pcSafeImageUrl(data['thumbnail_url']?.toString()) : null;
+    } catch (_) {
+      PcLog.warn('Video thumbnail (server) failed');
+      return null;
+    }
   }
 
   Future<void> _loadThumbnail() async {
-    if (!PcValidators.isSafeExternalFetchUrl(widget.videoUrl)) return;
-    try {
-      final r = await Supabase.instance.client.functions
-          .invoke('video-thumbnail', body: <String, dynamic>{'video_url': widget.videoUrl}).timeout(PcConfig.videoThumbTimeout);
-      final data = r.data;
-      final url = data is Map ? pcSafeImageUrl(data['thumbnail_url']?.toString()) : null;
-      if (url != null) {
-        PcCache.instance.setVideoThumb(widget.videoUrl, url);
-        if (mounted) setState(() => _thumbnailUrl = url);
+    // 0) Cache mémoire
+    final cached = PcCache.instance.getVideoThumb(widget.videoUrl);
+    if (cached != null) {
+      if (mounted) setState(() => _thumbnailUrl = cached);
+      if (mounted) setState(() => _loadingThumb = false);
+      return;
+    }
+
+    if (!PcValidators.isSafeExternalFetchUrl(widget.videoUrl)) {
+      if (mounted) setState(() => _loadingThumb = false);
+      return;
+    }
+
+    // 1) NATIF (mobile) : fiable, rapide, aucune dépendance serveur
+    if (!kIsWeb) {
+      final bytes = await _nativeThumb();
+      if (bytes != null && bytes.isNotEmpty && mounted) {
+        setState(() {
+          _thumbBytes = bytes;
+          _loadingThumb = false;
+        });
         return;
       }
-    } catch (_) {
-      PcLog.warn('Video thumbnail (server) failed, fallback to first frame');
     }
+
+    // 2) Edge function
+    final url = await _edgeThumb();
+    if (url != null && mounted) {
+      PcCache.instance.setVideoThumb(widget.videoUrl, url);
+      setState(() {
+        _thumbnailUrl = url;
+        _loadingThumb = false;
+      });
+      return;
+    }
+
+    // 3) Première frame via video_player (avec retries)
     await _loadFirstFrame();
+    if (mounted) setState(() => _loadingThumb = false);
   }
 
-  Future<void> _loadFirstFrame() async {
+  // ── 3) Fallback première frame — ✅ AVEC RETRY (plus d'abandon silencieux) ──
+  Future<void> _loadFirstFrame({int attempt = 0}) async {
     if (!mounted || _frameController != null) return;
-    if (_activeFrameReaders >= PcConfig.maxVideoFrameFallbacks) return;
+
+    if (_activeFrameReaders >= PcConfig.maxVideoFrameFallbacks) {
+      // ✅ FIX v2.2 : au lieu de rester noir pour toujours, on réessaie
+      if (attempt < 4) {
+        _retryTimer?.cancel();
+        _retryTimer = Timer(const Duration(milliseconds: 1200), () => _loadFirstFrame(attempt: attempt + 1));
+      }
+      return;
+    }
 
     final uri = Uri.tryParse(widget.videoUrl);
     if (uri == null || !PcValidators.isValidUrl(widget.videoUrl)) return;
+
     _activeFrameReaders++;
     _countedActive = true;
-
     final c = VideoPlayerController.networkUrl(uri, videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true));
     _frameController = c;
     try {
@@ -2015,14 +2086,12 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
         await c.dispose();
       } catch (_) {}
       if (_frameController == c) _frameController = null;
+      // ✅ libère le slot immédiatement en cas d'échec
+      if (_countedActive && _activeFrameReaders > 0) {
+        _activeFrameReaders--;
+        _countedActive = false;
+      }
     }
-  }
-
-  @override
-  void dispose() {
-    _frameController?.dispose();
-    if (_countedActive && _activeFrameReaders > 0) _activeFrameReaders--;
-    super.dispose();
   }
 
   String _fmt(Duration d) {
@@ -2032,6 +2101,7 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
   }
 
   Widget _background() {
+    // 1) Miniature serveur (edge function)
     if (_thumbnailUrl != null) {
       return CachedNetworkImage(
         imageUrl: _thumbnailUrl!,
@@ -2041,6 +2111,17 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
         errorWidget: (_, __, ___) => _placeholder(),
       );
     }
+    // 2) ✅ Miniature native JPEG (video_thumbnail)
+    if (_thumbBytes != null) {
+      return Image.memory(
+        _thumbBytes!,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+      );
+    }
+    // 3) Première frame via lecteur
     final c = _frameController;
     if (_frameReady && c != null && c.value.isInitialized) {
       return FittedBox(
@@ -2056,9 +2137,19 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
     return _placeholder();
   }
 
+  // ✅ Placeholder lisible : spinner pendant chargement, icône sinon
   Widget _placeholder() => Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF09090B), Color(0xFF27272A)]),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF101014), Color(0xFF2A2A2E)],
+          ),
+        ),
+        child: Center(
+          child: _loadingThumb
+              ? const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
+              : const Icon(Icons.movie_rounded, color: Colors.white38, size: 44),
         ),
       );
 
@@ -2147,18 +2238,22 @@ class _PcLikersStackState extends State<PcLikersStack> {
 
   Future<void> _fetch({bool force = false}) async {
     if (widget.count == 0) {
-      if (mounted) setState(() {
-        _loading = false;
-        _avatars = [];
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _avatars = [];
+        });
+      }
       return;
     }
     final cached = force ? null : PcCache.instance.getLikers(widget.postId);
     if (cached != null) {
-      if (mounted) setState(() {
-        _avatars = cached;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _avatars = cached;
+          _loading = false;
+        });
+      }
       return;
     }
     try {
@@ -2178,10 +2273,12 @@ class _PcLikersStackState extends State<PcLikersStack> {
         }
       }
       PcCache.instance.setLikers(widget.postId, avatars);
-      if (mounted) setState(() {
-        _avatars = avatars;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _avatars = avatars;
+          _loading = false;
+        });
+      }
     } catch (_) {
       PcLog.error('fetchLikersAvatars failed', {'postId': widget.postId});
       if (mounted) setState(() => _loading = false);
@@ -2199,7 +2296,6 @@ class _PcLikersStackState extends State<PcLikersStack> {
             : widget.l10n.t('post_liked_by_you_and_others', args: ['${widget.count - 1}']))
         : widget.l10n.t('post_liked_by_others', args: ['${widget.count}']);
     final t2 = PcTheme.text2(context);
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(children: [
@@ -2240,21 +2336,6 @@ class _PcLikersStackState extends State<PcLikersStack> {
 // ============================================================================
 // ✅ SPACE LIVE — BUS GLOBAL + BANDE VIOLETTE (micro animé)
 // ============================================================================
-//
-// Quand l'utilisateur est dans un Space audio, une bande violette avec un
-// micro animé peut s'afficher (via PcSpaceLiveBandHost) pour :
-//   - retourner dans le space (tap sur la bande)
-//   - muter / démuter le micro (bouton micro)
-//   - quitter le space (bouton ✕)
-//
-// Intégration côté contrôleur / écran du space :
-//   SpaceLiveBus.instance.update(active: true, title: 'TALK…', listeners: 2, muted: true, isHost: true);
-//   SpaceLiveBus.onMuteToggle = () => controller.toggleMute();
-//   SpaceLiveBus.onReopen     = () => context.push('/space/room');
-//   SpaceLiveBus.onLeave      = () => controller.leave();
-//   // À la sortie du space :
-//   SpaceLiveBus.instance.leave();
-
 class SpaceLiveState {
   final bool active;
   final String title;
@@ -2276,7 +2357,6 @@ class SpaceLiveBus extends ChangeNotifier {
   SpaceLiveBus._();
   static final SpaceLiveBus instance = SpaceLiveBus._();
 
-  // Hooks optionnels définis par l'écran / le contrôleur du space
   static VoidCallback? onReopen;
   static VoidCallback? onMuteToggle;
   static VoidCallback? onLeave;
@@ -2328,7 +2408,6 @@ class PcSpaceLiveBand extends StatefulWidget {
     this.onToggleMute,
     this.onLeave,
   });
-
   @override
   State<PcSpaceLiveBand> createState() => _PcSpaceLiveBandState();
 }
@@ -2336,7 +2415,6 @@ class PcSpaceLiveBand extends StatefulWidget {
 class _PcSpaceLiveBandState extends State<PcSpaceLiveBand> with SingleTickerProviderStateMixin {
   static const Color _violet = Color(0xFF7C3AED);
   static const Color _violetDeep = Color(0xFF5B21B6);
-
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -2464,7 +2542,6 @@ class _PcSpaceLiveBandState extends State<PcSpaceLiveBand> with SingleTickerProv
 /// Hôte : n'affiche la bande que si un Space est actif.
 class PcSpaceLiveBandHost extends StatelessWidget {
   const PcSpaceLiveBandHost({super.key});
-
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
