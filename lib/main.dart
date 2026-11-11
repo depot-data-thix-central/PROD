@@ -63,7 +63,7 @@ import 'package:thix_id/widgets/no_connection_overlay.dart'; // ✅ NOUVEAU
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 import 'package:thix_id/core/security/security_reporter.dart';
-
+import 'package:thix_id/presentation/chat/status/providers/status_upload_manager.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -797,20 +797,18 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           }
           return supportedLocales.first;
         },
-        builder: (context, child) {
-          return Directionality(
-            textDirection: localeController.textDirection,
-            child: NotifBannerListener(
-              child: GlobalSosListener(
-                child: GlobalCallListener(
-                  navigatorKey: rootNavigatorKey,
-                  child: child ?? const SizedBox.shrink(),
-                ),
-              ),
-            ),
-          );
-        },
+      builder: (context, child) {
+  return Directionality(
+    textDirection: localeController.textDirection,
+    child: NotifBannerListener(
+      child: GlobalSosListener(
+        child: GlobalCallListener(
+          navigatorKey: rootNavigatorKey,
+          child: StatusUploadListener(  
+            child: child ?? const SizedBox.shrink(),
+          ),
+        ),
       ),
-    );
-  }
-}
+    ),
+  );
+},
