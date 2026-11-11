@@ -2,9 +2,9 @@
 // ============================================================================
 // CRÉATEUR DE STORY — PLEIN ÉCRAN (design moderne type Instagram)
 // • 4 modes : Texte • Photo • Audio • Vidéo
+// • Photo : rognage / rotation / ratios (image_cropper)
+// • Vidéo : découpage de la partie voulue + coupure du son
 // • Upload en arrière-plan (file d'attente globale)
-// • Fermeture immédiate après publication
-// • Vidéo compressée + validation durée
 // ============================================================================
 import 'dart:async';
 import 'dart:typed_data';
@@ -12,20 +12,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:html/parser.dart' as html_parser;
-import 'package:cross_file/cross_file.dart'; // ✅ AJOUT: Pour lire les fichiers sur Web et Mobile
+import 'package:cross_file/cross_file.dart';
 
-import 'package:thix_id/features/network/data/network_service_provider.dart';
+import 'package:thix_id/core/media/media_picker_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/presentation/network/providers/story_upload_manager.dart';
 
 // ============================================================================
@@ -40,10 +38,6 @@ class _StoryValidators {
   static const int maxVideoSizeMB = 50;
   static const int maxAudioDurationSeconds = 60;
   static const int maxVideoDurationSeconds = 60;
-  static const Duration uploadTimeout = Duration(seconds: 30);
-
-  static const Set<String> allowedImageExts = {'jpg', 'jpeg', 'png', 'webp', 'heic'};
-  static const Set<String> allowedVideoExts = {'mp4', 'mov', 'webm', 'm4v'};
 
   static String sanitizeText(String? input, {int maxLength = maxTextLength}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -60,33 +54,10 @@ class _StoryValidators {
 
   static bool validateFileSize(int bytes, int maxMB) => bytes <= maxMB * 1024 * 1024;
 
-  static bool validateFileExtension(String name, Set<String> allowed) =>
-      allowed.contains(name.split('.').last.toLowerCase());
-
-  static String? validateMime(Uint8List bytes) {
-    if (bytes.length < 12) return 'Fichier trop petit';
-    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return null;
-    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return null;
-    if (bytes.length >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) return null;
-    return 'Format de fichier non reconnu';
-  }
-
   static String fmtDuration(int seconds) {
     final m = (seconds ~/ 60).toString().padLeft(2, '0');
     final s = (seconds % 60).toString().padLeft(2, '0');
     return '$m:$s';
-  }
-}
-
-Future<Uint8List> _compressImageAsync(Uint8List bytes) async {
-  if (kIsWeb) return bytes;
-  try {
-    return await compute((Uint8List input) async {
-      return await FlutterImageCompress.compressWithList(input, minHeight: 1080, minWidth: 1080, quality: 85);
-    }, bytes);
-  } catch (e) {
-    debugPrint('[Story] Compression error: $e');
-    return bytes;
   }
 }
 
@@ -119,6 +90,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   _StoryMode _mode = _StoryMode.text;
 
   // Photo
+  PickedMedia? _imageMedia;
   Uint8List? _imageBytes;
   String? _imageExt;
 
@@ -134,10 +106,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   Uint8List? _videoBytes;
   String? _videoExt;
   VideoPlayerController? _videoController;
-  bool _isProcessingVideo = false;
 
   // UI
   bool _isUploading = false;
+  bool _isBusyMedia = false;
   Color _bgColor = Colors.transparent;
   late final AnimationController _pulseCtrl;
 
@@ -169,6 +141,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   }
 
   bool get _hasBgColor => _bgColor != Colors.transparent;
+  bool get _blocked => _isUploading || _isRecording || _isBusyMedia;
   bool get _hasContent =>
       _textController.text.trim().isNotEmpty ||
       _imageBytes != null ||
@@ -177,42 +150,82 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
 
   String _colorToHex(Color c) => '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
+  void _disposeVideo() {
+    final old = _videoController;
+    _videoController = null;
+    old?.dispose();
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // PHOTO
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _pickImage() async {
-    if (_isUploading || _isRecording || _isProcessingVideo) return;
-    try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
-      final f = result?.files.first;
-      if (f?.bytes == null) return;
+    if (_blocked) return;
+    final source = await MediaPickerService.askSource(context);
+    if (source == null || !mounted) return;
 
-      if (!_StoryValidators.validateFileSize(f!.bytes!.length, _StoryValidators.maxImageSizeMB)) {
-        return _showError('Image trop volumineuse (max ${_StoryValidators.maxImageSizeMB}MB)');
-      }
-      if (!_StoryValidators.validateFileExtension(f.name, _StoryValidators.allowedImageExts)) {
-        return _showError('Format image non supporté');
+    setState(() => _isBusyMedia = true);
+    try {
+      final media = await MediaPickerService.pickImage(
+        context,
+        source: source,
+        maxBytes: _StoryValidators.maxImageSizeMB * 1024 * 1024,
+      );
+      if (!mounted) return;
+      if (media == null) {
+        setState(() => _isBusyMedia = false);
+        return;
       }
 
       setState(() {
         _mode = _StoryMode.photo;
-        _imageBytes = f.bytes;
-        _imageExt = f.extension ?? 'jpg';
+        _imageMedia = media;
+        _imageBytes = media.bytes;
+        _imageExt = media.ext;
         _audioBytes = null;
         _audioPath = null;
         _videoBytes = null;
         _videoExt = null;
-        _videoController?.dispose();
-        _videoController = null;
+        _disposeVideo();
+        _isBusyMedia = false;
       });
       HapticFeedback.lightImpact();
     } catch (e) {
       debugPrint('[Story] pickImage: $e');
-      _showError('Erreur lors de la sélection');
+      if (mounted) setState(() => _isBusyMedia = false);
+      _showError(e is MediaException ? e.message : 'Erreur lors de la sélection');
+    }
+  }
+
+  Future<void> _editImage() async {
+    final media = _imageMedia;
+    if (media == null || _blocked) return;
+
+    setState(() => _isBusyMedia = true);
+    try {
+      final edited = await MediaPickerService.editImage(
+        context,
+        media,
+        maxBytes: _StoryValidators.maxImageSizeMB * 1024 * 1024,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (edited != null) {
+          _imageMedia = edited;
+          _imageBytes = edited.bytes;
+          _imageExt = edited.ext;
+        }
+        _isBusyMedia = false;
+      });
+    } catch (e) {
+      debugPrint('[Story] editImage: $e');
+      if (mounted) setState(() => _isBusyMedia = false);
+      _showError(e is MediaException ? e.message : "Erreur lors de la modification");
     }
   }
 
   void _clearImage() => setState(() {
+        _imageMedia = null;
         _imageBytes = null;
         _imageExt = null;
         _mode = _StoryMode.text;
@@ -222,52 +235,25 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   // VIDÉO
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _pickVideo() async {
-    if (_isUploading || _isRecording || _isProcessingVideo) return;
-    try {
-      setState(() => _isProcessingVideo = true);
+    if (_blocked) return;
+    final source = await MediaPickerService.askSource(context, video: true);
+    if (source == null || !mounted) return;
 
-      final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: false);
-      final f = result?.files.first;
-      if (f?.path == null) {
-        if (mounted) setState(() => _isProcessingVideo = false);
+    setState(() => _isBusyMedia = true);
+    try {
+      final media = await MediaPickerService.pickVideo(
+        context,
+        source: source,
+        maxSeconds: _StoryValidators.maxVideoDurationSeconds,
+        maxBytes: _StoryValidators.maxVideoSizeMB * 1024 * 1024,
+      );
+      if (!mounted) return;
+      if (media == null) {
+        setState(() => _isBusyMedia = false);
         return;
       }
 
-      if (!_StoryValidators.validateFileExtension(f!.name, _StoryValidators.allowedVideoExts)) {
-        if (mounted) setState(() => _isProcessingVideo = false);
-        return _showError('Format vidéo non supporté');
-      }
-
-      // Compresse la vidéo pour l'upload en arrière-plan
-      final info = await VideoCompress.compressVideo(
-        f.path!,
-        quality: VideoQuality.DefaultQuality,
-        deleteOrigin: false,
-        includeAudio: true,
-      );
-
-      if (info?.file == null) {
-        if (mounted) setState(() => _isProcessingVideo = false);
-        return _showError('Compression impossible');
-      }
-
-      final compressedFile = info!.file!;
-
-      // ✅ FIX 1 : info.duration est un double (millisecondes), on divise par 1000 pour les secondes
-      if (info.duration != null && (info.duration! / 1000) > _StoryValidators.maxVideoDurationSeconds) {
-        if (mounted) setState(() => _isProcessingVideo = false);
-        return _showError('Vidéo trop longue (max ${_StoryValidators.maxVideoDurationSeconds}s)');
-      }
-
-      // Vérifie taille après compression
-      final bytes = await compressedFile.readAsBytes();
-      if (!_StoryValidators.validateFileSize(bytes.length, _StoryValidators.maxVideoSizeMB)) {
-        if (mounted) setState(() => _isProcessingVideo = false);
-        return _showError('Vidéo trop volumineuse après compression');
-      }
-
-      final ext = f.extension ?? 'mp4';
-      final controller = VideoPlayerController.file(compressedFile);
+      final controller = MediaPickerService.controllerFor(media.path);
       await controller.initialize();
       await controller.setLooping(true);
 
@@ -276,24 +262,27 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         return;
       }
 
+      final old = _videoController;
       setState(() {
         _mode = _StoryMode.video;
-        _videoBytes = bytes;
-        _videoExt = ext;
-        _videoController?.dispose();
+        _videoBytes = media.bytes;
+        _videoExt = media.ext;
         _videoController = controller;
+        _imageMedia = null;
         _imageBytes = null;
+        _imageExt = null;
         _audioBytes = null;
         _audioPath = null;
-        _isProcessingVideo = false;
+        _isBusyMedia = false;
       });
+      old?.dispose();
 
       await controller.play();
       HapticFeedback.lightImpact();
     } catch (e) {
       debugPrint('[Story] pickVideo: $e');
-      if (mounted) setState(() => _isProcessingVideo = false);
-      _showError('Erreur lors de la sélection vidéo');
+      if (mounted) setState(() => _isBusyMedia = false);
+      _showError(e is MediaException ? e.message : 'Erreur lors de la sélection vidéo');
     }
   }
 
@@ -301,8 +290,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     setState(() {
       _videoBytes = null;
       _videoExt = null;
-      _videoController?.dispose();
-      _videoController = null;
+      _disposeVideo();
       _mode = _StoryMode.text;
     });
   }
@@ -311,7 +299,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   // AUDIO
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _startRecording() async {
-    if (_isUploading || _isRecording || _isProcessingVideo) return;
+    if (_blocked) return;
 
     final ok = await _checkPermission(
       Permission.microphone,
@@ -341,10 +329,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         _audioBytes = null;
         _audioPath = null;
         _mode = _StoryMode.audio;
+        _imageMedia = null;
         _imageBytes = null;
         _videoBytes = null;
-        _videoController?.dispose();
-        _videoController = null;
+        _disposeVideo();
       });
 
       _recordTimer?.cancel();
@@ -375,7 +363,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         return _showError('Enregistrement vide');
       }
 
-      // ✅ FIX 2 : Utilisation de XFile au lieu de File (dart:io) pour supporter le Web et le Mobile
       final bytes = await XFile(path).readAsBytes();
       if (bytes.isEmpty) return _showError('Enregistrement vide');
 
@@ -387,10 +374,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         _audioBytes = bytes;
         _audioPath = path;
         _mode = _StoryMode.audio;
+        _imageMedia = null;
         _imageBytes = null;
         _videoBytes = null;
-        _videoController?.dispose();
-        _videoController = null;
+        _disposeVideo();
       });
       HapticFeedback.mediumImpact();
     } catch (e) {
@@ -472,7 +459,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   // PUBLICATION — EN FILE D'ATTENTE (arrière-plan)
   // ════════════════════════════════════════════════════════════════════════
   void _createStory() {
-    if (_isUploading || _isRecording || _isProcessingVideo) return;
+    if (_blocked) return;
     if (!_hasContent) return _showError('Ajoutez du texte, une photo, un audio ou une vidéo');
 
     final text = _StoryValidators.sanitizeText(_textController.text.trim());
@@ -483,16 +470,12 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     final manager = ref.read(storyUploadManagerProvider.notifier);
 
     if (_mode == _StoryMode.photo && _imageBytes != null) {
-      // Compresser avant d'enquêter pour éviter de bloquer l'UI
-      _compressImageAsync(_imageBytes!).then((compressed) {
-        manager.enqueueImage(compressed, _imageExt ?? 'jpg');
-      });
+      manager.enqueueImage(_imageBytes!, _imageExt ?? 'jpg');
     } else if (_mode == _StoryMode.audio && _audioBytes != null) {
       manager.enqueueAudio(_audioBytes!);
     } else if (_mode == _StoryMode.video && _videoBytes != null) {
       manager.enqueueVideo(_videoBytes!, _videoExt ?? 'mp4');
     } else {
-      // Texte seul
       if (text.isEmpty) return _showError('Ajoutez du texte');
       manager.enqueueText(text, bgColor: bgColor);
     }
@@ -598,24 +581,18 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
               children: [
                 _glassBtn(
                   icon: Icons.close_rounded,
-                  onTap: (_isUploading || _isRecording || _isProcessingVideo)
-                      ? null
-                      : () => Navigator.pop(context, false),
+                  onTap: _blocked ? null : () => Navigator.pop(context, false),
                 ),
                 const Spacer(),
                 GestureDetector(
-                  onTap: (_isUploading || _isRecording || _isProcessingVideo || !_hasContent)
-                      ? null
-                      : _createStory,
+                  onTap: (_blocked || !_hasContent) ? null : _createStory,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                     decoration: BoxDecoration(
-                      gradient: (_isUploading || _isRecording || _isProcessingVideo || !_hasContent)
+                      gradient: (_blocked || !_hasContent)
                           ? null
                           : const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)]),
-                      color: (_isUploading || _isRecording || _isProcessingVideo || !_hasContent)
-                          ? Colors.white24
-                          : null,
+                      color: (_blocked || !_hasContent) ? Colors.white24 : null,
                       borderRadius: BorderRadius.circular(30),
                     ),
                     child: _isUploading
@@ -626,24 +603,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
               ],
             ),
           ),
-
-          // Loader pendant traitement vidéo
-          if (_isProcessingVideo)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black87,
-                child: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(color: ThixPolicy.gold),
-                      SizedBox(height: 16),
-                      Text('Compression vidéo…', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
 
           // Panneau bas
           Positioned(
@@ -695,7 +654,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
               },
               child: Container(
                 padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
                 child: Icon(
                   _videoController!.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   color: Colors.white,
@@ -765,6 +724,21 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     );
   }
 
+  Widget _outlinedAction(IconData icon, String label, VoidCallback onPressed) {
+    return Expanded(
+      child: OutlinedButton.icon(
+        onPressed: _blocked ? null : onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white70,
+          side: const BorderSide(color: Colors.white38),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+      ),
+    );
+  }
+
   Widget _defaultPanel() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -803,50 +777,43 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
           children: [
             _actionTile(Icons.image_rounded, 'Photo', ThixPolicy.success, _pickImage),
             const SizedBox(width: 8),
-            _actionTile(Icons.videocam_rounded, 'Vidéo', Color(0xFF00A4FF), _pickVideo),
+            _actionTile(Icons.videocam_rounded, 'Vidéo', const Color(0xFF00A4FF), _pickVideo),
             const SizedBox(width: 8),
             _actionTile(Icons.mic_rounded, 'Audio', ThixPolicy.gold, _startRecording),
             const SizedBox(width: 8),
             _actionTile(Icons.format_size_rounded, 'Texte', ThixPolicy.primary, () {
               setState(() {
                 _mode = _StoryMode.text;
+                _imageMedia = null;
                 _imageBytes = null;
                 _audioBytes = null;
                 _audioPath = null;
                 _videoBytes = null;
-                _videoController?.dispose();
-                _videoController = null;
+                _disposeVideo();
               });
             }),
           ],
         ),
-        // Bouton supprimer pour photo/vidéo
+        // Photo : modifier + supprimer
         if (_mode == _StoryMode.photo && _imageBytes != null)
           Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton.icon(
-              onPressed: _clearImage,
-              icon: const Icon(Icons.delete_outline_rounded, size: 18),
-              label: const Text('Supprimer la photo'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white70,
-                side: const BorderSide(color: Colors.white38),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
+            child: Row(
+              children: [
+                _outlinedAction(Icons.crop_rotate_rounded, 'Modifier', _editImage),
+                const SizedBox(width: 10),
+                _outlinedAction(Icons.delete_outline_rounded, 'Supprimer', _clearImage),
+              ],
             ),
           ),
+        // Vidéo : supprimer
         if (_mode == _StoryMode.video && _videoBytes != null)
           Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton.icon(
-              onPressed: _clearVideo,
-              icon: const Icon(Icons.delete_outline_rounded, size: 18),
-              label: const Text('Supprimer la vidéo'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white70,
-                side: const BorderSide(color: Colors.white38),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
+            child: Row(
+              children: [
+                _outlinedAction(Icons.delete_outline_rounded, 'Supprimer la vidéo', _clearVideo),
+              ],
             ),
           ),
       ],
@@ -856,7 +823,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   Widget _actionTile(IconData icon, String label, Color color, VoidCallback onTap) {
     return Expanded(
       child: GestureDetector(
-        onTap: (_isUploading || _isRecording || _isProcessingVideo) ? null : onTap,
+        onTap: _blocked ? null : onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -900,7 +867,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
                 scale: 1 + (_pulseCtrl.value * 0.12),
                 child: Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
+                  decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
                   child: const Icon(Icons.mic_rounded, color: Colors.white, size: 28),
                 ),
               ),
@@ -1044,6 +1011,7 @@ class _StoryAudioPreviewState extends State<_StoryAudioPreview> {
   @override
   Widget build(BuildContext context) {
     final total = _duration.inMilliseconds > 0 ? _duration : Duration(seconds: widget.bytes.length ~/ 16000);
+    final maxMs = total.inMilliseconds.toDouble() > 0 ? total.inMilliseconds.toDouble() : 1.0;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1083,8 +1051,8 @@ class _StoryAudioPreviewState extends State<_StoryAudioPreview> {
                   ),
                   child: Slider(
                     min: 0,
-                    max: total.inMilliseconds.toDouble() > 0 ? total.inMilliseconds.toDouble() : 1,
-                    value: _position.inMilliseconds.toDouble().clamp(0, total.inMilliseconds.toDouble() > 0 ? total.inMilliseconds.toDouble() : 1),
+                    max: maxMs,
+                    value: _position.inMilliseconds.toDouble().clamp(0, maxMs),
                     onChanged: (v) => _player.seek(Duration(milliseconds: v.toInt())),
                   ),
                 ),
