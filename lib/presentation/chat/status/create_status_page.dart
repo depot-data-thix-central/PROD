@@ -1,15 +1,11 @@
 // lib/presentation/chat/status/create_status_page.dart
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:image_cropper/image_cropper.dart';
-import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:thix_id/core/media/media_picker_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/chat/status/providers/status_upload_manager.dart';
@@ -18,7 +14,8 @@ import 'package:thix_id/presentation/chat/status/providers/status_upload_manager
 // CONSTANTS
 // ============================================================================
 const int _kMaxStatusLength = 200;
-const int _kMaxImageSizeBytes = 5 * 1024 * 1024; // 5MB
+const int _kMaxImageSizeBytes = 10 * 1024 * 1024; // 10MB (après rognage)
+const int _kMaxVideoSizeBytes = 50 * 1024 * 1024; // 50MB (après compression)
 const int _kMaxVideoDurationSeconds = 120; // 2 minutes
 const double _kColorPickerSize = 36.0;
 const double _kColorPickerBorderSelected = 3.0;
@@ -54,11 +51,8 @@ class _StatusValidators {
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  static bool isValidImageSize(int bytes) {
-    return bytes > 0 && bytes <= _kMaxImageSizeBytes;
-  }
-
   static String friendlyError(dynamic e) {
+    if (e is MediaException) return e.message;
     final msg = e.toString().toLowerCase();
     if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
     if (msg.contains('network')) return 'Erreur réseau. Réessayez.';
@@ -82,10 +76,11 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
   bool _sending = false;
   Color _bg = _kStatusColors.first;
 
-  File? _selectedImage;
-  File? _selectedVideo;
+  PickedMedia? _media;
   VideoPlayerController? _videoController;
-  Duration _videoDuration = Duration.zero;
+
+  bool get _hasMedia => _media != null;
+  bool get _isVideo => _media?.isVideo ?? false;
 
   @override
   void dispose() {
@@ -110,7 +105,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     final hexColor = '#${_bg.value.toRadixString(16).padLeft(8, '0').substring(2)}';
 
-    // Mise en file d'attente : l'upload continue en arrière-plan
     ref.read(statusUploadManagerProvider.notifier).enqueueText(
           sanitizedText,
           background: hexColor,
@@ -152,72 +146,56 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       ),
     );
 
-    if (choice == null) return;
+    if (choice == null || !mounted) return;
 
-    final result = await FilePicker.platform.pickFiles(
-      type: choice == 'image' ? FileType.image : FileType.video,
-      withData: false,
-      allowMultiple: false,
-    );
+    final isVideo = choice == 'video';
+    final source = await MediaPickerService.askSource(context, video: isVideo);
+    if (source == null || !mounted) return;
 
-    if (result == null || result.files.isEmpty || result.files.single.path == null) {
-      debugPrint('[CreateStatus] ⚠️ No file selected');
-      return;
-    }
-
-    final file = File(result.files.single.path!);
-
-    if (choice == 'image') {
-      await _processImage(file, l10n);
-    } else {
-      await _processVideo(file, l10n);
-    }
-  }
-
-  Future<void> _processImage(File file, AppLocalizations l10n) async {
+    setState(() => _sending = true);
     try {
-      setState(() => _sending = true);
+      final PickedMedia? picked = isVideo
+          ? await MediaPickerService.pickVideo(
+              context,
+              source: source,
+              maxSeconds: _kMaxVideoDurationSeconds,
+              maxBytes: _kMaxVideoSizeBytes,
+            )
+          : await MediaPickerService.pickImage(
+              context,
+              source: source,
+              maxBytes: _kMaxImageSizeBytes,
+            );
 
-      final bytes = await file.length();
-      if (!_StatusValidators.isValidImageSize(bytes)) {
-        _showError('${l10n.t('status_file_too_big')} (max 5MB)');
+      if (picked == null) {
+        if (mounted) setState(() => _sending = false);
         return;
       }
 
-      setState(() => _sending = false);
-
-      // Ouvre le cropper natif (rognage, rotation, ajustement)
-      final croppedFile = await ImageCropper().cropImage(
-        sourcePath: file.path,
-        compressQuality: 85,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Modifier',
-            toolbarColor: Colors.black,
-            toolbarWidgetColor: Colors.white,
-            backgroundColor: Colors.black,
-            initAspectRatio: CropAspectRatioPreset.original,
-            lockAspectRatio: false,
-          ),
-          IOSUiSettings(
-            title: 'Modifier',
-            cancelButtonTitle: 'Annuler',
-            doneButtonTitle: 'OK',
-          ),
-        ],
-      );
-
-      if (croppedFile != null && mounted) {
-        setState(() {
-          _selectedImage = File(croppedFile.path);
-          _selectedVideo = null;
-          _videoController?.dispose();
-          _videoController = null;
-        });
-        debugPrint('[CreateStatus] ✓ Image rognée: ${croppedFile.path}');
+      VideoPlayerController? controller;
+      if (picked.isVideo) {
+        controller = MediaPickerService.controllerFor(picked.path);
+        await controller.initialize();
+        await controller.setLooping(true);
       }
+
+      if (!mounted) {
+        controller?.dispose();
+        return;
+      }
+
+      final old = _videoController;
+      setState(() {
+        _media = picked;
+        _videoController = controller;
+        _sending = false;
+      });
+      old?.dispose();
+
+      await controller?.play();
+      debugPrint('[CreateStatus] ✓ Média prêt (${picked.isVideo ? 'vidéo' : 'image'})');
     } catch (e) {
-      debugPrint('[CreateStatus] ❌ Erreur image: $e');
+      debugPrint('[CreateStatus] ❌ Erreur média: $e');
       if (mounted) {
         setState(() => _sending = false);
         _showError(_StatusValidators.friendlyError(e));
@@ -225,50 +203,24 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     }
   }
 
-  Future<void> _processVideo(File file, AppLocalizations l10n) async {
+  Future<void> _editImage() async {
+    final media = _media;
+    if (media == null || media.isVideo || _sending) return;
+
+    setState(() => _sending = true);
     try {
-      setState(() => _sending = true);
-
-      // Compresse la vidéo pour l'upload en arrière-plan
-      final info = await VideoCompress.compressVideo(
-        file.path,
-        quality: VideoQuality.DefaultQuality,
-        deleteOrigin: false,
-        includeAudio: true,
+      final edited = await MediaPickerService.editImage(
+        context,
+        media,
+        maxBytes: _kMaxImageSizeBytes,
       );
-
-      if (info?.file == null) {
-        if (mounted) setState(() => _sending = false);
-        return;
-      }
-
-      final compressedFile = info!.file!;
-      final controller = VideoPlayerController.file(compressedFile);
-      await controller.initialize();
-      _videoDuration = controller.value.duration;
-
-      if (_videoDuration.inSeconds > _kMaxVideoDurationSeconds) {
-        controller.dispose();
-        _showError('${l10n.t('status_video_too_long')} (max 2 min)');
-        if (mounted) setState(() => _sending = false);
-        return;
-      }
-
-      await controller.setLooping(true);
-
       if (!mounted) return;
       setState(() {
-        _selectedVideo = compressedFile;
-        _selectedImage = null;
-        _videoController?.dispose();
-        _videoController = controller;
+        if (edited != null) _media = edited;
         _sending = false;
       });
-
-      await controller.play();
-      debugPrint('[CreateStatus] ✓ Vidéo compressée et prête: ${compressedFile.path}');
     } catch (e) {
-      debugPrint('[CreateStatus] ❌ Erreur vidéo: $e');
+      debugPrint('[CreateStatus] ❌ Erreur édition: $e');
       if (mounted) {
         setState(() => _sending = false);
         _showError(_StatusValidators.friendlyError(e));
@@ -278,9 +230,9 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
   // ----------------------------------------------------------------- MEDIA
   Future<void> _publishMedia() async {
-    final l10n = AppLocalizations.of(context);
     if (_sending) return;
-    if (_selectedImage == null && _selectedVideo == null) return;
+    final media = _media;
+    if (media == null) return;
 
     final sanitizedCaption = _StatusValidators.sanitizeText(
       _textCtrl.text.trim(),
@@ -290,19 +242,13 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     HapticFeedback.mediumImpact();
 
-    // Mise en file d'attente : lecture des octets + upload en arrière-plan
-    if (_selectedImage != null) {
-      ref.read(statusUploadManagerProvider.notifier).enqueueImage(
-            _selectedImage!.path,
-            caption: caption,
-          );
-      debugPrint('[CreateStatus] 🖼️ Image queued (background upload)');
-    } else {
-      ref.read(statusUploadManagerProvider.notifier).enqueueVideo(
-            _selectedVideo!.path,
-            caption: caption,
-          );
+    final manager = ref.read(statusUploadManagerProvider.notifier);
+    if (media.isVideo) {
+      manager.enqueueVideo(media.bytes, media.ext, caption: caption);
       debugPrint('[CreateStatus] 🎥 Video queued (background upload)');
+    } else {
+      manager.enqueueImage(media.bytes, media.ext, caption: caption);
+      debugPrint('[CreateStatus] 🖼️ Image queued (background upload)');
     }
 
     if (!mounted) return;
@@ -349,18 +295,18 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
   }
 
   void _clearMedia() {
+    final old = _videoController;
     setState(() {
-      _selectedImage = null;
-      _selectedVideo = null;
-      _videoController?.dispose();
+      _media = null;
       _videoController = null;
     });
+    old?.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final hasMedia = _selectedImage != null || _selectedVideo != null;
+    final hasMedia = _hasMedia;
 
     return Scaffold(
       backgroundColor: hasMedia ? Colors.black : _bg,
@@ -426,6 +372,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                     maxLines: null,
                     maxLength: _kMaxStatusLength,
                     textAlign: TextAlign.center,
+                    onChanged: (_) => setState(() {}),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: _kFontSizeStatus,
@@ -520,23 +467,33 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
   }
 
   Widget _buildMediaView(AppLocalizations l10n) {
+    final media = _media!;
     return Column(
       children: [
         Expanded(
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (_selectedImage != null)
+              if (!_isVideo)
                 InteractiveViewer(
                   minScale: 1.0,
                   maxScale: 4.0,
-                  child: Image.file(_selectedImage!, fit: BoxFit.contain),
+                  child: Image.memory(media.bytes, fit: BoxFit.contain),
                 )
-              else if (_selectedVideo != null && _videoController != null)
-                Center(
-                  child: AspectRatio(
-                    aspectRatio: _videoController!.value.aspectRatio,
-                    child: VideoPlayer(_videoController!),
+              else if (_videoController != null && _videoController!.value.isInitialized)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _videoController!.value.isPlaying
+                          ? _videoController!.pause()
+                          : _videoController!.play();
+                    });
+                  },
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: _videoController!.value.aspectRatio,
+                      child: VideoPlayer(_videoController!),
+                    ),
                   ),
                 ),
               Positioned(
@@ -592,9 +549,19 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.white),
-                onPressed: _clearMedia,
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.white),
+                    onPressed: _clearMedia,
+                  ),
+                  if (!_isVideo)
+                    IconButton(
+                      tooltip: 'Modifier',
+                      icon: const Icon(Icons.crop_rotate_rounded, color: Colors.white),
+                      onPressed: _sending ? null : _editImage,
+                    ),
+                ],
               ),
               _ActionChip(
                 l10n: l10n,
