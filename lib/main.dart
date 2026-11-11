@@ -797,18 +797,23 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           }
           return supportedLocales.first;
         },
-      builder: (context, child) {
-  return Directionality(
-    textDirection: localeController.textDirection,
-    child: NotifBannerListener(
-      child: GlobalSosListener(
-        child: GlobalCallListener(
-          navigatorKey: rootNavigatorKey,
-          child: StatusUploadListener(  
-            child: child ?? const SizedBox.shrink(),
+            builder: (context, child) {
+        return Directionality(
+          textDirection: localeController.textDirection,
+          child: NotifBannerListener(
+            child: GlobalSosListener(
+              child: GlobalCallListener(
+                navigatorKey: rootNavigatorKey,
+                child: StatusUploadListener(
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
-    ),
-  );
-},
+        );
+      },
+    ), 
+  ); // ferme app_provider.MultiProvider
+  } // ferme _ThixAppState.build()
+} // ferme _ThixAppState
+} // ferme ThixApp
