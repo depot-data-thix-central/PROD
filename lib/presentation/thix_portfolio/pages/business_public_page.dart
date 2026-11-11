@@ -3,10 +3,12 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 10.0.0 — Novembre 2026
+//  Version  : 10.1.0 — Novembre 2026
 //
-//  Design : navy + accent unique, bordures fines, grille responsive,
-//  cartes sobres, hiérarchie typographique claire, zéro mockup.
+//  v10.1 : fiche d'identité en tableau (en-tête + lignes), identifiant THIX
+//          sur UNE seule ligne (FittedBox), cartes vidéo avec miniature
+//          (YouTube auto) ou visuel lecteur, partenaires en tuiles logo,
+//          rubriques avancées numérotées, CTA sur les cartes.
 // ════════════════════════════════════════════════════════════════════════════
 import 'dart:async';
 import 'dart:math' as math;
@@ -151,6 +153,7 @@ const Map<String, String> _eyebrowEn = {
   'Humain': 'People',
   'Actualités': 'News',
   'Ils nous font confiance': 'Trusted by',
+  'Complément': 'More',
 };
 
 String _t(String lang, String key) => _i18n[lang]?[key] ?? key;
@@ -243,6 +246,17 @@ String _initials(String name) {
   if (parts.isEmpty) return '?';
   if (parts.length == 1) return parts.first[0].toUpperCase();
   return (parts.first[0] + parts.last[0]).toUpperCase();
+}
+
+/// Miniature YouTube automatique (null si ce n'est pas un lien YouTube).
+String? _ytThumb(String url) {
+  final u = url.trim();
+  if (u.isEmpty) return null;
+  final m = RegExp(
+          r'(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/)|youtu\.be/)([A-Za-z0-9_-]{11})')
+      .firstMatch(u);
+  if (m == null) return null;
+  return 'https://img.youtube.com/vi/${m.group(1)}/hqdefault.jpg';
 }
 
 class _ImgFallback extends StatelessWidget {
@@ -419,7 +433,8 @@ class _Avatar extends StatelessWidget {
       child: has ? _img(url!, fallback: fb) : fb,
     );
     return square
-        ? ClipRRect(borderRadius: BorderRadius.circular(radius * 0.5), child: content)
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(radius * 0.5), child: content)
         : ClipOval(child: content);
   }
 }
@@ -646,7 +661,9 @@ void _showDetail(
                     const SizedBox(height: 20),
                     SelectableText(text,
                         style: const TextStyle(
-                            fontSize: 15, height: 1.75, color: Color(0xFF334155))),
+                            fontSize: 15,
+                            height: 1.75,
+                            color: Color(0xFF334155))),
                   ],
                   const SizedBox(height: 28),
                   Row(
@@ -693,6 +710,7 @@ Widget _secHead(
   String? eyebrow,
 }) {
   final lang = _LangScope.of(context);
+  final narrow = MediaQuery.sizeOf(context).width < 700;
   final eb = eyebrow ?? _eyebrowFor(title);
   var num = '';
   var label = eb;
@@ -703,7 +721,7 @@ Widget _secHead(
   }
   if (lang == 'en') label = _eyebrowEn[label] ?? label;
   return Padding(
-    padding: const EdgeInsets.only(bottom: 28),
+    padding: EdgeInsets.only(bottom: narrow ? 22 : 28),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -745,7 +763,7 @@ Widget _secHead(
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontSize: 30,
+                    fontSize: narrow ? 26 : 30,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.9,
                     height: 1.15,
@@ -782,7 +800,7 @@ String _eyebrowFor(String title) {
   return '';
 }
 
-/// Carte média verticale (image en haut si disponible).
+/// Carte média verticale : image / miniature vidéo / visuel lecteur / filet.
 class _MediaCard extends StatelessWidget {
   const _MediaCard({
     required this.title,
@@ -792,6 +810,7 @@ class _MediaCard extends StatelessWidget {
     this.meta,
     this.onTap,
     this.video = false,
+    this.cta,
   });
   final String title;
   final String? image;
@@ -800,10 +819,57 @@ class _MediaCard extends StatelessWidget {
   final String? meta;
   final VoidCallback? onTap;
   final bool video;
+  final String? cta;
 
   @override
   Widget build(BuildContext context) {
+    final ink = _ink(context);
     final has = image != null && image!.trim().isNotEmpty;
+
+    Widget playBadge() => Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25), blurRadius: 16)
+            ],
+          ),
+          child: Icon(Icons.play_arrow_rounded, color: ink, size: 30),
+        );
+
+    Widget media;
+    if (has) {
+      media = AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Stack(fit: StackFit.expand, children: [
+          _img(image!.trim()),
+          if (video) ...[
+            Container(color: Colors.black.withValues(alpha: 0.18)),
+            Center(child: playBadge()),
+          ],
+        ]),
+      );
+    } else if (video) {
+      media = AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [ink, Color.lerp(ink, Colors.black, 0.5)!],
+            ),
+          ),
+          child: Center(child: playBadge()),
+        ),
+      );
+    } else {
+      media = Container(height: 3, color: _accent(context));
+    }
+
     return _Tap(
       onTap: onTap,
       child: Container(
@@ -813,25 +879,9 @@ class _MediaCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (has)
-              AspectRatio(
-                aspectRatio: 16 / 10,
-                child: Stack(fit: StackFit.expand, children: [
-                  _img(image!.trim()),
-                  if (video)
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: const BoxDecoration(
-                            color: Colors.white, shape: BoxShape.circle),
-                        child: Icon(Icons.play_arrow_rounded,
-                            color: _ink(context), size: 24),
-                      ),
-                    ),
-                ]),
-              ),
+            media,
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -856,7 +906,7 @@ class _MediaCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           height: 1.3,
                           letterSpacing: -0.2,
-                          color: _ink(context))),
+                          color: ink)),
                   if (text != null && text!.trim().isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -873,15 +923,28 @@ class _MediaCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: _ink(context).withValues(alpha: 0.06),
+                          color: ink.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(meta!,
                             style: TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
-                                color: _ink(context))),
+                                color: ink)),
                       ),
+                    ),
+                  if (onTap != null && cta != null && cta!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(cta!,
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: ink)),
+                        const SizedBox(width: 6),
+                        Icon(Icons.arrow_forward_rounded, size: 14, color: ink),
+                      ]),
                     ),
                 ],
               ),
@@ -1056,11 +1119,15 @@ List<(String, String)> _realStats(BusinessBundle bundle, String lang) {
   if (b.sinceYear != null && b.sinceYear! > 1900) {
     final years = DateTime.now().year - b.sinceYear!;
     if (years > 0) {
-      stats.add(('$years+', lang == 'en' ? 'years of experience' : "ans d'expérience"));
+      stats.add((
+        '$years+',
+        lang == 'en' ? 'years of experience' : "ans d'expérience"
+      ));
     }
   }
   if (b.employees != null && b.employees! > 0) {
-    stats.add(('${b.employees}', lang == 'en' ? 'team members' : 'collaborateurs'));
+    stats.add(
+        ('${b.employees}', lang == 'en' ? 'team members' : 'collaborateurs'));
   }
   final svc = bundle.sectionOfType(BusinessSectionType.services)?.content;
   if (svc is ServicesContent && svc.items.isNotEmpty) {
@@ -1146,16 +1213,16 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
       for (final s in main)
         _Blk('s-${s.id}', _label(_titleOf(s.content)),
             _SectionRenderer(section: s)),
-      for (final e in visibleExtras)
-        if (kBizKindByKey[e.kind] != null)
+      for (var k = 0; k < visibleExtras.length; k++)
+        if (kBizKindByKey[visibleExtras[k].kind] != null)
           _Blk(
-            'x-${e.kind}',
-            (e.title?.trim().isNotEmpty ?? false)
-                ? e.title!.trim()
+            'x-${visibleExtras[k].kind}',
+            (visibleExtras[k].title?.trim().isNotEmpty ?? false)
+                ? visibleExtras[k].title!.trim()
                 : (lang == 'en'
-                    ? kBizKindByKey[e.kind]!.en
-                    : kBizKindByKey[e.kind]!.fr),
-            _ExtraSection(extra: e),
+                    ? kBizKindByKey[visibleExtras[k].kind]!.en
+                    : kBizKindByKey[visibleExtras[k].kind]!.fr),
+            _ExtraSection(extra: visibleExtras[k], number: 8 + k),
           ),
     ];
     final firstSection = blocks.isNotEmpty ? blocks[0].id : 'contact-cta';
@@ -1768,7 +1835,8 @@ class _HeroBlock extends StatelessWidget {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 12, vertical: 7),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.10),
+                                      color:
+                                          Colors.white.withValues(alpha: 0.10),
                                       border: Border.all(
                                           color: Colors.white
                                               .withValues(alpha: 0.25)),
@@ -1894,8 +1962,8 @@ class _HeroBlock extends StatelessWidget {
                 child: _Wrap(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: pad),
-                    child: _StatsBar(
-                        stats: stats.take(narrow ? 3 : 4).toList()),
+                    child:
+                        _StatsBar(stats: stats.take(narrow ? 3 : 4).toList()),
                   ),
                 ),
               ),
@@ -2034,19 +2102,22 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IDENTITÉ
+// IDENTITÉ — fiche en tableau + identifiant THIX sur une seule ligne
 // ─────────────────────────────────────────────────────────────────────────────
 class _IdentityStrip extends StatelessWidget {
   const _IdentityStrip({required this.business});
   final Business business;
+
   @override
   Widget build(BuildContext context) {
     final lang = _LangScope.of(context);
+    final ink = _ink(context);
     final b = business;
     final where = [
       if (b.city != null && b.city!.trim().isNotEmpty) b.city!.trim(),
       if (b.country.trim().isNotEmpty) _country(lang, b.country),
     ].join(', ');
+
     Future<void> copyId() async {
       await Clipboard.setData(ClipboardData(text: b.thixId));
       if (!context.mounted) return;
@@ -2055,16 +2126,22 @@ class _IdentityStrip extends StatelessWidget {
           content: Text('${_tr(context, 'copied')}${b.thixId}')));
     }
 
-    final rows = <(String, String)>[
-      (_tr(context, 'f_name'), b.name),
+    // (libellé, valeur, statut vert ?)
+    final rows = <(String, String, bool)>[
       if (b.sector != null && b.sector!.trim().isNotEmpty)
-        (_tr(context, 'f_sector'), b.sector!),
-      if (where.isNotEmpty) (_tr(context, 'f_hq'), where),
-      if (b.sinceYear != null) (_tr(context, 'f_since'), '${b.sinceYear}'),
+        (_tr(context, 'f_sector'), b.sector!.trim(), false),
+      if (where.isNotEmpty) (_tr(context, 'f_hq'), where, false),
+      if (b.sinceYear != null)
+        (_tr(context, 'f_since'), '${b.sinceYear}', false),
       if (b.employees != null)
-        (_tr(context, 'f_staff'), '${b.employees} ${_tr(context, 'staff')}'),
-      (_tr(context, 'f_status'), _tr(context, 'verified_status')),
+        (
+          _tr(context, 'f_staff'),
+          '${b.employees} ${_tr(context, 'staff')}',
+          false
+        ),
+      if (b.verified) (_tr(context, 'f_status'), _tr(context, 'verified_status'), true),
     ];
+
     final links = <Widget>[
       if (b.website != null && b.website!.isNotEmpty)
         _LinkChip(
@@ -2090,90 +2167,147 @@ class _IdentityStrip extends StatelessWidget {
             eyebrow: '01 — Profil'),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(24),
           decoration: _cardDeco(context),
-          child: _Grid(
-            minWidth: 240,
-            gap: 24,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
             children: [
-              for (final r in rows)
-                Container(
-                  padding: const EdgeInsets.only(left: 14),
-                  decoration: BoxDecoration(
-                    border: Border(
-                        left: BorderSide(
-                            color: r.$1 == _tr(context, 'f_status')
-                                ? _kGreen
-                                : _kLine,
-                            width: 2)),
+              // En-tête : logo + dénomination
+              Container(
+                color: ink.withValues(alpha: 0.035),
+                padding: const EdgeInsets.all(18),
+                child: Row(children: [
+                  _Avatar(
+                      url: b.logoUrl, name: b.name, radius: 24, square: true),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_tr(context, 'f_name').toUpperCase(),
+                            style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.4,
+                                color: _kMuted)),
+                        const SizedBox(height: 3),
+                        Text(b.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                                height: 1.2,
+                                color: ink)),
+                      ],
+                    ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ]),
+              ),
+              for (final r in rows) ...[
+                const Divider(height: 1, thickness: 1, color: _kLine),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(r.$1.toUpperCase(),
-                          style: const TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.4,
-                              color: _kMuted)),
-                      const SizedBox(height: 6),
-                      Text(r.$2,
-                          style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              height: 1.3,
-                              color: _ink(context))),
+                      Expanded(
+                        flex: 4,
+                        child: Text(r.$1,
+                            style: const TextStyle(
+                                fontSize: 13, color: _kMuted)),
+                      ),
+                      Expanded(
+                        flex: 6,
+                        child: Row(children: [
+                          if (r.$3)
+                            Container(
+                                width: 8,
+                                height: 8,
+                                margin: const EdgeInsets.only(right: 8),
+                                decoration: const BoxDecoration(
+                                    color: _kGreen, shape: BoxShape.circle)),
+                          Flexible(
+                            child: Text(r.$2,
+                                style: TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.3,
+                                    color: r.$3
+                                        ? const Color(0xFF15803D)
+                                        : ink)),
+                          ),
+                        ]),
+                      ),
                     ],
                   ),
                 ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        // Identifiant THIX — UNE seule ligne, taille auto-ajustée
         Container(
-          padding: const EdgeInsets.fromLTRB(22, 18, 16, 18),
+          padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
           decoration: BoxDecoration(
-            color: _ink(context),
-            borderRadius: BorderRadius.circular(14),
+            color: ink,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(children: [
+            Icon(Icons.badge_outlined,
+                size: 20, color: Colors.white.withValues(alpha: 0.7)),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_tr(context, 'f_id').toUpperCase(),
-                        style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.6,
-                            color: Colors.white.withValues(alpha: 0.6))),
-                    const SizedBox(height: 6),
-                    Text(b.thixId,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_tr(context, 'f_id').toUpperCase(),
+                      maxLines: 1,
+                      style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.5,
+                          color: Colors.white.withValues(alpha: 0.6))),
+                  const SizedBox(height: 3),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(b.thixId,
+                        maxLines: 1,
+                        softWrap: false,
                         style: const TextStyle(
-                            fontSize: 20,
+                            fontSize: 17,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 0.6,
+                            letterSpacing: 0.4,
                             color: Colors.white)),
-                  ]),
+                  ),
+                ],
+              ),
             ),
-            FilledButton.icon(
-              onPressed: copyId,
-              icon: const Icon(Icons.content_copy_rounded, size: 16),
-              label: Text(_tr(context, 'copy'),
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
-              style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: _ink(context),
-                  elevation: 0,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10))),
+            const SizedBox(width: 8),
+            _Tap(
+              onTap: copyId,
+              child: Tooltip(
+                message: _tr(context, 'copy'),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.content_copy_rounded,
+                      size: 17, color: Colors.white),
+                ),
+              ),
             ),
           ]),
         ),
         if (links.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Wrap(spacing: 10, runSpacing: 10, children: links),
         ],
       ],
@@ -2434,6 +2568,7 @@ class _ProductsSection extends StatelessWidget {
                 image: it.imageUrl,
                 text: it.description,
                 meta: it.price,
+                cta: _tr(context, 'learn_more'),
                 onTap: () => _showDetail(context,
                     title: it.title,
                     image: it.imageUrl,
@@ -2470,7 +2605,8 @@ class _GallerySectionState extends State<_GallerySection> {
         .clamp(0.0, _c.position.maxScrollExtent)
         .toDouble();
     _c.animateTo(target,
-        duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeOutCubic);
   }
 
   Widget _caption(String text, double size) => Positioned(
@@ -2632,8 +2768,7 @@ class _TeamRow extends StatelessWidget {
                 width: 64,
                 height: 64,
                 child: (photoUrl != null && photoUrl.isNotEmpty)
-                    ? _img(photoUrl,
-                        fallback: _monogram(context, name))
+                    ? _img(photoUrl, fallback: _monogram(context, name))
                     : _monogram(context, name),
               ),
             ),
@@ -2714,9 +2849,11 @@ class _NewsSection extends StatelessWidget {
               _MediaCard(
                 title: p.title,
                 image: p.imageUrl,
-                eyebrow:
-                    p.publishedAt == null ? null : _fmtDate(lang, p.publishedAt!),
+                eyebrow: p.publishedAt == null
+                    ? null
+                    : _fmtDate(lang, p.publishedAt!),
                 text: p.excerpt,
+                cta: _tr(context, 'read_full'),
                 onTap: () => _showDetail(context,
                     title: p.title,
                     subtitle: p.publishedAt == null
@@ -2791,8 +2928,10 @@ class _TestimonialRow extends StatelessWidget {
               const Spacer(),
               if (rating != null)
                 for (var i = 0; i < 5; i++)
-                  Icon(i < rating ? Icons.star_rounded : Icons.star_border_rounded,
-                      size: 15, color: _accent(context)),
+                  Icon(
+                      i < rating ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 15,
+                      color: _accent(context)),
             ]),
             const SizedBox(height: 8),
             Text(quote,
@@ -2982,13 +3121,14 @@ class _CtaBanner extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RUBRIQUES AVANCÉES
+// RUBRIQUES AVANCÉES (numérotées 08, 09, …)
 // ─────────────────────────────────────────────────────────────────────────────
 String _v(Map<String, String> m, String k) => (m[k] ?? '').trim();
 
 class _ExtraSection extends StatelessWidget {
-  const _ExtraSection({required this.extra});
+  const _ExtraSection({required this.extra, required this.number});
   final BizExtra extra;
+  final int number;
   @override
   Widget build(BuildContext context) {
     final spec = kBizKindByKey[extra.kind];
@@ -3001,14 +3141,16 @@ class _ExtraSection extends StatelessWidget {
     final custom = extra.title?.trim() ?? '';
     final title =
         custom.isNotEmpty ? custom : (lang == 'en' ? spec.en : spec.fr);
+    final eyebrow = '${number.toString().padLeft(2, '0')} — Complément';
     switch (spec.layout) {
       case BizLayout.logo:
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _secHead(context, title),
+            _secHead(context, title, eyebrow: eyebrow),
             _Grid(
-              minWidth: 260,
+              minWidth: 150,
+              gap: 12,
               children: [for (final it in items) _LogoCard(item: it)],
             ),
           ],
@@ -3017,7 +3159,7 @@ class _ExtraSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _secHead(context, title),
+            _secHead(context, title, eyebrow: eyebrow),
             _Grid(
               minWidth: 320,
               children: [
@@ -3031,7 +3173,7 @@ class _ExtraSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _secHead(context, title),
+            _secHead(context, title, eyebrow: eyebrow),
             _Grid(
               minWidth: 300,
               children: [
@@ -3044,51 +3186,69 @@ class _ExtraSection extends StatelessWidget {
   }
 }
 
+/// Tuile partenaire / client : logo centré, nom dessous.
 class _LogoCard extends StatelessWidget {
   const _LogoCard({required this.item});
   final Map<String, String> item;
   @override
   Widget build(BuildContext context) {
+    final ink = _ink(context);
     final img = _v(item, 'image');
+    final title = _v(item, 'title');
     final sub = _v(item, 'subtitle');
     final link = _v(item, 'link');
+    final mono = Container(
+      decoration: BoxDecoration(
+        color: ink.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: Text(_initials(title),
+          style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: ink.withValues(alpha: 0.65))),
+    );
     return _Tap(
       onTap: link.isEmpty ? null : () => _openUrl(link),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: _cardDeco(context),
-        child: Row(children: [
-          _Thumb(
-              url: img.isEmpty ? null : img,
-              label: _v(item, 'title'),
-              size: 52,
-              radius: 12),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_v(item, 'title'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14.5,
-                          color: _ink(context))),
-                  if (sub.isNotEmpty)
-                    Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Text(sub,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 12, color: _kMuted))),
-                ]),
-          ),
-          if (link.isNotEmpty)
-            const Icon(Icons.arrow_outward_rounded, size: 16, color: _kMuted),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 68,
+              width: double.infinity,
+              child: img.isEmpty
+                  ? mono
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: _img(img, fit: BoxFit.contain, fallback: mono),
+                    ),
+            ),
+            const SizedBox(height: 12),
+            Text(title,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                    height: 1.3,
+                    color: ink)),
+            if (sub.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(sub,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11.5, color: _kMuted)),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -3128,26 +3288,25 @@ class _StepCard extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_v(item, 'title'),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                          letterSpacing: -0.2,
-                          color: _ink(context))),
-                  if (text.isNotEmpty)
-                    Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(text,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                height: 1.6, fontSize: 13.5, color: _kMuted))),
-                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(_v(item, 'title'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      letterSpacing: -0.2,
+                      color: _ink(context))),
+              if (text.isNotEmpty)
+                Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(text,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            height: 1.6, fontSize: 13.5, color: _kMuted))),
+            ]),
           ),
         ]),
       ),
@@ -3172,17 +3331,20 @@ class _StdCard extends StatelessWidget {
     final target = link.isNotEmpty ? link : video;
     final targetLabel =
         link.isEmpty && video.isNotEmpty ? _tr(context, 'watch') : ctaLabel;
+    // Miniature : image fournie, sinon miniature YouTube automatique.
+    final shownImage = img.isNotEmpty ? img : (_ytThumb(video) ?? '');
     return _MediaCard(
       title: _v(item, 'title'),
-      image: img.isEmpty ? null : img,
+      image: shownImage.isEmpty ? null : shownImage,
       eyebrow: sub,
       text: text,
       meta: meta,
       video: video.isNotEmpty,
+      cta: targetLabel,
       onTap: () => _showDetail(context,
           title: _v(item, 'title'),
           subtitle: sub,
-          image: img,
+          image: shownImage,
           chip: meta,
           text: text,
           url: target,
@@ -3288,7 +3450,8 @@ class _Footer extends StatelessWidget {
               spacing: 16,
               runSpacing: 6,
               children: [
-                Text('© ${DateTime.now().year} ${b.name}. ${_tr(context, 'rights')}',
+                Text(
+                    '© ${DateTime.now().year} ${b.name}. ${_tr(context, 'rights')}',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.55),
                         fontSize: 12)),
