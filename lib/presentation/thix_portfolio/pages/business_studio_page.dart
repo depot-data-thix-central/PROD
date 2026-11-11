@@ -3,15 +3,15 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_studio_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.4.0 — Novembre 2026 (sections par défaut auto-créées)
+//  Version  : 1.5.0 — Novembre 2026 (sections toujours affichées)
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/edit/:id
 //
-//  ✅ v1.4 : FIX « Sections vides » — si l'entreprise n'a aucune ligne de
-//            section en base, les 8 sections par défaut sont créées
-//            automatiquement + bouton de secours dans la carte Sections.
-//            Le cache du provider est invalidé avant chargement.
+//  ✅ v1.5 : FIX « Sections vides » — le Studio fusionne les sections de la
+//            base avec les 8 sections par défaut. Les 8 lignes sont donc
+//            TOUJOURS affichées et éditables ; une section absente de la base
+//            est créée au premier enregistrement / toggle / déplacement.
 //  ✅ v1.3 : + carte « Rubriques avancées » (10 rubriques, photos + vidéos)
 //  ✅ v1.2 : upload de photos PARTOUT.
 //  ✅ v1.3.1 : i18n FR/EN inline.
@@ -254,10 +254,11 @@ class BusinessStudioPage extends ConsumerStatefulWidget {
 
 class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
   Business? _business;
+
+  /// Sections réellement présentes en base.
   List<BusinessSection> _sections = [];
   bool _loading = true;
   bool _saving = false;
-  bool _seeding = false;
 
   late final TextEditingController _name = TextEditingController();
   late final TextEditingController _claim = TextEditingController();
@@ -289,7 +290,6 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
 
   Future<void> _load() async {
     try {
-      // ✅ v1.4 : on force une lecture fraîche (évite un bundle en cache vide)
       ref.invalidate(ownerBusinessBundleProvider(widget.businessId));
       final bundle =
           await ref.read(ownerBusinessBundleProvider(widget.businessId).future);
@@ -307,13 +307,10 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       if (!mounted) return;
       setState(() {
         _business = b;
-        _sections = bundle.sections;
+        _sections = List<BusinessSection>.from(bundle.sections)
+          ..sort((a, c) => a.position.compareTo(c.position));
         _loading = false;
       });
-      // ✅ v1.4 : aucune section en base → on crée les sections par défaut
-      if (bundle.sections.isEmpty) {
-        await _seedDefaultSections(silent: true);
-      }
     } catch (e) {
       _StudioLogger.error('load', e);
       if (!mounted) return;
@@ -334,7 +331,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
 
   BusinessRepository get _repo => ref.read(businessRepositoryProvider);
 
-  // ── Sections par défaut ──
+  // ── Sections par défaut (ids vides = pas encore en base) ──
   // ⚠️ Si le constructeur de BusinessSection diffère chez toi, ajuste ICI.
   List<BusinessSection> _defaultSections() {
     final id = widget.businessId;
@@ -402,31 +399,15 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
     ];
   }
 
-  Future<void> _seedDefaultSections({bool silent = false}) async {
-    if (_seeding) return;
-    if (mounted) setState(() => _seeding = true);
-    try {
-      final saved = await _repo.upsertSections(
-        businessId: widget.businessId,
-        sections: _defaultSections(),
-      );
-      if (!mounted) return;
-      final sorted = List<BusinessSection>.from(saved)
-        ..sort((a, b) => a.position.compareTo(b.position));
-      setState(() {
-        _sections = sorted;
-        _seeding = false;
-      });
-      ref.invalidate(ownerBusinessBundleProvider(widget.businessId));
-      if (!silent) {
-        _snack(_s(context, 'Sections créées ✓', 'Sections created ✓'));
-      }
-    } catch (e) {
-      _StudioLogger.error('seedDefaultSections', e);
-      if (!mounted) return;
-      setState(() => _seeding = false);
-      _snack(_s(context, 'Erreur : $e', 'Error: $e'), error: true);
-    }
+  /// ✅ v1.5 : sections de la base + sections par défaut manquantes.
+  /// Cette liste n'est JAMAIS vide : c'est elle qui est affichée.
+  List<BusinessSection> _displaySections() {
+    final existing = List<BusinessSection>.from(_sections)
+      ..sort((a, b) => a.position.compareTo(b.position));
+    final have = existing.map((s) => s.type).toSet();
+    final missing =
+        _defaultSections().where((d) => !have.contains(d.type)).toList();
+    return [...existing, ...missing];
   }
 
   // ── Sauvegarde identité ──
@@ -496,40 +477,47 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
   }
 
   // ── Sections : visibilité / ordre / contenu ──
-  Future<void> _persistSections(List<BusinessSection> next) async {
+
+  /// Normalise les positions (0..n-1), affiche tout de suite, puis envoie à
+  /// la base. Les sections sans id sont créées par le repository.
+  Future<bool> _commitSections(List<BusinessSection> next) async {
+    final normalized = [
+      for (var i = 0; i < next.length; i++) next[i].copyWith(position: i),
+    ];
+    setState(() => _sections = normalized);
     try {
       final saved = await _repo.upsertSections(
-          businessId: widget.businessId, sections: next);
-      if (!mounted) return;
-      setState(() => _sections = saved);
+          businessId: widget.businessId, sections: normalized);
+      if (!mounted) return false;
+      setState(() => _sections = List<BusinessSection>.from(saved)
+        ..sort((a, b) => a.position.compareTo(b.position)));
+      return true;
     } catch (e) {
-      _StudioLogger.error('persistSections', e);
+      _StudioLogger.error('commitSections', e);
       _snack(_s(context, 'Erreur : $e', 'Error: $e'), error: true);
+      return false;
     }
   }
 
   void _toggleVisible(int index, bool visible) {
-    final next = List<BusinessSection>.from(_sections);
+    final next = _displaySections();
     next[index] = next[index].copyWith(visible: visible);
-    setState(() => _sections = next);
-    _persistSections(next);
+    _commitSections(next);
   }
 
   void _move(int index, int delta) {
+    final next = _displaySections();
     final target = index + delta;
-    if (target < 0 || target >= _sections.length) return;
-    final next = List<BusinessSection>.from(_sections);
-    final a = next[index];
-    final b = next[target];
-    next[index] = b.copyWith(position: a.position);
-    next[target] = a.copyWith(position: b.position);
-    next.sort((x, y) => x.position.compareTo(y.position));
-    setState(() => _sections = next);
-    _persistSections(next);
+    if (target < 0 || target >= next.length) return;
+    final tmp = next[index];
+    next[index] = next[target];
+    next[target] = tmp;
+    _commitSections(next);
   }
 
   Future<void> _editSection(int index) async {
-    final section = _sections[index];
+    final current = _displaySections();
+    final section = current[index];
     final result = await showModalBottomSheet<BusinessSectionContent>(
       context: context,
       isScrollControlled: true,
@@ -537,11 +525,12 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       builder: (_) => _SectionEditorSheet(section: section),
     );
     if (result == null) return;
-    final next = List<BusinessSection>.from(_sections);
-    next[index] = next[index].copyWith(content: result);
-    setState(() => _sections = next);
-    await _persistSections(next);
-    _snack(_s(context, 'Section enregistrée', 'Section saved'));
+    final next = _displaySections();
+    final i = next.indexWhere((s) => s.type == section.type);
+    if (i < 0) return;
+    next[i] = next[i].copyWith(content: result);
+    final ok = await _commitSections(next);
+    if (ok) _snack(_s(context, 'Section enregistrée', 'Section saved'));
   }
 
   // ── Publication ──
@@ -587,6 +576,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
             child: Text(_s(context, 'Chargement impossible', 'Load failed'))),
       );
     }
+
+    final shown = _displaySections();
 
     return Scaffold(
       backgroundColor: _Prism.bg,
@@ -708,28 +699,25 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           ),
           const SizedBox(height: 16),
 
+          // ✅ v1.5 : toujours les 8 sections, même si la base est vide
           _StudioCard(
             title: _s(context, 'Sections', 'Sections'),
             icon: Icons.view_agenda_rounded,
-            child: _sections.isEmpty
-                ? _EmptySections(
-                    seeding: _seeding,
-                    onSeed: () => _seedDefaultSections(),
-                  )
-                : Column(
-                    children: [
-                      for (var i = 0; i < _sections.length; i++)
-                        _SectionRow(
-                          section: _sections[i],
-                          canUp: i > 0,
-                          canDown: i < _sections.length - 1,
-                          onUp: () => _move(i, -1),
-                          onDown: () => _move(i, 1),
-                          onVisible: (v) => _toggleVisible(i, v),
-                          onEdit: () => _editSection(i),
-                        ),
-                    ],
+            child: Column(
+              children: [
+                for (var i = 0; i < shown.length; i++)
+                  _SectionRow(
+                    key: ValueKey('section-${shown[i].type.name}'),
+                    section: shown[i],
+                    canUp: i > 0,
+                    canDown: i < shown.length - 1,
+                    onUp: () => _move(i, -1),
+                    onDown: () => _move(i, 1),
+                    onVisible: (v) => _toggleVisible(i, v),
+                    onEdit: () => _editSection(i),
                   ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -767,48 +755,6 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ============================================================================
-// ÉTAT VIDE « SECTIONS » (bouton de secours)
-// ============================================================================
-
-class _EmptySections extends StatelessWidget {
-  const _EmptySections({required this.seeding, required this.onSeed});
-  final bool seeding;
-  final VoidCallback onSeed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          _s(
-            context,
-            "Aucune section n'est encore configurée pour cette entreprise.",
-            'No section is configured for this business yet.',
-          ),
-          style: const TextStyle(fontSize: 13, color: _Prism.inkSoft),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: seeding ? null : onSeed,
-            icon: seeding
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.auto_fix_high_rounded, size: 18),
-            label: Text(_s(context, 'Créer les sections par défaut',
-                'Create default sections')),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -989,6 +935,7 @@ class _MediaRow extends StatelessWidget {
 
 class _SectionRow extends StatelessWidget {
   const _SectionRow({
+    super.key,
     required this.section,
     required this.canUp,
     required this.canDown,
@@ -1036,7 +983,6 @@ class _SectionRow extends StatelessWidget {
     if (c is NewsContent) return c.title;
     if (c is TestimonialsContent) return c.title;
     if (c is ContactContent) return c.title;
-    // Fallback (ne devrait pas arriver) — nom de type traduit
     switch (section.type) {
       case BusinessSectionType.about:
         return _s(context, 'À propos', 'About');
