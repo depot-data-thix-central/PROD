@@ -232,7 +232,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       // Compresse la vidéo pour l'upload en arrière-plan
       final info = await VideoCompress.compressVideo(
         file.path,
-        quality: VideoQuality.Res720p,
+        quality: VideoQuality.DefaultQuality,
         deleteOrigin: false,
         includeAudio: true,
       );
