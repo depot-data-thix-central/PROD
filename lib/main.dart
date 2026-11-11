@@ -64,7 +64,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 import 'package:thix_id/core/security/security_reporter.dart';
 import 'package:thix_id/presentation/chat/status/providers/status_upload_manager.dart';
-import 'package:thix_id/presentation/network/providers/story_upload_manager.dart'; 
+import 'package:thix_id/presentation/network/providers/story_upload_manager.dart';
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -754,6 +755,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           }
           return supportedLocales.first;
         },
+        // ✅ CORRECTION ICI : L'imbrication des parenthèses a été réparée
         builder: (context, child) {
           return Directionality(
             textDirection: localeController.textDirection,
@@ -763,15 +765,15 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
                   navigatorKey: rootNavigatorKey,
                   child: StatusUploadListener(
                     child: StoryUploadListener(
-                    child: child ?? const SizedBox.shrink(),
+                      child: child ?? const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),
             ),
           );
-            ),
         },
-      ), // ferme MaterialApp.router(
-    ); // ferme MultiProvider(
+      ), // ferme MaterialApp.router
+    ); // ferme MultiProvider
   } // ferme build()
 } // ferme _ThixAppState
