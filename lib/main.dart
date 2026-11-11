@@ -64,7 +64,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 import 'package:thix_id/core/security/security_reporter.dart';
 import 'package:thix_id/presentation/chat/status/providers/status_upload_manager.dart';
-
+import 'package:thix_id/presentation/network/providers/story_upload_manager.dart'; 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -762,6 +762,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
                 child: GlobalCallListener(
                   navigatorKey: rootNavigatorKey,
                   child: StatusUploadListener(
+                    child: StoryUploadListener(
                     child: child ?? const SizedBox.shrink(),
                   ),
                 ),
