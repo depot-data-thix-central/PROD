@@ -1,12 +1,8 @@
 // lib/presentation/home/widgets/home_header_delegate.dart
 //
 // ✅ MISE À JOUR : la recherche du header résout désormais les THIX ID
-//    BUSINESS : saisie validée offline (checksum) → vérification
-//    `status = published` en base → navigation vers /b/<ID> (portfolio
-//    animé de l'entreprise). Si introuvable → SnackBar explicite.
-//    Tout le reste (recherche personnelle via onVerify, update hint,
-//    badges, langue) est 100 % préservé.
-
+//    BUSINESS ET LEURS NOMS avec suggestions (autocomplete).
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -14,7 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ FIX : résolution business
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/common/notifications_sheet.dart';
@@ -26,7 +22,7 @@ import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/services/app_update_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
-// ✅ FIX : module portfolio business (validation offline + repository)
+// ✅ FIX : module portfolio business
 import 'package:thix_id/presentation/thix_portfolio/core/thix_business_id.dart';
 import 'package:thix_id/presentation/thix_portfolio/data/business_repository.dart';
 
@@ -89,7 +85,6 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   final VoidCallback onProfileTap;
   final VoidCallback onAccountRequest;
 
-  // Recherche rétractable dans le header
   final TextEditingController? searchController;
   final bool isSearching;
   final VoidCallback? onVerify;
@@ -130,7 +125,6 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
       onVerify: onVerify,
     );
 
-    // Transparent au repos ; verre dépoli seulement quand il recouvre le contenu.
     if (!overlapsContent) return RepaintBoundary(child: content);
 
     return RepaintBoundary(
@@ -163,7 +157,7 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
 }
 
 // ============================================================================
-// HEADER PREMIUM (recherche rétractable + indicateur de mise à jour)
+// HEADER PREMIUM (recherche rétractable + auto-complete)
 // ============================================================================
 class _PremiumHeader extends StatefulWidget {
   final double safeTop;
@@ -195,23 +189,30 @@ class _PremiumHeader extends StatefulWidget {
 class _PremiumHeaderState extends State<_PremiumHeader> {
   final FocusNode _searchFocus = FocusNode();
   bool _searchOpen = false;
-
-  /// ✅ FIX : état de résolution d'un THIX ID Business (spinner du bouton ✔)
   bool _resolvingBusiness = false;
+
+  // ✅ AUTOCOMPLETE VARIABLES
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+  List<Map<String, dynamic>> _suggestions = [];
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _initUpdateCheck());
+    widget.searchController?.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
+    widget.searchController?.removeListener(_onTextChanged);
+    _debounce?.cancel();
+    _hideSuggestions();
     _searchFocus.dispose();
     super.dispose();
   }
 
-  // ── MISE À JOUR : détection + panneau (max 1 fois / 24 h) ──
   Future<void> _initUpdateCheck() async {
     final svc = AppUpdateService.instance;
     await svc.checkForUpdate();
@@ -237,49 +238,158 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
   void _closeSearch() {
     HapticFeedback.selectionClick();
     _searchFocus.unfocus();
+    _hideSuggestions();
     if (mounted) setState(() => _searchOpen = false);
   }
 
   void _closeSearchSilent() {
     _searchFocus.unfocus();
+    _hideSuggestions();
     if (mounted) setState(() => _searchOpen = false);
   }
 
-  // ── ✅ FIX : SOUMISSION UNIVERSELLE (Business ID → portfolio, sinon perso) ──
+  // ✅ GESTION DE L'AUTOCOMPLETE
+  void _onTextChanged() {
+    if (!_searchOpen || widget.searchController == null) return;
+    
+    final query = widget.searchController!.text.trim();
+    
+    if (query.isEmpty) {
+      _hideSuggestions();
+      return;
+    }
+
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final repo = BusinessRepository(Supabase.instance.client);
+        // ⚠️ Assure-toi d'avoir ajouté la méthode searchBusinessesByName au repo (voir plus haut)
+        final results = await repo.searchBusinessesByName(query);
+        if (mounted) {
+          setState(() => _suggestions = results);
+          _showSuggestions();
+        }
+      } catch (e) {
+        debugPrint('Error fetching suggestions: $e');
+      }
+    });
+  }
+
+  void _showSuggestions() {
+    _hideSuggestions();
+    if (_suggestions.isEmpty) return;
+
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) {
+        return Positioned(
+          width: MediaQuery.of(context).size.width - 100,
+          child: CompositedTransformFollower(
+            link: _layerLink,
+            showWhenUnlinked: false,
+            offset: const Offset(48, 42), // Aligné sous la barre de recherche
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              shadowColor: Colors.black26,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 250),
+                child: ListView.separated(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final s = _suggestions[index];
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.business_rounded, color: Colors.blueGrey, size: 20),
+                      title: Text(
+                        s['name'] ?? 'Sans nom',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                      subtitle: Text(
+                        s['thix_id'] ?? '',
+                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      ),
+                      onTap: () => _selectSuggestion(s['thix_id']),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _hideSuggestions() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  void _selectSuggestion(String thixId) {
+    _hideSuggestions();
+    widget.searchController?.text = ''; // Reset
+    _closeSearch();
+    context.push('/b/$thixId');
+  }
+
+  // ✅ SOUMISSION MISE À JOUR (ID → Nom → Perso)
   Future<void> _submit(String value) async {
     if (!mounted || widget.isSearching || _resolvingBusiness) return;
     final raw = value.trim();
     if (raw.isEmpty) return;
 
-    // 1) Validation OFFLINE du format (checksum SHA-256, legacy accepté)
+    _hideSuggestions();
+
+    // 1) Validation FORMAT THIX ID OFFLINE
     final parsed = ThixBusinessId.tryParse(raw);
-    if (parsed == null) {
-      // Ce n'est pas un ID business → comportement personnel existant
-      widget.onVerify?.call();
+    if (parsed != null) {
+      setState(() => _resolvingBusiness = true);
+      try {
+        final repo = BusinessRepository(Supabase.instance.client);
+        final bundle = await repo.fetchPublicBundle(parsed.raw);
+        if (!mounted) return;
+        setState(() => _resolvingBusiness = false);
+        _closeSearchSilent();
+        HapticFeedback.mediumImpact();
+        context.push('/b/${bundle.business.thixId}');
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _resolvingBusiness = false);
+        _showNotFound(raw);
+      }
       return;
     }
 
-    // 2) Vérification en base : existe ET publiée
-    setState(() => _resolvingBusiness = true);
-    try {
-      final repo = BusinessRepository(Supabase.instance.client);
-      final bundle = await repo.fetchPublicBundle(parsed.raw);
-      if (!mounted) return;
-      setState(() => _resolvingBusiness = false);
-      _closeSearchSilent();
-      HapticFeedback.mediumImpact();
-      // 3) Ouverture du portfolio animé de l'entreprise
-      context.push('/b/${bundle.business.thixId}');
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _resolvingBusiness = false);
-      final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(l10n.t('home_biz_not_found', args: [parsed.raw])),
-        backgroundColor: ThixPolicy.danger,
-        behavior: SnackBarBehavior.floating,
-      ));
+    // 2) Validation PAR NOM (via les suggestions ou recherche directe)
+    if (_suggestions.isNotEmpty) {
+      // Si l'utilisateur a tapé un nom exact qui est dans les suggestions
+      final exactMatch = _suggestions.firstWhere(
+        (s) => (s['name'] as String).toLowerCase() == raw.toLowerCase(),
+        orElse: () => _suggestions.first,
+      );
+      _selectSuggestion(exactMatch['thix_id']);
+      return;
     }
+
+    // 3) Fallback : Recherche personnelle classique
+    widget.onVerify?.call();
+  }
+
+  void _showNotFound(String raw) {
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(l10n.t('home_biz_not_found', args: [raw])),
+      backgroundColor: ThixPolicy.danger,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   @override
@@ -310,7 +420,7 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
     );
   }
 
-  // ── ÉTAT REPLIÉ : [Update · Mettre à jour] + nom + [🔍] [] [] ──────
+  // ── ÉTAT REPLIÉ ──────
   Widget _buildIdleRow(String localeCode, bool canSearch) {
     return Row(
       key: const ValueKey('header_idle'),
@@ -371,7 +481,7 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
     );
   }
 
-  // ── ÉTAT DÉPLOYÉ : [←] [ champ ] [✔] ─────────────────────────────────────
+  // ── ÉTAT DÉPLOYÉ (Barre de recherche) ─────────────────────────────────────
   Widget _buildSearchRow() {
     final l10n = AppLocalizations.of(context);
     return Row(
@@ -384,44 +494,52 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: Container(
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.94),
-              borderRadius: BorderRadius.circular(19),
-              border: Border.all(
-                  color: HomeTheme.sky.withOpacity(0.55), width: 1.2),
-              boxShadow: HomeTheme.softShadow(0.10),
-            ),
-            child: TextField(
-              controller: widget.searchController,
-              focusNode: _searchFocus,
-              enabled: !widget.isSearching && !_resolvingBusiness,
-              textAlignVertical: TextAlignVertical.center,
-              textInputAction: TextInputAction.search,
-              onSubmitted: _submit,
-              maxLength: _kMaxSearchLength,
-              style: ThixPolicy.labelStyle.copyWith(
-                color: HomeTheme.ink,
-                fontSize: 13,
-                fontWeight: ThixPolicy.semiBold,
-                letterSpacing: 0.3,
+          // ✅ On enveloppe avec CompositedTransformTarget pour l'Overlay
+          child: CompositedTransformTarget(
+            link: _layerLink,
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.94),
+                borderRadius: BorderRadius.circular(19),
+                border: Border.all(
+                    color: HomeTheme.sky.withOpacity(0.55), width: 1.2),
+                boxShadow: HomeTheme.softShadow(0.10),
               ),
-              decoration: InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                filled: false,
-                counterText: '',
-                // ✅ FIX : hint mis à jour (ID business ou personnel)
-                hintText: l10n.t('home_search_hint'),
-                hintStyle: ThixPolicy.captionStyle.copyWith(
-                  color: HomeTheme.inkSoft.withOpacity(0.8),
-                  fontSize: 12,
+              child: TextField(
+                controller: widget.searchController,
+                focusNode: _searchFocus,
+                enabled: !widget.isSearching && !_resolvingBusiness,
+                textAlignVertical: TextAlignVertical.center,
+                textInputAction: TextInputAction.search,
+                onSubmitted: _submit,
+                onTapOutside: (_) {
+                  _searchFocus.unfocus();
+                  _hideSuggestions();
+                },
+                maxLength: _kMaxSearchLength,
+                style: ThixPolicy.labelStyle.copyWith(
+                  color: HomeTheme.ink,
+                  fontSize: 13,
+                  fontWeight: ThixPolicy.semiBold,
+                  letterSpacing: 0.3,
                 ),
-                contentPadding: EdgeInsets.zero,
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  counterText: '',
+                  // ✅ Hint modifié
+                  hintText: l10n.t('Rechercher (Entreprise ou THIX ID)…'),
+                  hintStyle: ThixPolicy.captionStyle.copyWith(
+                    color: HomeTheme.inkSoft.withOpacity(0.8),
+                    fontSize: 12,
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
             ),
           ),
@@ -429,7 +547,6 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
         const SizedBox(width: 8),
         _HeaderVerifyButton(
           semanticsLabel: l10n.t('home_verify_id'),
-          // ✅ FIX : spinner pendant la résolution business AUSSI
           isLoading: widget.isSearching || _resolvingBusiness,
           onTap: () {
             if (!widget.isSearching && !_resolvingBusiness) {
@@ -462,8 +579,9 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
 }
 
 // ============================================================================
-// INDICATEUR "UPDATE · METTRE À JOUR" (FR / EN / SW)
+// RESTE DU FICHIER INCHANGÉ (_UpdateHint, _HeaderIconButton, etc.)
 // ============================================================================
+
 class _UpdateHint extends StatelessWidget {
   final String localeCode;
   final VoidCallback onTap;
@@ -538,9 +656,6 @@ class _UpdateHint extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// BOUTONS RONDS DU HEADER
-// ============================================================================
 BoxDecoration _circleDeco() => BoxDecoration(
       color: Colors.white.withOpacity(0.85),
       shape: BoxShape.circle,
