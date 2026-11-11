@@ -3,16 +3,18 @@
 //  Fichier  : lib/presentation/thix_portfolio/data/business_repository.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.2 — Novembre 2026 (CORRIGÉ CI)
+//  Version  : 1.1.0 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  Corrections CI :
-//    • Ajout de `import 'dart:async'` pour `unawaited()`
+//  v1.1.0 : FIX upsertSections — les sections sans id (nouvelles) ne
+//           envoient plus `id: ''` (uuid invalide). Postgres génère l'uuid.
+//           Les lignes avec id et sans id sont envoyées séparément.
+//  v1.0.2 : import 'dart:async' pour unawaited()
 //
 //  Seul point d'accès à Supabase pour tout le module portfolio business.
 // ════════════════════════════════════════════════════════════════════════════
 
-import 'dart:async'; // ✅ FIX CI : pour unawaited()
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -89,7 +91,6 @@ class BusinessRepository {
 
       if (row == null) throw BusinessNotFoundException(normalized);
 
-      // ✅ FIX CI : unawaited fonctionne maintenant grâce à l'import dart:async
       unawaited(trackView(normalized));
 
       return BusinessBundle.fromJson(row);
@@ -228,32 +229,60 @@ class BusinessRepository {
     }
   }
 
+  /// ✅ v1.1.0 : gère les sections NOUVELLES (id vide) et EXISTANTES.
+  /// - id vide  → la clé `id` n'est pas envoyée, Postgres génère l'uuid.
+  /// - id rempli → conservé tel quel.
+  /// Les deux groupes sont envoyés séparément pour éviter `id = null`.
   Future<List<BusinessSection>> upsertSections({
     required String businessId,
     required List<BusinessSection> sections,
   }) async {
-    final rows = sections
-        .map((s) => {
-              'id': s.id,
-              'business_id': businessId,
-              'type': s.type.slug,
-              'position': s.position,
-              'visible': s.visible,
-              'content': s.content.toJson(),
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-        .toList(growable: false);
+    final now = DateTime.now().toIso8601String();
+
+    Map<String, dynamic> toRow(BusinessSection s) {
+      final hasId = s.id.trim().isNotEmpty;
+      return {
+        if (hasId) 'id': s.id,
+        'business_id': businessId,
+        'type': s.type.slug,
+        'position': s.position,
+        'visible': s.visible,
+        'content': s.content.toJson(),
+        'updated_at': now,
+      };
+    }
+
+    final withId = <Map<String, dynamic>>[];
+    final withoutId = <Map<String, dynamic>>[];
+    for (final s in sections) {
+      (s.id.trim().isNotEmpty ? withId : withoutId).add(toRow(s));
+    }
+
     try {
+      if (withId.isNotEmpty) {
+        await _db
+            .from(_tableSections)
+            .upsert(withId, onConflict: 'business_id,type');
+      }
+      if (withoutId.isNotEmpty) {
+        await _db
+            .from(_tableSections)
+            .upsert(withoutId, onConflict: 'business_id,type');
+      }
+
+      // Relecture complète : renvoie toujours la liste à jour, avec les ids.
       final res = await _db
           .from(_tableSections)
-          .upsert(rows, onConflict: 'business_id,type')
-          .select();
+          .select()
+          .eq('business_id', businessId)
+          .order('position', ascending: true);
       final list = res
           .map((e) => BusinessSection.fromJson(Map<String, dynamic>.from(e)))
           .toList()
         ..sort((a, b) => a.position.compareTo(b.position));
       return list;
     } on PostgrestException catch (e) {
+      debugPrint('upsertSections erreur: ${e.code} ${e.message}');
       if (_isRlsAuthError(e)) throw const BusinessNotAuthorizedException();
       rethrow;
     }
