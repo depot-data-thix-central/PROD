@@ -1,10 +1,10 @@
 // lib/presentation/network/widgets/create_story_dialog.dart
 // ============================================================================
 // CRÉATEUR DE STORY — PLEIN ÉCRAN (design moderne type Instagram)
-// • 3 modes : Texte (fonds colorés) • Photo • Audio (max 60 s)
-// • Audio RÉPARÉ : upload storage direct avec contentType audio/mp4
-// • Pré-écoute audio avant publication (play/pause/seek + re-record)
-// • Rollback storage en cas d'échec
+// • 4 modes : Texte • Photo • Audio • Vidéo
+// • Upload en arrière-plan (file d'attente globale)
+// • Fermeture immédiate après publication
+// • Vidéo compressée + validation durée
 // ============================================================================
 import 'dart:async';
 import 'dart:typed_data';
@@ -13,19 +13,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:video_player/video_player.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:html/parser.dart' as html_parser;
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:uuid/uuid.dart';
 
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/presentation/network/providers/story_upload_manager.dart';
 
 // ============================================================================
 // VALIDATEURS
@@ -36,10 +36,13 @@ class _StoryValidators {
   static const int maxTextLength = 300;
   static const int maxImageSizeMB = 10;
   static const int maxAudioSizeMB = 20;
+  static const int maxVideoSizeMB = 50;
   static const int maxAudioDurationSeconds = 60;
+  static const int maxVideoDurationSeconds = 60;
   static const Duration uploadTimeout = Duration(seconds: 30);
 
   static const Set<String> allowedImageExts = {'jpg', 'jpeg', 'png', 'webp', 'heic'};
+  static const Set<String> allowedVideoExts = {'mp4', 'mov', 'webm', 'm4v'};
 
   static String sanitizeText(String? input, {int maxLength = maxTextLength}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -87,11 +90,9 @@ Future<Uint8List> _compressImageAsync(Uint8List bytes) async {
 }
 
 // ============================================================================
-// POINT D'ENTRÉE (compatibilité ancien code)
+// POINT D'ENTRÉE
 // ============================================================================
 class CreateStoryDialog {
-  /// ✅ Ouvre le créateur de story PLEIN ÉCRAN.
-  /// Remplace : showDialog(context, builder: (_) => const CreateStoryDialog())
   static Future<bool?> show(BuildContext context) {
     return Navigator.of(context).push<bool>(
       MaterialPageRoute(fullscreenDialog: true, builder: (_) => const CreateStoryPage()),
@@ -102,7 +103,7 @@ class CreateStoryDialog {
 // ============================================================================
 // PAGE PLEIN ÉCRAN
 // ============================================================================
-enum _StoryMode { text, photo, audio }
+enum _StoryMode { text, photo, audio, video }
 
 class CreateStoryPage extends ConsumerStatefulWidget {
   const CreateStoryPage({super.key});
@@ -127,6 +128,12 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   bool _isRecording = false;
   Uint8List? _audioBytes;
   String? _audioPath;
+
+  // Vidéo
+  Uint8List? _videoBytes;
+  String? _videoExt;
+  VideoPlayerController? _videoController;
+  bool _isProcessingVideo = false;
 
   // UI
   bool _isUploading = false;
@@ -156,12 +163,16 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     _pulseCtrl.dispose();
     _recorder.dispose();
     _textController.dispose();
+    _videoController?.dispose();
     super.dispose();
   }
 
   bool get _hasBgColor => _bgColor != Colors.transparent;
   bool get _hasContent =>
-      _textController.text.trim().isNotEmpty || _imageBytes != null || _audioBytes != null;
+      _textController.text.trim().isNotEmpty ||
+      _imageBytes != null ||
+      _audioBytes != null ||
+      _videoBytes != null;
 
   String _colorToHex(Color c) => '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
@@ -169,7 +180,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   // PHOTO
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _pickImage() async {
-    if (_isUploading || _isRecording) return;
+    if (_isUploading || _isRecording || _isProcessingVideo) return;
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
       final f = result?.files.first;
@@ -181,8 +192,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
       if (!_StoryValidators.validateFileExtension(f.name, _StoryValidators.allowedImageExts)) {
         return _showError('Format image non supporté');
       }
-      final mime = _StoryValidators.validateMime(f.bytes!);
-      if (mime != null) return _showError(mime);
 
       setState(() {
         _mode = _StoryMode.photo;
@@ -190,6 +199,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         _imageExt = f.extension ?? 'jpg';
         _audioBytes = null;
         _audioPath = null;
+        _videoBytes = null;
+        _videoExt = null;
+        _videoController?.dispose();
+        _videoController = null;
       });
       HapticFeedback.lightImpact();
     } catch (e) {
@@ -205,10 +218,99 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
       });
 
   // ════════════════════════════════════════════════════════════════════════
-  // AUDIO — ENREGISTREMENT RÉPARÉ
+  // VIDÉO
+  // ════════════════════════════════════════════════════════════════════════
+  Future<void> _pickVideo() async {
+    if (_isUploading || _isRecording || _isProcessingVideo) return;
+    try {
+      setState(() => _isProcessingVideo = true);
+
+      final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: false);
+      final f = result?.files.first;
+      if (f?.path == null) {
+        if (mounted) setState(() => _isProcessingVideo = false);
+        return;
+      }
+
+      if (!_StoryValidators.validateFileExtension(f!.name, _StoryValidators.allowedVideoExts)) {
+        if (mounted) setState(() => _isProcessingVideo = false);
+        return _showError('Format vidéo non supporté');
+      }
+
+      // Compresse la vidéo pour l'upload en arrière-plan
+      final info = await VideoCompress.compressVideo(
+        f.path!,
+        quality: VideoQuality.DefaultQuality,
+        deleteOrigin: false,
+        includeAudio: true,
+      );
+
+      if (info?.file == null) {
+        if (mounted) setState(() => _isProcessingVideo = false);
+        return _showError('Compression impossible');
+      }
+
+      final compressedFile = info!.file!;
+
+      // Vérifie durée
+      if (info.duration != null && info.duration!.inSeconds > _StoryValidators.maxVideoDurationSeconds) {
+        if (mounted) setState(() => _isProcessingVideo = false);
+        return _showError('Vidéo trop longue (max ${_StoryValidators.maxVideoDurationSeconds}s)');
+      }
+
+      // Vérifie taille après compression
+      final bytes = await compressedFile.readAsBytes();
+      if (!_StoryValidators.validateFileSize(bytes.length, _StoryValidators.maxVideoSizeMB)) {
+        if (mounted) setState(() => _isProcessingVideo = false);
+        return _showError('Vidéo trop volumineuse après compression');
+      }
+
+      final ext = f.extension ?? 'mp4';
+      final controller = VideoPlayerController.file(compressedFile);
+      await controller.initialize();
+      await controller.setLooping(true);
+
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+
+      setState(() {
+        _mode = _StoryMode.video;
+        _videoBytes = bytes;
+        _videoExt = ext;
+        _videoController?.dispose();
+        _videoController = controller;
+        _imageBytes = null;
+        _audioBytes = null;
+        _audioPath = null;
+        _isProcessingVideo = false;
+      });
+
+      await controller.play();
+      HapticFeedback.lightImpact();
+    } catch (e) {
+      debugPrint('[Story] pickVideo: $e');
+      if (mounted) setState(() => _isProcessingVideo = false);
+      _showError('Erreur lors de la sélection vidéo');
+    }
+  }
+
+  void _clearVideo() {
+    setState(() {
+      _videoBytes = null;
+      _videoExt = null;
+      _videoController?.dispose();
+      _videoController = null;
+      _mode = _StoryMode.text;
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // AUDIO
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _startRecording() async {
-    if (_isUploading || _isRecording) return;
+    if (_isUploading || _isRecording || _isProcessingVideo) return;
 
     final ok = await _checkPermission(
       Permission.microphone,
@@ -217,7 +319,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     if (!ok) return;
 
     try {
-      // ✅ Vérifie dispo avant de démarrer
       if (await _recorder.hasPermission() != true) {
         return _showError('Permission microphone refusée');
       }
@@ -239,6 +340,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         _audioBytes = null;
         _audioPath = null;
         _mode = _StoryMode.audio;
+        _imageBytes = null;
+        _videoBytes = null;
+        _videoController?.dispose();
+        _videoController = null;
       });
 
       _recordTimer?.cancel();
@@ -269,7 +374,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         return _showError('Enregistrement vide');
       }
 
-      final bytes = await XFile(path).readAsBytes();
+      final bytes = await File(path).readAsBytes();
       if (bytes.isEmpty) return _showError('Enregistrement vide');
 
       if (!_StoryValidators.validateFileSize(bytes.length, _StoryValidators.maxAudioSizeMB)) {
@@ -281,6 +386,9 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         _audioPath = path;
         _mode = _StoryMode.audio;
         _imageBytes = null;
+        _videoBytes = null;
+        _videoController?.dispose();
+        _videoController = null;
       });
       HapticFeedback.mediumImpact();
     } catch (e) {
@@ -359,84 +467,58 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // PUBLICATION
+  // PUBLICATION — EN FILE D'ATTENTE (arrière-plan)
   // ════════════════════════════════════════════════════════════════════════
-  Future<void> _createStory() async {
-    if (_isUploading || _isRecording) return;
+  void _createStory() {
+    if (_isUploading || _isRecording || _isProcessingVideo) return;
+    if (!_hasContent) return _showError('Ajoutez du texte, une photo, un audio ou une vidéo');
 
-    final text = _textController.text.trim();
-    if (!_hasContent) return _showError('Ajoutez du texte, une photo ou un audio');
+    final text = _StoryValidators.sanitizeText(_textController.text.trim());
+    final bgColor = (_mode == _StoryMode.text && _hasBgColor) ? _colorToHex(_bgColor) : null;
 
-    setState(() => _isUploading = true);
-    String? uploadedUrl;
-    String? uploadedPath; // pour rollback storage direct
+    HapticFeedback.mediumImpact();
 
-    try {
-      final service = ref.read(networkServiceProvider);
-      String? mediaUrl;
-      String mediaType = 'text';
+    final manager = ref.read(storyUploadManagerProvider.notifier);
 
-      // ── PHOTO ──
-      if (_mode == _StoryMode.photo && _imageBytes != null) {
-        final compressed = await _compressImageAsync(_imageBytes!);
-        mediaUrl = await service
-            .uploadImageBytes(compressed, fileExtension: _imageExt ?? 'jpg', bucket: 'stories')
-            .timeout(_StoryValidators.uploadTimeout);
-        uploadedUrl = mediaUrl;
-        mediaType = 'image';
-      }
-
-      // ── AUDIO : ✅ upload storage DIRECT avec bon contentType ──
-      if (_mode == _StoryMode.audio && _audioBytes != null) {
-        uploadedPath = 'audio/${const Uuid().v4()}.m4a';
-        await Supabase.instance.client.storage
-            .from('stories')
-            .uploadBinary(
-              uploadedPath!,
-              _audioBytes!,
-              fileOptions: const FileOptions(
-                contentType: 'audio/mp4', // ✅ m4a/AAC = audio/mp4
-                cacheControl: '31536000',
-                upsert: false,
-              ),
-            )
-            .timeout(_StoryValidators.uploadTimeout);
-        mediaUrl = Supabase.instance.client.storage.from('stories').getPublicUrl(uploadedPath!);
-        uploadedUrl = mediaUrl;
-        mediaType = 'audio';
-      }
-
-      await service.createStory(
-        mediaUrl,
-        text: _StoryValidators.sanitizeText(text),
-        duration: 24,
-        mediaType: mediaType,
-        bgColor: (_mode == _StoryMode.text && _hasBgColor) ? _colorToHex(_bgColor) : null,
-      );
-
-      if (!mounted) return;
-      HapticFeedback.mediumImpact();
-      Navigator.pop(context, true);
-    } catch (e) {
-      debugPrint('[Story] create: $e');
-
-      // Rollback storage
-      try {
-        if (uploadedPath != null) {
-          await Supabase.instance.client.storage.from('stories').remove([uploadedPath]);
-        } else if (uploadedUrl != null) {
-          final uri = Uri.parse(uploadedUrl);
-          final path = uri.path.replaceFirst('/storage/v1/object/public/', '');
-          final bucket = path.split('/').first;
-          await Supabase.instance.client.storage.from(bucket).remove([path.replaceFirst('$bucket/', '')]);
-        }
-      } catch (clean) {
-        debugPrint('[Story] cleanup: $clean');
-      }
-      _showError('Erreur de publication');
-    } finally {
-      if (mounted) setState(() => _isUploading = false);
+    if (_mode == _StoryMode.photo && _imageBytes != null) {
+      // Compresser avant d'enquêter pour éviter de bloquer l'UI
+      _compressImageAsync(_imageBytes!).then((compressed) {
+        manager.enqueueImage(compressed, _imageExt ?? 'jpg');
+      });
+    } else if (_mode == _StoryMode.audio && _audioBytes != null) {
+      manager.enqueueAudio(_audioBytes!);
+    } else if (_mode == _StoryMode.video && _videoBytes != null) {
+      manager.enqueueVideo(_videoBytes!, _videoExt ?? 'mp4');
+    } else {
+      // Texte seul
+      if (text.isEmpty) return _showError('Ajoutez du texte');
+      manager.enqueueText(text, bgColor: bgColor);
     }
+
+    if (!mounted) return;
+    _showQueuedSnackBar();
+    Navigator.pop(context, true);
+  }
+
+  void _showQueuedSnackBar() {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Publication en arrière-plan…')),
+          ]),
+          backgroundColor: const Color(0xFF0F172A),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   void _showError(String m) {
@@ -450,7 +532,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // BUILD — DESIGN PLEIN ÉCRAN
+  // BUILD
   // ════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
@@ -460,11 +542,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // ── FOND / APERÇU ──
           Positioned.fill(child: _previewBackground()),
 
-          // ── TEXTE CENTRÉ ──
-          if (_mode != _StoryMode.audio)
+          // Texte centré (pas en mode audio ni vidéo)
+          if (_mode != _StoryMode.audio && _mode != _StoryMode.video)
             Positioned.fill(
               top: top + 70,
               bottom: 190,
@@ -506,7 +587,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
               ),
             ),
 
-          // ── BARRE HAUTE ──
+          // Barre haute
           Positioned(
             top: top + 8,
             left: 16,
@@ -515,19 +596,24 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
               children: [
                 _glassBtn(
                   icon: Icons.close_rounded,
-                  onTap: _isUploading ? null : () => Navigator.pop(context, false),
+                  onTap: (_isUploading || _isRecording || _isProcessingVideo)
+                      ? null
+                      : () => Navigator.pop(context, false),
                 ),
                 const Spacer(),
-                // Bouton publier
                 GestureDetector(
-                  onTap: (_isUploading || _isRecording || !_hasContent) ? null : _createStory,
+                  onTap: (_isUploading || _isRecording || _isProcessingVideo || !_hasContent)
+                      ? null
+                      : _createStory,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                     decoration: BoxDecoration(
-                      gradient: (_isUploading || _isRecording || !_hasContent)
+                      gradient: (_isUploading || _isRecording || _isProcessingVideo || !_hasContent)
                           ? null
                           : const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)]),
-                      color: (_isUploading || _isRecording || !_hasContent) ? Colors.white24 : null,
+                      color: (_isUploading || _isRecording || _isProcessingVideo || !_hasContent)
+                          ? Colors.white24
+                          : null,
                       borderRadius: BorderRadius.circular(30),
                     ),
                     child: _isUploading
@@ -539,7 +625,25 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
             ),
           ),
 
-          // ── PANNEAU BAS ──
+          // Loader pendant traitement vidéo
+          if (_isProcessingVideo)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black87,
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: ThixPolicy.gold),
+                      SizedBox(height: 16),
+                      Text('Compression vidéo…', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Panneau bas
           Positioned(
             left: 0,
             right: 0,
@@ -562,11 +666,46 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     );
   }
 
-  // ── Fond d'aperçu ──
   Widget _previewBackground() {
+    // Photo
     if (_mode == _StoryMode.photo && _imageBytes != null) {
       return Image.memory(_imageBytes!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
     }
+    // Vidéo
+    if (_mode == _StoryMode.video && _videoController != null && _videoController!.value.isInitialized) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: AspectRatio(
+              aspectRatio: _videoController!.value.aspectRatio,
+              child: VideoPlayer(_videoController!),
+            ),
+          ),
+          Center(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _videoController!.value.isPlaying
+                      ? _videoController!.pause()
+                      : _videoController!.play();
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                child: Icon(
+                  _videoController!.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 44,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    // Audio
     if (_mode == _StoryMode.audio) {
       return Container(
         decoration: const BoxDecoration(
@@ -596,9 +735,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
               ),
               const SizedBox(height: 6),
               Text(
-                _isRecording
-                    ? _StoryValidators.fmtDuration(_recordDuration)
-                    : _StoryValidators.fmtDuration(_recordDuration),
+                _StoryValidators.fmtDuration(_recordDuration),
                 style: const TextStyle(color: Colors.white70, fontSize: 26, fontWeight: FontWeight.w900),
               ),
             ],
@@ -611,7 +748,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     return Container(color: ThixPolicy.surfaceSoft);
   }
 
-  // ── Panneau bas contextuel ──
   Widget _bottomPanel() {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 16),
@@ -619,11 +755,14 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         color: Colors.black.withOpacity(0.55),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: _isRecording ? _recordingPanel() : (_mode == _StoryMode.audio && _audioBytes != null) ? _audioPreviewPanel() : _defaultPanel(),
+      child: _isRecording
+          ? _recordingPanel()
+          : (_mode == _StoryMode.audio && _audioBytes != null)
+              ? _audioPreviewPanel()
+              : _defaultPanel(),
     );
   }
 
-  // ── Panneau par défaut : couleurs + 3 actions ──
   Widget _defaultPanel() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -661,19 +800,53 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         Row(
           children: [
             _actionTile(Icons.image_rounded, 'Photo', ThixPolicy.success, _pickImage),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
+            _actionTile(Icons.videocam_rounded, 'Vidéo', Color(0xFF00A4FF), _pickVideo),
+            const SizedBox(width: 8),
             _actionTile(Icons.mic_rounded, 'Audio', ThixPolicy.gold, _startRecording),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             _actionTile(Icons.format_size_rounded, 'Texte', ThixPolicy.primary, () {
               setState(() {
                 _mode = _StoryMode.text;
                 _imageBytes = null;
                 _audioBytes = null;
                 _audioPath = null;
+                _videoBytes = null;
+                _videoController?.dispose();
+                _videoController = null;
               });
             }),
           ],
         ),
+        // Bouton supprimer pour photo/vidéo
+        if (_mode == _StoryMode.photo && _imageBytes != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: OutlinedButton.icon(
+              onPressed: _clearImage,
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Supprimer la photo'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                side: const BorderSide(color: Colors.white38),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+        if (_mode == _StoryMode.video && _videoBytes != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: OutlinedButton.icon(
+              onPressed: _clearVideo,
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Supprimer la vidéo'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                side: const BorderSide(color: Colors.white38),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -681,7 +854,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   Widget _actionTile(IconData icon, String label, Color color, VoidCallback onTap) {
     return Expanded(
       child: GestureDetector(
-        onTap: (_isUploading || _isRecording) ? null : onTap,
+        onTap: (_isUploading || _isRecording || _isProcessingVideo) ? null : onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -702,12 +875,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     );
   }
 
-  // ── Panneau d'enregistrement ──
   Widget _recordingPanel() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Barre de progression 60 s
         ClipRRect(
           borderRadius: BorderRadius.circular(6),
           child: LinearProgressIndicator(
@@ -721,7 +892,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Mic pulsant
             AnimatedBuilder(
               animation: _pulseCtrl,
               builder: (_, __) => Transform.scale(
@@ -778,7 +948,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     );
   }
 
-  // ── Panneau de pré-écoute audio ──
   Widget _audioPreviewPanel() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -793,9 +962,11 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         Row(
           children: [
             _actionTile(Icons.mic_rounded, 'Réenregistrer', ThixPolicy.gold, _startRecording),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             _actionTile(Icons.image_rounded, 'Photo', ThixPolicy.success, _pickImage),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
+            _actionTile(Icons.videocam_rounded, 'Vidéo', const Color(0xFF00A4FF), _pickVideo),
+            const SizedBox(width: 8),
             _actionTile(Icons.delete_outline_rounded, 'Supprimer', ThixPolicy.danger, _clearAudio),
           ],
         ),
@@ -805,7 +976,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
 }
 
 // ============================================================================
-// PRÉ-ÉCOUTE AUDIO (play / pause / seek / durée)
+// PRÉ-ÉCOUTE AUDIO
 // ============================================================================
 class _StoryAudioPreview extends StatefulWidget {
   final String path;
