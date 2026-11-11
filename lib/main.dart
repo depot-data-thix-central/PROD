@@ -37,7 +37,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as app_provider;
 import 'package:go_router/go_router.dart';
-import 'package:connectivity_plus/connectivity_plus.dart'; // ✅ NOUVEAU
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -59,11 +59,12 @@ import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener
 import 'package:thix_id/presentation/chat/call/callkit_call_handler.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
-import 'package:thix_id/widgets/no_connection_overlay.dart'; // ✅ NOUVEAU
+import 'package:thix_id/widgets/no_connection_overlay.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 import 'package:thix_id/core/security/security_reporter.dart';
 import 'package:thix_id/presentation/chat/status/providers/status_upload_manager.dart';
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -81,14 +82,8 @@ late final LocaleController _localeController;
 bool _appLaunched = false;
 
 // ============================================================================
-// ✅ NOUVEAU : détection centralisée d'erreur réseau
+// ✅ Détection centralisée d'erreur réseau
 // ============================================================================
-
-/// Détecte si un message d'erreur indique une panne réseau ou Supabase.
-/// Utilisé par :
-///   - ErrorWidget.builder (→ afficher "Pas de connexion" au lieu de l'écran rouge)
-///   - FlutterError.onError (→ markBackendDown)
-///   - runZonedGuarded (→ markBackendDown)
 bool _isNetworkError(String msg) {
   final m = msg.toLowerCase();
   return m.contains('socketexception') ||
@@ -104,11 +99,7 @@ bool _isNetworkError(String msg) {
       m.contains('timeoutexception');
 }
 
-/// ✅ NOUVEAU : tente de (ré)initialiser Supabase.
-/// Appelé :
-///   - au cold-start (depuis main())
-///   - au retour du réseau (listener Connectivity)
-///   - au resumed (AppLifecycleState) si dernière tentative avait échoué
+/// ✅ Tente de (ré)initialiser Supabase.
 Future<void> _tryInitSupabase({required String reason}) async {
   if (SupabaseConfig.isInitialized) return;
   _log('🔄 Trying Supabase init ($reason)…');
@@ -116,7 +107,6 @@ Future<void> _tryInitSupabase({required String reason}) async {
     await SupabaseConfig.initialize().timeout(_kInitTimeout);
     _log('✅ Supabase init succeeded ($reason)');
     AppConnectivity.instance.markBackendUp();
-    // Relance AuthController.init() pour hydrater la session depuis le snapshot
     try {
       await AuthController.instance.init().timeout(_kInitTimeout);
       _log('✓ Auth hydrated after late Supabase init');
@@ -137,9 +127,6 @@ bool _routerReady = false;
 String? _pendingCallId;
 ({String payload, String? actionId, String? input})? _pendingTap;
 
-/// Appel accepté depuis CallKit.
-/// Si le routeur ou la session ne sont pas prêts (cold start, réseau lent),
-/// l'appel reste en attente et est rejoué par _flushPendingNav.
 void _openCall(String inviteId, String channelName, bool isVideo) {
   if (inviteId.isEmpty) return;
 
@@ -161,7 +148,6 @@ void _openCall(String inviteId, String channelName, bool isVideo) {
   unawaited(_acceptWithRetry(inviteId));
 }
 
-/// 3 tentatives : un échec réseau passager ne perd plus l'appel accepté.
 Future<void> _acceptWithRetry(String inviteId) async {
   for (var attempt = 1; attempt <= _kCallRetries; attempt++) {
     try {
@@ -177,8 +163,6 @@ Future<void> _acceptWithRetry(String inviteId) async {
   _log('❌ CallKit accept abandonné: $inviteId');
 }
 
-/// Refus depuis CallKit : prévient l'appelant (3 tentatives).
-/// Dédupliqué : si GlobalCallListener l'a déjà envoyé, on ne le refait pas.
 Future<void> _rejectInvite(String inviteId) async {
   if (inviteId.isEmpty) return;
 
@@ -207,7 +191,6 @@ void _flushPendingNav() {
 
   final callId = _pendingCallId;
   if (callId != null) {
-    // _openCall remet l'appel en attente si la session n'est pas prête
     _openCall(callId, '', false);
   }
 
@@ -225,7 +208,6 @@ void _flushPendingNav() {
 // ============================================================================
 // ACTIONS DE NOTIFICATION (Répondre, Lu, Muet)
 // ============================================================================
-
 Future<void> _handleNotificationAction(
   String? payload,
   String actionId,
@@ -236,7 +218,6 @@ Future<void> _handleNotificationAction(
   final convId = payload.substring(5);
   if (convId.isEmpty) return;
 
-  // ✅ FIX : vérifier que Supabase est initialisé avant d'accéder à .client
   if (!SupabaseConfig.isInitialized) {
     _log('⚠️ Notification action ignored (Supabase not initialized): $actionId');
     return;
@@ -311,7 +292,6 @@ String _normalizeRoute(String route) {
 // ============================================================================
 // NOTIFICATION TAP HANDLER (global)
 // ============================================================================
-
 void _handleLocalNotificationTap(
   String? payload, {
   String? actionId,
@@ -328,7 +308,6 @@ void _handleLocalNotificationTap(
 
   _log('NotifTap action=$actionId payload=$payload input=$input');
 
-  // ── Chat message ──────────────────────────────────────
   if (payload.startsWith('chat:')) {
     final convId = payload.substring(5);
     if (convId.isEmpty) return;
@@ -339,7 +318,6 @@ void _handleLocalNotificationTap(
     return;
   }
 
-  // ── Appel ─────────────────────────────────────────────
   if (payload.startsWith('call:')) {
     final parts = payload.split(':');
     if (parts.length >= 2) {
@@ -348,7 +326,6 @@ void _handleLocalNotificationTap(
     return;
   }
 
-  // ── Routes (network, chat, modules…) ────
   if (payload.startsWith('/')) {
     final route = _normalizeRoute(payload);
     if (route != payload) _log('Route normalisée: $payload → $route');
@@ -362,7 +339,6 @@ void _handleLocalNotificationTap(
 // ============================================================================
 // MAIN
 // ============================================================================
-
 Future<void> main() async {
   runZonedGuarded(
     () async {
@@ -388,9 +364,6 @@ Future<void> main() async {
         _log('⚠️ Offline cache: $e');
       }
 
-      // ✅ FIX UI : afficher "Pas de connexion" au lieu de l'écran rouge
-      // pour les erreurs réseau. Les autres erreurs restent affichées en
-      // debug (utile pour les bugs UI).
       ErrorWidget.builder = (details) {
         final msg = details.exceptionAsString().toLowerCase();
         if (_isNetworkError(msg)) {
@@ -421,8 +394,6 @@ Future<void> main() async {
         );
       };
 
-      // ✅ FIX : sur erreur réseau, marquer le backend comme down pour
-      // que le router affiche /no-connection au lieu de /login.
       FlutterError.onError = (details) {
         final msg = details.exceptionAsString().toLowerCase();
 
@@ -430,7 +401,7 @@ Future<void> main() async {
           AppConnectivity.instance.markBackendDown();
           _log('⚠️ FlutterError network → backend marked down: '
               '${details.exception}');
-          return; // ne pas afficher la stacktrace
+          return;
         }
 
         if (msg.contains('stream has already been listened')) {
@@ -466,17 +437,12 @@ Future<void> main() async {
         _log('ℹ️ Web: Firebase/VoIP/Badge skipped');
       }
 
-      // ✅ FIX OFFLINE : premier essai Supabase (peut échouer si DNS mort)
       await _tryInitSupabase(reason: 'cold-start');
 
-      // ✅ FIX OFFLINE : listener sur le retour du réseau.
-      // Si Supabase n'était pas initialisé (DNS mort au cold-start),
-      // on retente dès que le réseau revient.
       Connectivity().onConnectivityChanged.listen((results) async {
         final online = results.isNotEmpty &&
             results.any((r) => r != ConnectivityResult.none);
         if (online && !SupabaseConfig.isInitialized) {
-          // Petit délai pour laisser le DNS se stabiliser
           await Future.delayed(const Duration(milliseconds: 800));
           await _tryInitSupabase(reason: 'connectivity-restored');
         }
@@ -496,7 +462,8 @@ Future<void> main() async {
             return;
           }
 
-          _handleLocalNotificationTap(payload, actionId: actionId, input: input);
+          _handleLocalNotificationTap(payload,
+              actionId: actionId, input: input);
         };
 
         _log('✓ LocalNotif OK (v3.1 with pending buffer)');
@@ -530,8 +497,6 @@ Future<void> main() async {
           unawaited(_rejectInvite(inviteId));
         };
 
-        // Ne bloque plus le démarrage (réseau faible).
-        // _syncPush relance initialize() après la connexion de toute façon.
         unawaited(
           PushNotificationService.instance
               .initialize()
@@ -560,9 +525,6 @@ Future<void> main() async {
 
       final errorStr = error.toString().toLowerCase();
 
-      // ✅ FIX : au lieu d'ignorer silencieusement les erreurs réseau,
-      // on les signale à AppConnectivity pour que le router affiche
-      // /no-connection au lieu de /login.
       if (_isNetworkError(errorStr)) {
         AppConnectivity.instance.markBackendDown();
         _log('⚠️ Network error in zone → backend marked down');
@@ -598,7 +560,6 @@ Future<void> main() async {
 // ============================================================================
 // APP
 // ============================================================================
-
 class ThixApp extends ConsumerStatefulWidget {
   const ThixApp({super.key});
 
@@ -637,8 +598,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _log('App resumed → session handled by AuthController (offline-safe)');
 
-      // ✅ FIX OFFLINE : si Supabase n'a pas pu être initialisé
-      // précédemment (DNS mort au cold-start), on retente au resumed.
       if (!SupabaseConfig.isInitialized || SupabaseConfig.lastAttemptFailed) {
         unawaited(_tryInitSupabase(reason: 'resumed'));
       }
@@ -670,7 +629,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _routerReady = true;
-      // Essais étalés jusqu'à 20 s (session lente à se restaurer)
       for (final ms in const [600, 2500, 6000, 12000, 20000]) {
         Future.delayed(Duration(milliseconds: ms), _flushPendingNav);
       }
@@ -691,7 +649,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       return;
     }
 
-    // Session prête → on rejoue l'appel / la navigation en attente
     _flushPendingNav();
 
     if (_pushRegistered) return;
@@ -701,7 +658,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       await PushNotificationService.instance.initialize();
       _log('✓ Push registered');
 
-      // ✅ FIX : vérifier que Supabase est initialisé avant .currentUser
       final uid = SupabaseConfig.isInitialized
           ? SupabaseConfig.currentUser?.id
           : null;
@@ -765,7 +721,8 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
     return app_provider.MultiProvider(
       providers: [
-        app_provider.ChangeNotifierProvider<AuthController>.value(value: _auth),
+        app_provider.ChangeNotifierProvider<AuthController>.value(
+            value: _auth),
         app_provider.ChangeNotifierProvider<LocaleController>.value(
             value: localeController),
         app_provider.Provider<ProfileService>(create: (_) => ProfileService()),
@@ -797,23 +754,22 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           }
           return supportedLocales.first;
         },
-            builder: (context, child) {
-        return Directionality(
-          textDirection: localeController.textDirection,
-          child: NotifBannerListener(
-            child: GlobalSosListener(
-              child: GlobalCallListener(
-                navigatorKey: rootNavigatorKey,
-                child: StatusUploadListener(
-                  child: child ?? const SizedBox.shrink(),
+        builder: (context, child) {
+          return Directionality(
+            textDirection: localeController.textDirection,
+            child: NotifBannerListener(
+              child: GlobalSosListener(
+                child: GlobalCallListener(
+                  navigatorKey: rootNavigatorKey,
+                  child: StatusUploadListener(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-    ), 
-  ); // ferme app_provider.MultiProvider
-  } // ferme _ThixAppState.build()
+          );
+        },
+      ), // ferme MaterialApp.router(
+    ); // ferme MultiProvider(
+  } // ferme build()
 } // ferme _ThixAppState
-} // ferme ThixApp
