@@ -22,6 +22,7 @@ import 'package:video_player/video_player.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:html/parser.dart' as html_parser;
+import 'package:cross_file/cross_file.dart'; // ✅ AJOUT: Pour lire les fichiers sur Web et Mobile
 
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -252,8 +253,8 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
 
       final compressedFile = info!.file!;
 
-      // Vérifie durée
-      if (info.duration != null && info.duration!.inSeconds > _StoryValidators.maxVideoDurationSeconds) {
+      // ✅ FIX 1 : info.duration est un double (millisecondes), on divise par 1000 pour les secondes
+      if (info.duration != null && (info.duration! / 1000) > _StoryValidators.maxVideoDurationSeconds) {
         if (mounted) setState(() => _isProcessingVideo = false);
         return _showError('Vidéo trop longue (max ${_StoryValidators.maxVideoDurationSeconds}s)');
       }
@@ -374,7 +375,8 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         return _showError('Enregistrement vide');
       }
 
-      final bytes = await File(path).readAsBytes();
+      // ✅ FIX 2 : Utilisation de XFile au lieu de File (dart:io) pour supporter le Web et le Mobile
+      final bytes = await XFile(path).readAsBytes();
       if (bytes.isEmpty) return _showError('Enregistrement vide');
 
       if (!_StoryValidators.validateFileSize(bytes.length, _StoryValidators.maxAudioSizeMB)) {
