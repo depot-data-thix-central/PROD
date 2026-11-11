@@ -769,6 +769,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
               ),
             ),
           );
+            ),
         },
       ), // ferme MaterialApp.router(
     ); // ferme MultiProvider(
