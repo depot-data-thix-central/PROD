@@ -1,6 +1,12 @@
 // lib/services/local_notification_service_io.dart
 //
-// Local Notification Service IO v3.4 (Production Enterprise + Wedding + THIX Info)
+// Local Notification Service IO v3.4.1 (Production Enterprise + Wedding + THIX Info)
+//
+// CHANGELOG v3.4.1 :
+//   ✅ FIX v18.0.1 : `vibrationPattern: Int64List.fromList` retiré du contexte `const`
+//   ✅ FIX v18.0.1 : `FilePathAndroidNotificationDetails` -> `FilePathAndroidBitmap`
+//   ✅ FIX v18.0.1 : `hideLargeIconOnExpandedState` -> `hideExpandedLargeIcon`
+//   ✅ Ajout de l'import `dart:typed_data` pour `Int64List`
 //
 // CHANGELOG v3.4 :
 //   ✅ Ajout des canaux "THIX Info Breaking" (prioritaire, son d'alerte)
@@ -15,6 +21,7 @@
 // ============================================================================
 
 import 'dart:async';
+import 'dart:typed_data'; // ✅ Ajouté pour Int64List
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -219,7 +226,7 @@ class LocalNotificationService {
       }
 
       _initialized = true;
-      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.4)');
+      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.4.1)');
 
       _flushPendingAction();
     } on TimeoutException {
@@ -316,11 +323,9 @@ class LocalNotificationService {
       );
 
       // 🆕 Canal THIX Info Breaking (prioritaire — alertes urgentes)
-      // Son d'alerte dédié, LED rouge, vibration forte
-      // Note : Pour utiliser un son personnalisé, crée le fichier
-      //        android/app/src/main/res/raw/alert_news.mp3
+      // ✅ FIX : Suppression du `const` car Int64List.fromList n'est pas constant
       await android.createNotificationChannel(
-        const AndroidNotificationChannel(
+        AndroidNotificationChannel(
           channelNewsBreaking,
           '🔴 Alertes Info',
           description: 'Flash info urgent et actualités prioritaires THIX Info',
@@ -328,10 +333,10 @@ class LocalNotificationService {
           playSound: true,
           enableVibration: true,
           enableLights: true,
-          ledColor: Color(0xFFDC2626), // Rouge
+          ledColor: const Color(0xFFDC2626), // Rouge
           showBadge: true,
           // Si tu as un son dédié : RawResourceAndroidNotificationSound('alert_news')
-          sound: RawResourceAndroidNotificationSound('notification'),
+          sound: const RawResourceAndroidNotificationSound('notification'),
           vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
         ),
       );
@@ -710,10 +715,11 @@ class LocalNotificationService {
       sound: const RawResourceAndroidNotificationSound('notification'),
       color: const Color(0xFFDC2626),
       colorized: true,
-      // Grande image pour breaking news (si fournie)
+      // ✅ FIX 1 : FilePathAndroidNotificationDetails -> FilePathAndroidBitmap
       largeIcon: imageUrl != null
-          ? FilePathAndroidNotificationDetails(imageUrl)
+          ? FilePathAndroidBitmap(imageUrl)
           : null,
+      // ✅ FIX 2 : hideLargeIconOnExpandedState -> hideExpandedLargeIcon
       styleInformation: BigPictureStyleInformation(
         imageUrl != null
             ? FilePathAndroidBitmap(imageUrl)
@@ -721,7 +727,7 @@ class LocalNotificationService {
         contentTitle: sanitizedTitle,
         summaryText: '🔴 Alerte Info',
         largeIcon: null,
-        hideLargeIconOnExpandedState: true,
+        hideExpandedLargeIcon: true, 
       ),
     );
 
