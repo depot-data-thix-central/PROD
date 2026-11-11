@@ -1,6 +1,11 @@
 // lib/services/local_notification_service_io.dart
 //
-// Local Notification Service IO v3.3 (Production Enterprise + Wedding)
+// Local Notification Service IO v3.4 (Production Enterprise + Wedding + THIX Info)
+//
+// CHANGELOG v3.4 :
+//   ✅ Ajout des canaux "THIX Info Breaking" (prioritaire, son d'alerte)
+//   ✅ Ajout du canal "THIX Info Actualités" (articles à la une, nouveautés)
+//   ✅ Gestion spécifique des breaking news (LED rouge, vibration forte)
 //
 // CHANGELOG v3.3 :
 //   ✅ Ajout de `showWeddingMessage` pour les messages de mariage avec actions.
@@ -114,10 +119,15 @@ class LocalNotificationService {
   bool _initialized = false;
   bool _initializing = false;
 
+  // ── Canaux de notification ──
   static const String channelDefault = 'thix_id_default_v3';
   static const String channelChat = 'thix_chat_v3';
   static const String channelCalls = 'thix_calls_v3';
-  static const String channelWedding = 'thix_wedding_v3'; // ✅ Nouveau canal
+  static const String channelWedding = 'thix_wedding_v3';
+  
+  // 🆕 THIX Info
+  static const String channelNewsBreaking = 'thix_news_breaking_v1'; // 🔴 Prioritaire
+  static const String channelNews = 'thix_news_general_v1';         // 📰 Actualités
 
   static const List<String> _legacyChannels = [
     'thix_id_default_v2',
@@ -209,7 +219,7 @@ class LocalNotificationService {
       }
 
       _initialized = true;
-      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.3)');
+      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.4)');
 
       _flushPendingAction();
     } on TimeoutException {
@@ -249,6 +259,7 @@ class LocalNotificationService {
   Future<void> _createAndroidChannels(
       AndroidFlutterLocalNotificationsPlugin android) async {
     try {
+      // ── Canal par défaut ──
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelDefault,
@@ -262,6 +273,7 @@ class LocalNotificationService {
         ),
       );
 
+      // ── Canal Chat ──
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelChat,
@@ -275,6 +287,7 @@ class LocalNotificationService {
         ),
       );
 
+      // ── Canal Appels ──
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelCalls,
@@ -288,12 +301,47 @@ class LocalNotificationService {
         ),
       );
 
-      // ✅ Nouveau canal pour les Mariages
+      // ── Canal Mariages ──
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelWedding,
           'Mariages & Événements',
           description: 'Mises à jour de vos mariages (RSVP, menu, tâches...)',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+          showBadge: true,
+          sound: RawResourceAndroidNotificationSound('notification'),
+        ),
+      );
+
+      // 🆕 Canal THIX Info Breaking (prioritaire — alertes urgentes)
+      // Son d'alerte dédié, LED rouge, vibration forte
+      // Note : Pour utiliser un son personnalisé, crée le fichier
+      //        android/app/src/main/res/raw/alert_news.mp3
+      await android.createNotificationChannel(
+        const AndroidNotificationChannel(
+          channelNewsBreaking,
+          '🔴 Alertes Info',
+          description: 'Flash info urgent et actualités prioritaires THIX Info',
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+          ledColor: Color(0xFFDC2626), // Rouge
+          showBadge: true,
+          // Si tu as un son dédié : RawResourceAndroidNotificationSound('alert_news')
+          sound: RawResourceAndroidNotificationSound('notification'),
+          vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
+        ),
+      );
+
+      // 🆕 Canal THIX Info Général (actualités normales)
+      await android.createNotificationChannel(
+        const AndroidNotificationChannel(
+          channelNews,
+          '📰 Actualités THIX Info',
+          description: 'Articles à la une et nouveautés',
           importance: Importance.high,
           playSound: true,
           enableVibration: true,
@@ -378,6 +426,9 @@ class LocalNotificationService {
     final isCall = channel == channelCalls;
     final isChat = channel == channelChat;
     final isWedding = channel == channelWedding;
+    // 🆕 Détection des canaux THIX Info
+    final isNewsBreaking = channel == channelNewsBreaking;
+    final isNews = channel == channelNews;
 
     final List<AndroidNotificationAction> actions = [];
 
@@ -424,47 +475,114 @@ class LocalNotificationService {
       }
     }
 
+    // ── Détermination du nom / description / catégorie Android ──
+    final String channelName;
+    final String channelDesc;
+    final AndroidNotificationCategory category;
+    final bool fullScreenIntent;
+    final RawResourceAndroidNotificationSound sound;
+    final String summaryText;
+
+    if (isCall) {
+      channelName = 'Appels THIX';
+      channelDesc = 'Appels entrants';
+      category = AndroidNotificationCategory.call;
+      fullScreenIntent = true;
+      sound = const RawResourceAndroidNotificationSound('ringtone');
+      summaryText = 'Appel';
+    } else if (isNewsBreaking) {
+      // 🆕 Breaking news : priorité max, full-screen, vibration forte
+      channelName = '🔴 Alertes Info';
+      channelDesc = 'Flash info urgent THIX Info';
+      category = AndroidNotificationCategory.alarm;
+      fullScreenIntent = true; // Force l'affichage même écran verrouillé
+      sound = const RawResourceAndroidNotificationSound('notification');
+      summaryText = '🔴 Alerte Info';
+    } else if (isNews) {
+      // 🆕 Actualité standard
+      channelName = '📰 Actualités THIX Info';
+      channelDesc = 'Articles à la une';
+      category = AndroidNotificationCategory.social;
+      fullScreenIntent = false;
+      sound = const RawResourceAndroidNotificationSound('notification');
+      summaryText = 'THIX Info';
+    } else if (isWedding) {
+      channelName = 'Mariages & Événements';
+      channelDesc = 'Mises à jour de mariages';
+      category = AndroidNotificationCategory.event;
+      fullScreenIntent = false;
+      sound = const RawResourceAndroidNotificationSound('notification');
+      summaryText = 'Mariage';
+    } else if (isChat) {
+      channelName = 'Messages THIX Chat';
+      channelDesc = 'Nouveaux messages';
+      category = AndroidNotificationCategory.message;
+      fullScreenIntent = false;
+      sound = const RawResourceAndroidNotificationSound('notification');
+      summaryText = 'THIX Chat';
+    } else {
+      channelName = 'THIX ID';
+      channelDesc = 'Notifications THIX';
+      category = AndroidNotificationCategory.social;
+      fullScreenIntent = false;
+      sound = const RawResourceAndroidNotificationSound('notification');
+      summaryText = 'THIX Hub';
+    }
+
+    // ── Pattern de vibration spécifique au breaking news ──
+    Int64List? vibrationPattern;
+    if (isNewsBreaking) {
+      vibrationPattern = Int64List.fromList([0, 400, 150, 400, 150, 400]);
+    }
+
     final androidDetails = AndroidNotificationDetails(
       channel,
-      isCall ? 'Appels THIX' : isWedding ? 'Mariages & Événements' : isChat ? 'Messages THIX Chat' : 'THIX ID',
-      channelDescription: isCall
-          ? 'Appels entrants'
-          : isWedding
-              ? 'Mises à jour de mariages'
-              : isChat
-                  ? 'Nouveaux messages'
-                  : 'Notifications THIX',
-      importance: Importance.max,
-      priority: Priority.max,
+      channelName,
+      channelDescription: channelDesc,
+      importance: (isNewsBreaking || isCall) ? Importance.max : Importance.high,
+      priority: (isNewsBreaking || isCall) ? Priority.max : Priority.high,
       icon: 'notification_icon',
-      category: isCall
-          ? AndroidNotificationCategory.call
-          : isChat
-              ? AndroidNotificationCategory.message
-              : AndroidNotificationCategory.social,
-      fullScreenIntent: isCall,
+      category: category,
+      fullScreenIntent: fullScreenIntent,
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
+      vibrationPattern: vibrationPattern,
+      enableLights: isNewsBreaking,
+      ledColor: isNewsBreaking ? const Color(0xFFDC2626) : null,
+      ledOnMs: isNewsBreaking ? 1000 : null,
+      ledOffMs: isNewsBreaking ? 500 : null,
       channelShowBadge: true,
       autoCancel: true,
       actions: actions.isEmpty ? null : actions,
-      sound: isCall
-          ? const RawResourceAndroidNotificationSound('ringtone')
-          : const RawResourceAndroidNotificationSound('notification'),
+      sound: sound,
+      // Pour breaking news : image de preview si fournie
       styleInformation: BigTextStyleInformation(
         sanitizedBody,
         contentTitle: sanitizedTitle,
-        summaryText: isWedding ? 'Mariage' : isChat ? 'THIX Chat' : 'THIX Hub',
+        summaryText: summaryText,
       ),
+      // Couleur d'accent pour les breaking news
+      color: isNewsBreaking ? const Color(0xFFDC2626) : null,
+      colorized: isNewsBreaking,
     );
 
+    // ── Détails iOS ──
+    // Breaking news = critical si possible, sinon timeSensitive
     final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
-      interruptionLevel: InterruptionLevel.timeSensitive,
+      interruptionLevel: isNewsBreaking
+          ? InterruptionLevel.critical
+          : (isCall
+              ? InterruptionLevel.timeSensitive
+              : isNews
+                  ? InterruptionLevel.timeSensitive
+                  : InterruptionLevel.active),
       categoryIdentifier: isChat ? _kIosChatCategory : null,
+      // Son d'alerte pour breaking news (si configuré côté iOS)
+      sound: isNewsBreaking ? 'alert_news.caf' : null,
     );
 
     final details = NotificationDetails(
@@ -501,7 +619,7 @@ class LocalNotificationService {
     );
   }
 
-  /// ✅ NOUVEAU : Afficher un message de mariage (avec options "Répondre")
+  /// ✅ Afficher un message de mariage (avec options "Répondre")
   Future<bool> showWeddingMessage({
     required int id,
     required String title,
@@ -513,14 +631,14 @@ class LocalNotificationService {
       title: title,
       body: body,
       payload: payload,
-      channelId: channelWedding, // Utilise le canal dédié
+      channelId: channelWedding,
       showReplyAction: true,
       showMarkAsReadAction: true,
       showMuteAction: true,
     );
   }
 
-  /// ✅ NOUVEAU : Afficher une alerte de mariage (RSVP, menu, tâche, etc.)
+  /// ✅ Afficher une alerte de mariage (RSVP, menu, tâche, etc.)
   Future<bool> showWeddingAlert({
     required int id,
     required String title,
@@ -536,6 +654,119 @@ class LocalNotificationService {
       showReplyAction: false,
       showMarkAsReadAction: false,
       showMuteAction: false,
+    );
+  }
+
+  // 🆕 THIX Info — Breaking news (alerte urgente)
+  Future<bool> showNewsBreaking({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+    String? imageUrl,
+  }) async {
+    if (!_Validators.isValidNotificationId(id)) return false;
+
+    final sanitizedTitle = _Validators.validateAndSanitizeTitle(title);
+    if (sanitizedTitle == null) return false;
+
+    final sanitizedBody = _Validators.validateAndSanitizeBody(body);
+    if (sanitizedBody == null) return false;
+
+    if (!_initialized) {
+      await initialize();
+      if (!_initialized) return false;
+    }
+
+    // Actions : "Ouvrir" uniquement
+    final actions = <AndroidNotificationAction>[
+      const AndroidNotificationAction(
+        kActionOpen,
+        'Lire',
+        showsUserInterface: true,
+      ),
+    ];
+
+    final androidDetails = AndroidNotificationDetails(
+      channelNewsBreaking,
+      '🔴 Alertes Info',
+      channelDescription: 'Flash info urgent THIX Info',
+      importance: Importance.max,
+      priority: Priority.max,
+      icon: 'notification_icon',
+      category: AndroidNotificationCategory.alarm,
+      fullScreenIntent: true,
+      visibility: NotificationVisibility.public,
+      playSound: true,
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 400, 150, 400, 150, 400]),
+      enableLights: true,
+      ledColor: const Color(0xFFDC2626),
+      ledOnMs: 1000,
+      ledOffMs: 500,
+      channelShowBadge: true,
+      autoCancel: true,
+      actions: actions,
+      sound: const RawResourceAndroidNotificationSound('notification'),
+      color: const Color(0xFFDC2626),
+      colorized: true,
+      // Grande image pour breaking news (si fournie)
+      largeIcon: imageUrl != null
+          ? FilePathAndroidNotificationDetails(imageUrl)
+          : null,
+      styleInformation: BigPictureStyleInformation(
+        imageUrl != null
+            ? FilePathAndroidBitmap(imageUrl)
+            : const DrawableResourceAndroidBitmap('notification_icon'),
+        contentTitle: sanitizedTitle,
+        summaryText: '🔴 Alerte Info',
+        largeIcon: null,
+        hideLargeIconOnExpandedState: true,
+      ),
+    );
+
+    final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      interruptionLevel: InterruptionLevel.critical,
+      sound: 'alert_news.caf',
+      attachments: imageUrl != null
+          ? [DarwinNotificationAttachment(imageUrl)]
+          : null,
+    );
+
+    try {
+      await _plugin
+          .show(
+            id,
+            sanitizedTitle,
+            sanitizedBody,
+            NotificationDetails(android: androidDetails, iOS: iosDetails),
+            payload: payload,
+          )
+          .timeout(_kNotificationTimeout);
+      return true;
+    } catch (e) {
+      debugPrint('[LocalNotif] ❌ showNewsBreaking failed: $e');
+      return false;
+    }
+  }
+
+  // 🆕 THIX Info — Actualité standard
+  Future<bool> showNewsArticle({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+    String? imageUrl,
+  }) {
+    return show(
+      id: id,
+      title: title,
+      body: body,
+      payload: payload,
+      channelId: channelNews,
     );
   }
 
