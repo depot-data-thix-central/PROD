@@ -14,8 +14,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/presentation/chat/providers/status_provider.dart';
-import 'package:thix_id/services/chat/status_service.dart';
+import 'package:thix_id/presentation/chat/providers/status_upload_manager.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -28,7 +27,6 @@ const double _kColorPickerBorderSelected = 3.0;
 const double _kColorPickerBorderDefault = 1.0;
 const double _kFontSizeStatus = 26.0;
 const double _kFontSizeHint = 24.0;
-const double _kLoaderSize = 18.0;
 
 const List<Color> _kStatusColors = [
   ThixPolicy.primary,
@@ -62,16 +60,6 @@ class _StatusValidators {
     return bytes > 0 && bytes <= _kMaxImageSizeBytes;
   }
 
-  /// Détecte si c'est une vidéo par l'extension
-  static bool isVideoFile(String path) {
-    final lower = path.toLowerCase();
-    return lower.endsWith('.mp4') ||
-        lower.endsWith('.mov') ||
-        lower.endsWith('.m4v') ||
-        lower.endsWith('.webm') ||
-        lower.endsWith('.avi');
-  }
-
   static String friendlyError(dynamic e) {
     final msg = e.toString().toLowerCase();
     if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
@@ -84,7 +72,6 @@ class _StatusValidators {
 // ============================================================================
 // CREATE STATUS PAGE
 // ============================================================================
-
 class CreateStatusPage extends ConsumerStatefulWidget {
   const CreateStatusPage({super.key});
 
@@ -109,10 +96,10 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     super.dispose();
   }
 
+  // ------------------------------------------------------------------ TEXT
   Future<void> _publishText() async {
     final l10n = AppLocalizations.of(context);
     final rawText = _textCtrl.text.trim();
-
     if (rawText.isEmpty || _sending) return;
 
     final sanitizedText = _StatusValidators.sanitizeText(rawText);
@@ -122,35 +109,23 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     }
 
     HapticFeedback.mediumImpact();
-    setState(() => _sending = true);
-    debugPrint('[CreateStatus] 📝 Publishing text status...');
 
-    try {
-      final hexColor = '#${_bg.value.toRadixString(16).padLeft(8, '0').substring(2)}';
+    final hexColor = '#${_bg.value.toRadixString(16).padLeft(8, '0').substring(2)}';
 
-      final ok = await ref.read(statusProvider.notifier).createText(
-            sanitizedText,
-            background: hexColor,
-          );
+    // ✅ Mise en file d'attente : l'upload continue en arrière-plan
+    ref.read(statusUploadManagerProvider.notifier).enqueueText(
+          sanitizedText,
+          background: hexColor,
+        );
 
-      if (!mounted) return;
-      setState(() => _sending = false);
+    debugPrint('[CreateStatus] 📝 Text status queued (background upload)');
 
-      if (ok) {
-        debugPrint('[CreateStatus] ✓ Text status published');
-        Navigator.pop(context);
-      } else {
-        _showError(l10n.t('status_publish_error'));
-      }
-    } catch (e) {
-      debugPrint('[CreateStatus] ❌ Publish error: $e');
-      if (mounted) {
-        setState(() => _sending = false);
-        _showError(_StatusValidators.friendlyError(e));
-      }
-    }
+    if (!mounted) return;
+    _showQueuedSnackBar();
+    Navigator.pop(context); // ✅ Fermeture immédiate
   }
 
+  // ------------------------------------------------------------------ PICK
   Future<void> _pickMedia() async {
     final l10n = AppLocalizations.of(context);
     if (_sending) return;
@@ -180,8 +155,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     );
 
     if (choice == null) return;
-
-    debugPrint('[CreateStatus] 📁 Picking $choice...');
 
     final result = await FilePicker.platform.pickFiles(
       type: choice == 'image' ? FileType.image : FileType.video,
@@ -216,12 +189,9 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       if (!mounted) return;
       setState(() => _sending = false);
 
-      // Ouvre l'éditeur de photo (rognage, dessin, rotation, etc.)
       final editedFile = await Navigator.push<File?>(
         context,
-        MaterialPageRoute(
-          builder: (_) => _ImageEditorScreen(imageFile: file),
-        ),
+        MaterialPageRoute(builder: (_) => _ImageEditorScreen(imageFile: file)),
       );
 
       if (editedFile != null && mounted) {
@@ -249,15 +219,14 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       if (!mounted) return;
       setState(() => _sending = false);
 
-      // Ouvre l'éditeur de vidéo (trim, reverse, crop, dessin)
       final editedFile = await Navigator.push<File?>(
         context,
-        MaterialPageRoute(
-          builder: (_) => _VideoEditorScreen(videoFile: file),
-        ),
+        MaterialPageRoute(builder: (_) => _VideoEditorScreen(videoFile: file)),
       );
 
       if (editedFile != null && mounted) {
+        setState(() => _sending = true);
+
         final controller = VideoPlayerController.file(editedFile);
         await controller.initialize();
         _videoDuration = controller.value.duration;
@@ -265,20 +234,23 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
         if (_videoDuration.inSeconds > _kMaxVideoDurationSeconds) {
           controller.dispose();
           _showError('${l10n.t('status_video_too_long')} (max 2 min)');
+          if (mounted) setState(() => _sending = false);
           return;
         }
 
         await controller.setLooping(true);
 
+        if (!mounted) return;
         setState(() {
           _selectedVideo = editedFile;
           _selectedImage = null;
           _videoController?.dispose();
           _videoController = controller;
+          _sending = false;
         });
 
         await controller.play();
-        debugPrint('[CreateStatus] ✓ Vidéo éditée: ${editedFile.path}, durée: $_videoDuration');
+        debugPrint('[CreateStatus] ✓ Vidéo éditée: ${editedFile.path}');
       }
     } catch (e) {
       debugPrint('[CreateStatus] ❌ Erreur vidéo: $e');
@@ -289,60 +261,60 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     }
   }
 
+  // ----------------------------------------------------------------- MEDIA
   Future<void> _publishMedia() async {
     final l10n = AppLocalizations.of(context);
     if (_sending) return;
+    if (_selectedImage == null && _selectedVideo == null) return;
 
-    setState(() => _sending = true);
+    final sanitizedCaption = _StatusValidators.sanitizeText(
+      _textCtrl.text.trim(),
+      maxLength: 100,
+    );
+    final caption = sanitizedCaption.isEmpty ? null : sanitizedCaption;
 
-    try {
-      final service = ref.read(statusServiceProvider);
-      final sanitizedCaption = _StatusValidators.sanitizeText(
-        _textCtrl.text.trim(),
-        maxLength: 100,
-      );
+    HapticFeedback.mediumImpact();
 
-      String? id;
-
-      if (_selectedImage != null) {
-        debugPrint('[CreateStatus] ⬆️ Uploading image status...');
-        final bytes = await _selectedImage!.readAsBytes();
-
-        id = await service.createImageStatus(
-          bytes: Uint8List.fromList(bytes),
-          extension: _selectedImage!.path.split('.').last,
-          caption: sanitizedCaption.isEmpty ? null : sanitizedCaption,
-        );
-      } else if (_selectedVideo != null) {
-        debugPrint('[CreateStatus] ⬆️ Uploading video status...');
-
-        final bytes = await _selectedVideo!.readAsBytes();
-
-        id = await service.createVideoStatus(
-          bytes: Uint8List.fromList(bytes),
-          extension: _selectedVideo!.path.split('.').last,
-          caption: sanitizedCaption.isEmpty ? null : sanitizedCaption,
-        );
-      }
-
-      await ref.read(statusProvider.notifier).refresh();
-
-      if (!mounted) return;
-
-      if (id != null) {
-        debugPrint('[CreateStatus] ✓ Media status published: $id');
-        Navigator.pop(context);
-      } else {
-        _showError(l10n.t('status_publish_error'));
-      }
-    } catch (e) {
-      debugPrint('[CreateStatus] ❌ Upload error: $e');
-      if (mounted) {
-        _showError(_StatusValidators.friendlyError(e));
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
+    // ✅ Mise en file d'attente : lecture des octets + upload en arrière-plan
+    if (_selectedImage != null) {
+      ref.read(statusUploadManagerProvider.notifier).enqueueImage(
+            _selectedImage!.path,
+            caption: caption,
+          );
+      debugPrint('[CreateStatus] 🖼️ Image queued (background upload)');
+    } else {
+      ref.read(statusUploadManagerProvider.notifier).enqueueVideo(
+            _selectedVideo!.path,
+            caption: caption,
+          );
+      debugPrint('[CreateStatus] 🎥 Video queued (background upload)');
     }
+
+    if (!mounted) return;
+    _showQueuedSnackBar();
+    Navigator.pop(context); // ✅ Fermeture immédiate, plus d'attente
+  }
+
+  // ------------------------------------------------------------------ UI
+  void _showQueuedSnackBar() {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Publication en arrière-plan…')),
+          ]),
+          backgroundColor: const Color(0xFF0F172A),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   void _showError(String message) {
@@ -400,26 +372,16 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             Semantics(
               button: true,
               label: l10n.t('status_publish'),
-              enabled: !_sending,
               child: TextButton(
-                onPressed: _sending ? null : _publishMedia,
-                child: _sending
-                    ? const SizedBox(
-                        width: _kLoaderSize,
-                        height: _kLoaderSize,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(
-                        l10n.t('status_publish'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                        ),
-                      ),
+                onPressed: _publishMedia,
+                child: Text(
+                  l10n.t('status_publish'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
               ),
             ),
         ],
@@ -475,7 +437,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             ),
           ),
         ),
-
         SizedBox(
           height: 48,
           child: ListView.separated(
@@ -516,9 +477,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             },
           ),
         ),
-
         const SizedBox(height: 16),
-
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
           child: Row(
@@ -556,10 +515,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                 InteractiveViewer(
                   minScale: 1.0,
                   maxScale: 4.0,
-                  child: Image.file(
-                    _selectedImage!,
-                    fit: BoxFit.contain,
-                  ),
+                  child: Image.file(_selectedImage!, fit: BoxFit.contain),
                 )
               else if (_selectedVideo != null && _videoController != null)
                 Center(
@@ -568,7 +524,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                     child: VideoPlayer(_videoController!),
                   ),
                 ),
-
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -616,7 +571,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             ],
           ),
         ),
-
         Container(
           padding: const EdgeInsets.all(16),
           color: Colors.black,
@@ -644,7 +598,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 // ============================================================================
 // IMAGE EDITOR SCREEN
 // ============================================================================
-
 class _ImageEditorScreen extends StatefulWidget {
   final File imageFile;
   const _ImageEditorScreen({required this.imageFile});
@@ -660,7 +613,8 @@ class _ImageEditorScreenState extends State<_ImageEditorScreen> {
     setState(() => _isSaving = true);
     try {
       final tempDir = await getTemporaryDirectory();
-      final tempPath = '${tempDir.path}/edited_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final tempPath =
+          '${tempDir.path}/edited_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final editedFile = File(tempPath);
       await editedFile.writeAsBytes(bytes);
       if (mounted) Navigator.pop(context, editedFile);
@@ -697,7 +651,6 @@ class _ImageEditorScreenState extends State<_ImageEditorScreen> {
 // ============================================================================
 // VIDEO EDITOR SCREEN
 // ============================================================================
-
 class _VideoEditorScreen extends StatelessWidget {
   final File videoFile;
   const _VideoEditorScreen({required this.videoFile});
@@ -722,7 +675,6 @@ class _VideoEditorScreen extends StatelessWidget {
 // ============================================================================
 // ACTION CHIP
 // ============================================================================
-
 class _ActionChip extends StatelessWidget {
   final AppLocalizations l10n;
   final IconData icon;
