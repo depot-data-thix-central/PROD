@@ -554,7 +554,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
       onPanCancel: () => setState(() => _heroPaused = false),
       child: Container(
         // ✅ AUCUNE marge horizontale : edge-to-edge
-        decoration: const BoxDecoration(
+        decoration:  BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
           boxShadow: [
@@ -790,7 +790,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                         ),
                       ),
                     ),
-                  if (index < list.length - 1)
+                  if (index < _items.length - 1)
                     Positioned(
                       right: 8,
                       top: 0,
