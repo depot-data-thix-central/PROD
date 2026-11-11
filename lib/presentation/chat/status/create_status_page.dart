@@ -1,20 +1,18 @@
 // lib/presentation/chat/status/create_status_page.dart
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:path_provider/path_provider.dart';
-import 'package:pro_image_editor/pro_image_editor.dart';
-import 'package:pro_video_editor/pro_video_editor.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/presentation/chat/providers/status_upload_manager.dart';
+import 'package:thix_id/presentation/chat/status/providers/status_upload_manager.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -112,7 +110,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     final hexColor = '#${_bg.value.toRadixString(16).padLeft(8, '0').substring(2)}';
 
-    // ✅ Mise en file d'attente : l'upload continue en arrière-plan
+    // Mise en file d'attente : l'upload continue en arrière-plan
     ref.read(statusUploadManagerProvider.notifier).enqueueText(
           sanitizedText,
           background: hexColor,
@@ -122,7 +120,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     if (!mounted) return;
     _showQueuedSnackBar();
-    Navigator.pop(context); // ✅ Fermeture immédiate
+    Navigator.pop(context);
   }
 
   // ------------------------------------------------------------------ PICK
@@ -186,22 +184,37 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
         return;
       }
 
-      if (!mounted) return;
       setState(() => _sending = false);
 
-      final editedFile = await Navigator.push<File?>(
-        context,
-        MaterialPageRoute(builder: (_) => _ImageEditorScreen(imageFile: file)),
+      // Ouvre le cropper natif (rognage, rotation, ajustement)
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: file.path,
+        compressQuality: 85,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Modifier',
+            toolbarColor: Colors.black,
+            toolbarWidgetColor: Colors.white,
+            backgroundColor: Colors.black,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+          ),
+          IOSUiSettings(
+            title: 'Modifier',
+            cancelButtonTitle: 'Annuler',
+            doneButtonTitle: 'OK',
+          ),
+        ],
       );
 
-      if (editedFile != null && mounted) {
+      if (croppedFile != null && mounted) {
         setState(() {
-          _selectedImage = editedFile;
+          _selectedImage = File(croppedFile.path);
           _selectedVideo = null;
           _videoController?.dispose();
           _videoController = null;
         });
-        debugPrint('[CreateStatus] ✓ Image éditée: ${editedFile.path}');
+        debugPrint('[CreateStatus] ✓ Image rognée: ${croppedFile.path}');
       }
     } catch (e) {
       debugPrint('[CreateStatus] ❌ Erreur image: $e');
@@ -216,42 +229,44 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     try {
       setState(() => _sending = true);
 
-      if (!mounted) return;
-      setState(() => _sending = false);
-
-      final editedFile = await Navigator.push<File?>(
-        context,
-        MaterialPageRoute(builder: (_) => _VideoEditorScreen(videoFile: file)),
+      // Compresse la vidéo pour l'upload en arrière-plan
+      final info = await VideoCompress.compressVideo(
+        file.path,
+        quality: VideoQuality.Res720p,
+        deleteOrigin: false,
+        includeAudio: true,
       );
 
-      if (editedFile != null && mounted) {
-        setState(() => _sending = true);
-
-        final controller = VideoPlayerController.file(editedFile);
-        await controller.initialize();
-        _videoDuration = controller.value.duration;
-
-        if (_videoDuration.inSeconds > _kMaxVideoDurationSeconds) {
-          controller.dispose();
-          _showError('${l10n.t('status_video_too_long')} (max 2 min)');
-          if (mounted) setState(() => _sending = false);
-          return;
-        }
-
-        await controller.setLooping(true);
-
-        if (!mounted) return;
-        setState(() {
-          _selectedVideo = editedFile;
-          _selectedImage = null;
-          _videoController?.dispose();
-          _videoController = controller;
-          _sending = false;
-        });
-
-        await controller.play();
-        debugPrint('[CreateStatus] ✓ Vidéo éditée: ${editedFile.path}');
+      if (info?.file == null) {
+        if (mounted) setState(() => _sending = false);
+        return;
       }
+
+      final compressedFile = info!.file!;
+      final controller = VideoPlayerController.file(compressedFile);
+      await controller.initialize();
+      _videoDuration = controller.value.duration;
+
+      if (_videoDuration.inSeconds > _kMaxVideoDurationSeconds) {
+        controller.dispose();
+        _showError('${l10n.t('status_video_too_long')} (max 2 min)');
+        if (mounted) setState(() => _sending = false);
+        return;
+      }
+
+      await controller.setLooping(true);
+
+      if (!mounted) return;
+      setState(() {
+        _selectedVideo = compressedFile;
+        _selectedImage = null;
+        _videoController?.dispose();
+        _videoController = controller;
+        _sending = false;
+      });
+
+      await controller.play();
+      debugPrint('[CreateStatus] ✓ Vidéo compressée et prête: ${compressedFile.path}');
     } catch (e) {
       debugPrint('[CreateStatus] ❌ Erreur vidéo: $e');
       if (mounted) {
@@ -275,7 +290,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     HapticFeedback.mediumImpact();
 
-    // ✅ Mise en file d'attente : lecture des octets + upload en arrière-plan
+    // Mise en file d'attente : lecture des octets + upload en arrière-plan
     if (_selectedImage != null) {
       ref.read(statusUploadManagerProvider.notifier).enqueueImage(
             _selectedImage!.path,
@@ -292,7 +307,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     if (!mounted) return;
     _showQueuedSnackBar();
-    Navigator.pop(context); // ✅ Fermeture immédiate, plus d'attente
+    Navigator.pop(context);
   }
 
   // ------------------------------------------------------------------ UI
@@ -591,83 +606,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ============================================================================
-// IMAGE EDITOR SCREEN
-// ============================================================================
-class _ImageEditorScreen extends StatefulWidget {
-  final File imageFile;
-  const _ImageEditorScreen({required this.imageFile});
-
-  @override
-  State<_ImageEditorScreen> createState() => _ImageEditorScreenState();
-}
-
-class _ImageEditorScreenState extends State<_ImageEditorScreen> {
-  bool _isSaving = false;
-
-  Future<void> _handleDone(Uint8List bytes) async {
-    setState(() => _isSaving = true);
-    try {
-      final tempDir = await getTemporaryDirectory();
-      final tempPath =
-          '${tempDir.path}/edited_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final editedFile = File(tempPath);
-      await editedFile.writeAsBytes(bytes);
-      if (mounted) Navigator.pop(context, editedFile);
-    } catch (e) {
-      debugPrint('Erreur sauvegarde image: $e');
-      if (mounted) Navigator.pop(context);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isSaving) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
-      );
-    }
-
-    return ProImageEditor.file(
-      widget.imageFile,
-      configs: ProImageEditorConfigs(
-        mainConfigs: MainConfigs(
-          theme: ImageEditorTheme(
-            background: BackgroundConfigs(color: Colors.black),
-          ),
-        ),
-      ),
-      onImageEditingComplete: _handleDone,
-      onCloseEditor: () => Navigator.pop(context),
-    );
-  }
-}
-
-// ============================================================================
-// VIDEO EDITOR SCREEN
-// ============================================================================
-class _VideoEditorScreen extends StatelessWidget {
-  final File videoFile;
-  const _VideoEditorScreen({required this.videoFile});
-
-  @override
-  Widget build(BuildContext context) {
-    return ProVideoEditor.file(
-      videoFile,
-      configs: ProVideoEditorConfigs(
-        videoPlayerConfigs: VideoPlayerConfigs(showControls: true),
-      ),
-      onComplete: (File editedVideo) {
-        Navigator.pop(context, editedVideo);
-      },
-      onCancel: () {
-        Navigator.pop(context);
-      },
     );
   }
 }
