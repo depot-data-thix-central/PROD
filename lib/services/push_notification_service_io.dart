@@ -1,13 +1,18 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v9.1 (Production + Thix Wedding)
+// Push Notification Service IO v9.2 (Production + Thix Wedding + THIX Info)
+// v9.2 : ✅ Intégration THIX Info (news_breaking, news_featured, news_category)
+//        - Canal prioritaire "🔴 Alertes Info" avec son d'alerte dédié
+//        - Navigation deep-link vers /thix-info/article/{id}
+//        - Haptic feedback lourd pour breaking news
+//        - Routes validées : /thix-info, /thix-info/article/, /thix-info/category/
 // v9.1 : appel déjà terminé / accepté / affiché → CallKit ne sonne pas
-//        (push "call_hangup" arrivée avant "incoming_call", ou push en double)
 // ============================================================================
 
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -93,6 +98,11 @@ class PushTypes {
   static const String weddingTask = 'wedding_task';
   static const String weddingInvitation = 'wedding_invitation';
 
+  // 🆕 THIX INFO (Actualités)
+  static const String newsBreaking = 'news_breaking';     // 🔴 Flash info urgent
+  static const String newsFeatured = 'news_featured';     // ⭐ Article à la une promu
+  static const String newsCategory = 'news_category';     // 📰 Nouvelle dans une catég. suivie
+
   static const Set<String> allowed = <String>{
     chatMessage, chat, message, incomingCall, callHangup,
     notification, sos, like, follow, comment, commentReply,
@@ -101,6 +111,8 @@ class PushTypes {
     weddingRsvp, weddingMessage, weddingMenuStatus, weddingMenuSuggestion,
     weddingMenuVendor, weddingMenuVendorStatus, weddingMenuVote, weddingMenuDiet,
     weddingGuestbook, weddingPayment, weddingRequest, weddingTask, weddingInvitation,
+    // 🆕 News
+    newsBreaking, newsFeatured, newsCategory,
   };
 
   static bool isAllowed(String type) => allowed.contains(type);
@@ -113,6 +125,12 @@ class PushTypes {
 
   // Permet d'avoir l'UI "Répondre" pour les messages de mariage
   static bool isWeddingChat(String type) => type == weddingMessage;
+
+  // 🆕 Helpers THIX Info
+  static bool isNewsType(String type) =>
+      type == newsBreaking || type == newsFeatured || type == newsCategory;
+
+  static bool isUrgentNews(String type) => type == newsBreaking;
 }
 
 // ============================================================================
@@ -177,6 +195,13 @@ class _Validators {
       '/doc',
       '/ia',
       '/thix-weeding',
+      // 🆕 Routes THIX Info
+      '/thix-info',
+      '/thix-info/article/',
+      '/thix-info/category/',
+      '/thix-info/space/',
+      '/thix-info/search',
+      '/thix-info/magazine/',
     ];
 
     for (final prefix in prefixes) {
@@ -207,6 +232,13 @@ class _Validators {
       return null;
     }
     return url;
+  }
+
+  // 🆕 Validation d'UUID d'article THIX Info (accepte UUID ou ID simple)
+  static bool isValidArticleId(String? id) {
+    if (id == null || id.isEmpty || id.length > 64) return false;
+    if (isValidUuid(id)) return true;
+    return RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(id);
   }
 }
 
@@ -529,12 +561,14 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         .initialize()
         .timeout(_kForegroundInitTimeout);
 
-    // On force l'affichage local pour les chats et les messages de mariage
+    // On force l'affichage local pour les chats, les messages de mariage,
+    // et les breaking news THIX Info
     final isChat = PushTypes.isChatType(type) || PushTypes.isWeddingChat(type);
+    final isUrgent = PushTypes.isUrgentNews(type);
 
     await _showFromRemoteMessage(
       message,
-      skipIfSystemNotification: !isChat,
+      skipIfSystemNotification: !isChat && !isUrgent,
     );
   } catch (e) {
     debugPrint('[FCM-BG] ❌ $e');
@@ -621,6 +655,14 @@ String _getChannelForType(String type) {
   if (PushTypes.isChatType(type) || PushTypes.isWeddingChat(type)) {
     return LocalNotificationService.channelChat;
   }
+  // 🆕 Breaking news = canal prioritaire (son d'alerte, vibration forte)
+  if (PushTypes.isUrgentNews(type)) {
+    return LocalNotificationService.channelNewsBreaking;
+  }
+  // 🆕 Autres news = canal dédié THIX Info
+  if (PushTypes.isNewsType(type)) {
+    return LocalNotificationService.channelNews;
+  }
   return LocalNotificationService.channelDefault;
 }
 
@@ -665,6 +707,15 @@ String _defaultTitle(String type) {
       return 'Paiement de mariage';
     case PushTypes.weddingRequest:
       return 'Demande de prestation';
+
+    // 🆕 Titres THIX Info
+    case PushTypes.newsBreaking:
+      return '🔴 ALERTE INFO';
+    case PushTypes.newsFeatured:
+      return '⭐ À la une';
+    case PushTypes.newsCategory:
+      return '📰 Nouvelle actualité';
+
     default:
       return 'THIX Hub';
   }
@@ -704,6 +755,25 @@ String? _buildPayload(Map<String, dynamic> data) {
     if (convId.isNotEmpty) return 'chat:$convId';
   }
 
+  // 🆕 THIX Info → route vers l'article
+  if (PushTypes.isNewsType(type)) {
+    final articleId = _Validators.sanitizeString(
+      (data['article_id'] ?? data['articleId'] ?? '').toString(),
+      maxLength: 64,
+    );
+    if (articleId.isNotEmpty && _Validators.isValidArticleId(articleId)) {
+      return '/thix-info/article/$articleId';
+    }
+    final category = _Validators.sanitizeString(
+      (data['category'] ?? '').toString(),
+      maxLength: 32,
+    );
+    if (category.isNotEmpty) {
+      return '/thix-info/category/$category';
+    }
+    return '/thix-info';
+  }
+
   final id = data['notification_id']?.toString() ?? data['id']?.toString();
   return id != null ? _Validators.sanitizePayload(id) : null;
 }
@@ -711,7 +781,8 @@ String? _buildPayload(Map<String, dynamic> data) {
 int _generateNotifId(RemoteMessage message) {
   final id = message.messageId ??
       message.data['invite_id']?.toString() ??
-      message.data['conversation_id']?.toString();
+      message.data['conversation_id']?.toString() ??
+      message.data['article_id']?.toString();
 
   if (id != null && id.isNotEmpty) {
     return (id.hashCode ^ 0x12345678) & 0x7fffffff;
@@ -923,6 +994,13 @@ class PushNotificationService {
     Future<void> work() async {
       await _showFromRemoteMessage(message);
       await _BadgeManager.instance.refreshFromDb();
+
+      // 🆕 Breaking news = haptic feedback lourd + vibration forte
+      if (PushTypes.isUrgentNews(type)) {
+        try {
+          await HapticFeedback.heavyImpact();
+        } catch (_) {}
+      }
     }
 
     unawaited(work());
