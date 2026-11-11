@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:path_provider/path_provider.dart';
+import 'package:pro_image_editor/pro_image_editor.dart';
+import 'package:pro_video_editor/pro_video_editor.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -211,17 +214,27 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       }
 
       if (!mounted) return;
-      setState(() {
-        _selectedImage = file;
-        _selectedVideo = null;
-        _videoController?.dispose();
-        _videoController = null;
-        _sending = false;
-      });
+      setState(() => _sending = false);
 
-      debugPrint('[CreateStatus] ✓ Image processed: ${file.path}');
+      // Ouvre l'éditeur de photo (rognage, dessin, rotation, etc.)
+      final editedFile = await Navigator.push<File?>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _ImageEditorScreen(imageFile: file),
+        ),
+      );
+
+      if (editedFile != null && mounted) {
+        setState(() {
+          _selectedImage = editedFile;
+          _selectedVideo = null;
+          _videoController?.dispose();
+          _videoController = null;
+        });
+        debugPrint('[CreateStatus] ✓ Image éditée: ${editedFile.path}');
+      }
     } catch (e) {
-      debugPrint('[CreateStatus] ❌ Image processing error: $e');
+      debugPrint('[CreateStatus] ❌ Erreur image: $e');
       if (mounted) {
         setState(() => _sending = false);
         _showError(_StatusValidators.friendlyError(e));
@@ -233,32 +246,42 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     try {
       setState(() => _sending = true);
 
-      final controller = VideoPlayerController.file(file);
-      await controller.initialize();
-      _videoDuration = controller.value.duration;
-
-      if (_videoDuration.inSeconds > _kMaxVideoDurationSeconds) {
-        controller.dispose();
-        _showError('${l10n.t('status_video_too_long')} (max 2 min)');
-        return;
-      }
-
-      await controller.setLooping(true);
-
       if (!mounted) return;
+      setState(() => _sending = false);
 
-      setState(() {
-        _selectedVideo = file;
-        _selectedImage = null;
-        _videoController?.dispose();
-        _videoController = controller;
-        _sending = false;
-      });
+      // Ouvre l'éditeur de vidéo (trim, reverse, crop, dessin)
+      final editedFile = await Navigator.push<File?>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _VideoEditorScreen(videoFile: file),
+        ),
+      );
 
-      await controller.play();
-      debugPrint('[CreateStatus] ✓ Video loaded: ${file.path}, duration: $_videoDuration');
+      if (editedFile != null && mounted) {
+        final controller = VideoPlayerController.file(editedFile);
+        await controller.initialize();
+        _videoDuration = controller.value.duration;
+
+        if (_videoDuration.inSeconds > _kMaxVideoDurationSeconds) {
+          controller.dispose();
+          _showError('${l10n.t('status_video_too_long')} (max 2 min)');
+          return;
+        }
+
+        await controller.setLooping(true);
+
+        setState(() {
+          _selectedVideo = editedFile;
+          _selectedImage = null;
+          _videoController?.dispose();
+          _videoController = controller;
+        });
+
+        await controller.play();
+        debugPrint('[CreateStatus] ✓ Vidéo éditée: ${editedFile.path}, durée: $_videoDuration');
+      }
     } catch (e) {
-      debugPrint('[CreateStatus] ❌ Video processing error: $e');
+      debugPrint('[CreateStatus] ❌ Erreur vidéo: $e');
       if (mounted) {
         setState(() => _sending = false);
         _showError(_StatusValidators.friendlyError(e));
@@ -614,6 +637,84 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ============================================================================
+// IMAGE EDITOR SCREEN
+// ============================================================================
+
+class _ImageEditorScreen extends StatefulWidget {
+  final File imageFile;
+  const _ImageEditorScreen({required this.imageFile});
+
+  @override
+  State<_ImageEditorScreen> createState() => _ImageEditorScreenState();
+}
+
+class _ImageEditorScreenState extends State<_ImageEditorScreen> {
+  bool _isSaving = false;
+
+  Future<void> _handleDone(Uint8List bytes) async {
+    setState(() => _isSaving = true);
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final tempPath = '${tempDir.path}/edited_image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final editedFile = File(tempPath);
+      await editedFile.writeAsBytes(bytes);
+      if (mounted) Navigator.pop(context, editedFile);
+    } catch (e) {
+      debugPrint('Erreur sauvegarde image: $e');
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isSaving) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    return ProImageEditor.file(
+      widget.imageFile,
+      configs: ProImageEditorConfigs(
+        mainConfigs: MainConfigs(
+          theme: ImageEditorTheme(
+            background: BackgroundConfigs(color: Colors.black),
+          ),
+        ),
+      ),
+      onImageEditingComplete: _handleDone,
+      onCloseEditor: () => Navigator.pop(context),
+    );
+  }
+}
+
+// ============================================================================
+// VIDEO EDITOR SCREEN
+// ============================================================================
+
+class _VideoEditorScreen extends StatelessWidget {
+  final File videoFile;
+  const _VideoEditorScreen({required this.videoFile});
+
+  @override
+  Widget build(BuildContext context) {
+    return ProVideoEditor.file(
+      videoFile,
+      configs: ProVideoEditorConfigs(
+        videoPlayerConfigs: VideoPlayerConfigs(showControls: true),
+      ),
+      onComplete: (File editedVideo) {
+        Navigator.pop(context, editedVideo);
+      },
+      onCancel: () {
+        Navigator.pop(context);
+      },
     );
   }
 }
