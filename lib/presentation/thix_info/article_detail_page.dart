@@ -14,6 +14,15 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/news_provider.dart';
 import '../../models/news_article.dart';
 
+// ── Tokens clair (identiques à la Homepage) ──
+const Color _kBg = Color(0xFFF6F7F9);
+const Color _kCard = Colors.white;
+const Color _kInk = Color(0xFF0F172A);
+const Color _kMuted = Color(0xFF64748B);
+const Color _kGold = Color(0xFFFFC107);
+const Color _kGoldDark = Color(0xFFD4AF37);
+const Color _kBorder = Color(0xFFE2E8F0);
+
 class ArticleDetailPage extends HookConsumerWidget {
   final String articleId;
   const ArticleDetailPage({super.key, required this.articleId});
@@ -47,20 +56,20 @@ class ArticleDetailPage extends HookConsumerWidget {
     // ─── ÉTAT : CHARGEMENT ───────────────────────────────────────
     if (articleSnapshot.connectionState == ConnectionState.waiting) {
       return const Scaffold(
-        backgroundColor: ThixPolicy.inkDeep,
-        body: Center(child: CircularProgressIndicator(color: ThixPolicy.gold)),
+        backgroundColor: _kBg, // ✅ Fond clair
+        body: Center(child: CircularProgressIndicator(color: _kGoldDark)), // ✅ Loader doré
       );
     }
 
     // ─── ÉTAT : ERREUR ───────────────────────────────────────────
     if (articleSnapshot.hasError || articleSnapshot.data == null) {
       return Scaffold(
-        backgroundColor: ThixPolicy.inkDeep,
+        backgroundColor: _kBg,
         appBar: AppBar(
           backgroundColor: Colors.transparent, 
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+            icon: const Icon(Icons.arrow_back_rounded, color: _kInk), // ✅ Icône sombre
             onPressed: () => context.canPop() ? context.pop() : context.go('/thix-info'),
           ),
         ),
@@ -70,16 +79,20 @@ class ArticleDetailPage extends HookConsumerWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), shape: BoxShape.circle),
-                child: const Icon(Icons.error_outline_rounded, size: 48, color: ThixPolicy.danger),
+                decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), shape: BoxShape.circle),
+                child: const Icon(Icons.error_outline_rounded, size: 48, color: Colors.red),
               ),
               const SizedBox(height: 20),
-              Text('Impossible de charger l\'article', style: ThixPolicy.h3Style.copyWith(color: Colors.white)),
+              Text('Impossible de charger l\'article', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kInk)),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () => context.pop(),
-                style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd))),
-                child: const Text('Retour'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kGold, 
+                  foregroundColor: _kInk, 
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd))
+                ),
+                child: const Text('Retour', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -101,10 +114,10 @@ class ArticleDetailPage extends HookConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: ThixPolicy.card,
+            backgroundColor: _kInk, // ✅ Snackbar sombre sur fond clair
             content: Text(
               isSavedState.value ? 'Article sauvegardé' : 'Retiré des favoris', 
-              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
             ), 
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
@@ -119,15 +132,15 @@ class ArticleDetailPage extends HookConsumerWidget {
       await Share.share('${article.title}\n\n${article.summary ?? ''}\n\nLire plus sur THIX INFO');
     }
 
-    // ─── UI PRINCIPALE (IMMERSIVE LECTURE) ───────────────────────
+    // ─── UI PRINCIPALE (IMMERSIVE LECTURE CLAIRE) ───────────────────────
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      backgroundColor: _kBg, // ✅ Fond clair global
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // 1. EN-TÊTE IMMERSIF (IMAGE + BOUTONS GLASS)
           SliverAppBar(
-            backgroundColor: ThixPolicy.inkDeep,
+            backgroundColor: _kBg, // ✅ Fond clair
             expandedHeight: 340.0,
             pinned: true,
             stretch: true,
@@ -139,7 +152,7 @@ class ArticleDetailPage extends HookConsumerWidget {
             actions: [
               _buildGlassIconButton(
                 icon: isSavedState.value ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                color: isSavedState.value ? ThixPolicy.gold : Colors.white,
+                color: isSavedState.value ? _kGold : Colors.white,
                 onTap: toggleSave,
               ),
               const SizedBox(width: 8),
@@ -160,17 +173,21 @@ class ArticleDetailPage extends HookConsumerWidget {
                           fit: BoxFit.cover,
                           loadingBuilder: (context, child, progress) {
                             if (progress == null) return child;
-                            return Container(color: ThixPolicy.surfaceStrong, child: const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)));
+                            return Container(color: _kBorder, child: const Center(child: CircularProgressIndicator(color: _kGoldDark)));
                           },
-                          errorBuilder: (context, error, stackTrace) => Container(color: ThixPolicy.surfaceStrong, child: const Icon(Icons.broken_image, size: 40, color: Colors.white24)),
+                          errorBuilder: (context, error, stackTrace) => Container(color: _kBorder, child: const Icon(Icons.broken_image, size: 40, color: _kMuted)),
                         ),
-                        // Dégradé pour fondre l'image dans le fond de l'article
+                        // ✅ Dégradé adapté pour fondre l'image dans le fond CLAIR (gris/blanc)
                         Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
-                              colors: [ThixPolicy.inkDeep, ThixPolicy.inkDeep.withOpacity(0.1), Colors.black54],
+                              colors: [
+                                _kBg, // Se fond dans le fond de la page
+                                _kBg.withOpacity(0.1), 
+                                Colors.black54 // Garde le haut de l'image lisible pour les boutons
+                              ],
                               stops: const [0.0, 0.4, 1.0],
                             ),
                           ),
@@ -178,80 +195,81 @@ class ArticleDetailPage extends HookConsumerWidget {
                       ],
                     )
                   : Container(
-                      color: ThixPolicy.primary.withOpacity(0.2),
-                      child: const Center(child: Icon(Icons.article_rounded, size: 60, color: Colors.white24)),
+                      color: _kGold.withOpacity(0.2),
+                      child: const Center(child: Icon(Icons.article_rounded, size: 60, color: _kGoldDark)),
                     ),
             ),
           ),
           
           // 2. CORPS DE L'ARTICLE
           SliverToBoxAdapter(
-            child: Padding(
+            child: Container(
+              color: _kBg, // ✅ Assure la continuité du fond clair
               padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s24, vertical: ThixPolicy.s16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Catégorie Premium
+                  // Catégorie Premium (Badge Doré clair)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s6),
                     decoration: BoxDecoration(
-                      color: ThixPolicy.gold.withOpacity(0.15),
+                      color: _kGold.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(ThixPolicy.rXs),
-                      border: Border.all(color: ThixPolicy.gold.withOpacity(0.3)),
+                      border: Border.all(color: _kGold.withOpacity(0.4)),
                     ),
                     child: Text(
                       article.category.toUpperCase(),
-                      style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.gold, fontWeight: ThixPolicy.bold, letterSpacing: 1.0),
+                      style: ThixPolicy.microStyle.copyWith(color: _kGoldDark, fontWeight: FontWeight.bold, letterSpacing: 1.0),
                     ),
                   ),
                   const SizedBox(height: ThixPolicy.s20),
                   
-                  // Titre
+                  // Titre (Sombre)
                   Text(
                     article.title,
-                    style: ThixPolicy.h1Style.copyWith(color: Colors.white, height: 1.25, letterSpacing: -0.5, fontSize: 26),
+                    style: ThixPolicy.h1Style.copyWith(color: _kInk, height: 1.25, letterSpacing: -0.5, fontSize: 26),
                   ),
                   const SizedBox(height: ThixPolicy.s20),
                   
-                  // Méta Données (Date / Vues)
+                  // Méta Données (Date / Vues) (Gris)
                   Row(
                     children: [
-                      const Icon(Icons.access_time_rounded, size: 16, color: Colors.white54),
+                      const Icon(Icons.access_time_rounded, size: 16, color: _kMuted),
                       const SizedBox(width: ThixPolicy.s6),
                       Text(
                         DateFormat('dd MMM yyyy • HH:mm').format(article.publishedAt),
-                        style: ThixPolicy.labelStyle.copyWith(color: Colors.white54),
+                        style: ThixPolicy.labelStyle.copyWith(color: _kMuted, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(width: ThixPolicy.s24),
-                      const Icon(Icons.visibility_rounded, size: 16, color: Colors.white54),
+                      const Icon(Icons.visibility_rounded, size: 16, color: _kMuted),
                       const SizedBox(width: ThixPolicy.s6),
                       Text(
                         '${article.viewsCount} vues',
-                        style: ThixPolicy.labelStyle.copyWith(color: Colors.white54),
+                        style: ThixPolicy.labelStyle.copyWith(color: _kMuted, fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
                   
                   const SizedBox(height: ThixPolicy.s32),
-                  const Divider(color: Colors.white12, height: 1),
+                  const Divider(color: _kBorder, height: 1), // ✅ Ligne de séparation claire
                   const SizedBox(height: ThixPolicy.s32),
                   
-                  // Résumé (si existant)
+                  // Résumé (Si existant)
                   if (article.summary != null && article.summary!.isNotEmpty) ...[
                     Text(
                       article.summary!,
-                      style: ThixPolicy.h3Style.copyWith(color: Colors.white, height: 1.5, fontStyle: FontStyle.italic),
+                      style: ThixPolicy.h3Style.copyWith(color: _kInk, height: 1.5, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: ThixPolicy.s24),
                   ],
 
-                  // Contenu texte (Aéré pour une lecture agréable)
+                  // Contenu texte (Lecture confortable sur fond clair)
                   Text(
                     article.content,
                     style: ThixPolicy.bodyStyle.copyWith(
-                      color: Colors.white.withOpacity(0.85), 
+                      color: _kInk.withOpacity(0.85), 
                       fontSize: 16,
-                      height: 1.8, // Ligne aérée pour le confort de lecture
+                      height: 1.8, // Ligne aérée
                     ),
                   ),
                   
@@ -266,6 +284,8 @@ class ArticleDetailPage extends HookConsumerWidget {
   }
 
   // Composant local pour les boutons flottants sur l'image
+  // ✅ On garde un fond noir translucide (Glass) car les boutons sont sur l'image, 
+  // ce qui garantit leur lisibilité peu importe la couleur de la photo.
   Widget _buildGlassIconButton({required IconData icon, required VoidCallback onTap, Color color = Colors.white}) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
@@ -278,9 +298,9 @@ class ArticleDetailPage extends HookConsumerWidget {
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
+                color: Colors.black.withOpacity(0.4), // Légèrement plus sombre pour le contraste
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.15)),
+                border: Border.all(color: Colors.white.withOpacity(0.2)),
               ),
               child: Icon(icon, color: color, size: 20),
             ),
