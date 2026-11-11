@@ -93,10 +93,11 @@ dependencies:
   wakelock_plus: ^1.2.8
   connectivity_plus: ^6.1.0
   gal: ^2.3.0
-  # ❌ SUPPRIMÉ : image_gallery_saver_plus: ^3.0.4
   screenshot_callback: ^3.0.1
   image_cropper: ^8.0.2
   video_compress: ^3.1.2
+  pro_image_editor: ^2.7.2
+  pro_video_editor: ^1.2.0
   # ═══════════════════════════════════════════════════════════════════════
   # IDENTIFICATION & SCANNING
   # ═══════════════════════════════════════════════════════════════════════
@@ -115,13 +116,9 @@ dependencies:
   share_plus: ^10.1.2
   app_badge_plus: ^1.1.2
   app_links: ^6.3.2
-  # ✅ AJOUTÉ : VoIP natif (CallKit iOS + Telecom Android)
   flutter_callkit_incoming: ^2.0.4
-  # ✅ AJOUTÉ : Sonnerie persistante même app fermée
   flutter_ringtone_player: ^4.0.0
-  # ✅ AJOUTÉ : Vibration en arrière-plan (pattern WhatsApp)
   vibration: ^2.0.0
-  # ✅ AJOUTÉ : Badge d'icône fiable (Samsung, LG, Huawei, Xiaomi, Oppo)
   flutter_app_badger: ^1.5.0
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -207,7 +204,5 @@ flutter:
     - assets/icons/
     - assets/sounds/ringtone.mp3
     - assets/sounds/offline.mp3
-    # ✅ AJOUTÉ : Sonnerie iOS CallKit
     - assets/sounds/ringtone.caf
-    # ✅ AJOUTÉ : Son notification messages (optionnel)
     - assets/sounds/notification.mp3
