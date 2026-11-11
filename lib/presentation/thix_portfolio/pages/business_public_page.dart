@@ -1,19 +1,12 @@
 // ════════════════════════════════════════════════════════════════════════════
-//  THIX PORTFOLIO BUSINESS — PAGE PUBLIQUE « CORPORATE PREMIUM »
+//  THIX PORTFOLIO BUSINESS — PAGE PUBLIQUE « INSTITUTIONNEL STARTUP »
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 9.1.1 — Novembre 2026 (V9.1 + correctifs mockup & syntaxe)
-// ════════════════════════════════════════════════════════════════════════════
+//  Version  : 10.0.0 — Novembre 2026
 //
-//  ✅ v9.1.1 — CORRECTIFS :
-//  • FIX 1 : _GallerySectionState._next() → .toDouble() sur clamp()
-//  • FIX 2 : _AboutSection → null-safety sur imageUrl + suppression mockup 7/120/12
-//  • FIX 3 : _HeroStatsGlass → stats RÉELLES uniquement (plus de '120+'/'45')
-//  • FIX 4 : _TeamRow → suppression bouton "in" factice, chevron si bio existe
-//  • FIX 5 : _TestimonialRow → rating défensif (try/catch)
-//  • FIX 6 : Suppression de _ServiceCard (dead code)
-//  • NEW   : _AboutRealStats — stats calculées depuis le contenu réel
+//  Design : navy + accent unique, bordures fines, grille responsive,
+//  cartes sobres, hiérarchie typographique claire, zéro mockup.
 // ════════════════════════════════════════════════════════════════════════════
 import 'dart:async';
 import 'dart:math' as math;
@@ -33,19 +26,12 @@ import '../models/business_theme.dart';
 import '../widgets/reveal_on_scroll.dart';
 
 const String kThixPublicBaseUrl = 'https://thixid.com';
-const double _kMaxW = 1120;
+const double _kMaxW = 1160;
 
-/// Palette icônes services (comme maquette : bleu, violet, vert, orange…).
-const List<Color> _kIconPalette = [
-  Color(0xFF2563EB),
-  Color(0xFF7C3AED),
-  Color(0xFF16A34A),
-  Color(0xFFF59E0B),
-  Color(0xFF0EA5E9),
-];
-
+const Color _kPageBg = Color(0xFFF8FAFC);
+const Color _kLine = Color(0xFFE2E8F0);
+const Color _kMuted = Color(0xFF64748B);
 const Color _kGreen = Color(0xFF16A34A);
-const Color _kPageBg = Color(0xFFF4F6FA);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n FR / EN
@@ -56,17 +42,13 @@ const Map<String, Map<String, String>> _i18n = {
     'discover': 'Découvrir nos services',
     'share': 'Partager',
     'contact': 'Contacter',
-    'verified': 'ENTREPRISE VÉRIFIÉE',
-    'verified_status': 'Entreprise Vérifiée',
-    'years': "ans d'expérience",
+    'verified_status': 'Entreprise vérifiée',
     'staff': 'collaborateurs',
-    'visits': 'visites',
     'since': 'Depuis',
     'read_full': 'Lire la suite',
     'see_more': 'Voir plus',
     'see_less': 'Voir moins',
     'see_all': 'Voir tous',
-    'view_profile': 'Voir le profil',
     'copy_id': "Copier l'ID",
     'copied': 'ID copié : ',
     'qr': 'QR code',
@@ -81,17 +63,9 @@ const Map<String, Map<String, String>> _i18n = {
     'apply': 'Postuler',
     'lang_tip': 'English',
     'share_msg': 'Découvrez {name} sur THIX 🚀',
-    'top': 'Haut de page',
     'menu': 'Menu',
-    'nav': 'Navigation',
-    'contact_info': 'Contact',
-    'profile': 'Profil',
-    'identity': "Fiche d'identité",
-    'overview': 'Présentation',
     'step': 'Étape',
-    'follow': 'Suivez-nous',
-    'scan': 'Scannez pour visiter notre site',
-    'work_together': 'Travaillons ensemble !',
+    'work_together': 'Travaillons ensemble',
     'work_sub': 'Contactez-nous pour vos projets et partenariats.',
     'f_name': 'Dénomination',
     'f_sector': "Secteur d'activité",
@@ -104,7 +78,6 @@ const Map<String, Map<String, String>> _i18n = {
     'f_id': 'Identifiant THIX',
     'f_status': 'Statut',
     'identity_title': "Fiche d'identité",
-    'identity_note': 'Lecture en Z — volontairement désalignée pour un rendu éditorial, pas administratif.',
     'copy': 'Copier',
   },
   'en': {
@@ -112,17 +85,13 @@ const Map<String, Map<String, String>> _i18n = {
     'discover': 'Discover our services',
     'share': 'Share',
     'contact': 'Contact',
-    'verified': 'VERIFIED COMPANY',
-    'verified_status': 'Verified Company',
-    'years': 'years of experience',
+    'verified_status': 'Verified company',
     'staff': 'team members',
-    'visits': 'visits',
     'since': 'Since',
     'read_full': 'Read more',
     'see_more': 'See more',
     'see_less': 'See less',
     'see_all': 'See all',
-    'view_profile': 'View profile',
     'copy_id': 'Copy ID',
     'copied': 'ID copied: ',
     'qr': 'QR code',
@@ -137,17 +106,9 @@ const Map<String, Map<String, String>> _i18n = {
     'apply': 'Apply',
     'lang_tip': 'Français',
     'share_msg': 'Discover {name} on THIX 🚀',
-    'top': 'Back to top',
     'menu': 'Menu',
-    'nav': 'Navigation',
-    'contact_info': 'Contact',
-    'profile': 'Profile',
-    'identity': 'Company profile',
-    'overview': 'Overview',
     'step': 'Step',
-    'follow': 'Follow us',
-    'scan': 'Scan to visit our site',
-    'work_together': 'Let’s work together!',
+    'work_together': 'Let’s work together',
     'work_sub': 'Contact us for your projects and partnerships.',
     'f_name': 'Company name',
     'f_sector': 'Industry',
@@ -159,8 +120,7 @@ const Map<String, Map<String, String>> _i18n = {
     'f_email': 'Email',
     'f_id': 'THIX ID',
     'f_status': 'Status',
-    'identity_title': 'Identity card',
-    'identity_note': 'Z-reading — deliberately misaligned for an editorial look, not administrative.',
+    'identity_title': 'Company profile',
     'copy': 'Copy',
   },
 };
@@ -180,6 +140,17 @@ const Map<String, String> _titlesEn = {
   'Témoignages': 'Testimonials',
   'Contact': 'Contact',
   'Nos informations': 'Our information',
+};
+
+const Map<String, String> _eyebrowEn = {
+  'Profil': 'Profile',
+  'À propos': 'About',
+  'Expertises': 'Expertise',
+  'Produits': 'Products',
+  'Preuves': 'Proof',
+  'Humain': 'People',
+  'Actualités': 'News',
+  'Ils nous font confiance': 'Trusted by',
 };
 
 String _t(String lang, String key) => _i18n[lang]?[key] ?? key;
@@ -240,23 +211,18 @@ Color _accent(BuildContext c) =>
     Theme.of(c).extension<BusinessThemeExt>()?.accent ??
     Theme.of(c).colorScheme.tertiary;
 
-/// Encre navy des titres (primary assombri, comme maquette).
+/// Accent assombri pour le texte (contraste sur fond blanc).
+Color _accentText(BuildContext c) => Color.lerp(_accent(c), Colors.black, 0.3)!;
+
+/// Encre navy (primary assombri).
 Color _ink(BuildContext c) =>
     Color.lerp(Theme.of(c).colorScheme.primary, Colors.black, 0.45)!;
 
-List<BoxShadow> _softShadow(BuildContext c) => [
-      BoxShadow(
-        color: _ink(c).withValues(alpha: 0.08),
-        blurRadius: 24,
-        offset: const Offset(0, 10),
-      ),
-    ];
-
-String _compact(int n) {
-  if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-  if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-  return '$n';
-}
+BoxDecoration _cardDeco(BuildContext c, {Color? color}) => BoxDecoration(
+      color: color ?? Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _kLine),
+    );
 
 String _country(String lang, String code) {
   const m = {
@@ -271,104 +237,20 @@ String _country(String lang, String code) {
   return lang == 'fr' ? v.$1 : v.$2;
 }
 
-// ── V9.1 : PHOTOS HORIZONTALES — helpers ──
-/// Photos de repli (Unsplash) quand un item n'a pas d'image propre.
-/// Garantit que SERVICES / ÉQUIPE / PRODUITS / EXTRAS affichent TOUJOURS une photo.
-const List<String> _kFallbackPhotos = [
-  'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=400&q=80',
-  'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=400&q=80',
-  'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&q=80',
-  'https://images.unsplash.com/photo-1552664730-d307ca884978?w=400&q=80',
-  'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&q=80',
-  'https://images.unsplash.com/photo-1551434678-e076c223a692?w=400&q=80',
-  'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=400&q=80',
-  'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=400&q=80',
-];
-
-String _fallbackPhoto(int index) => _kFallbackPhotos[index % _kFallbackPhotos.length];
-String _photoOrFallback(String? url, int index) =>
-    (url != null && url.trim().isNotEmpty) ? url.trim() : _fallbackPhoto(index);
-
 String _initials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+  final parts =
+      name.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
   if (parts.isEmpty) return '?';
   if (parts.length == 1) return parts.first[0].toUpperCase();
   return (parts.first[0] + parts.last[0]).toUpperCase();
 }
 
-/// Vignette photo horizontale : TOUJOURS une photo, coins 16, tap -> plein écran.
-class _PhotoThumb extends StatelessWidget {
-  const _PhotoThumb({required this.url, required this.index, this.width = 76, this.height = 76, this.radius = 16, this.icon});
-  final String? url;
-  final int index;
-  final double width;
-  final double height;
-  final double radius;
-  final IconData? icon;
-  @override
-  Widget build(BuildContext context) {
-    final photo = _photoOrFallback(url, index);
-    return _Tap(
-      onTap: () => _viewImage(context, photo),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: SizedBox(
-          width: width, height: height,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _img(photo),
-              Container(color: Colors.black.withValues(alpha: 0.04)),
-              if (icon != null)
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: Icon(icon, size: 18, color: _ink(context)),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bandeau photos horizontal (scroll).
-class _HorizontalPhotoStrip extends StatelessWidget {
-  const _HorizontalPhotoStrip({required this.urls, this.height = 96});
-  final List<String> urls;
-  final double height;
-  @override
-  Widget build(BuildContext context) {
-    final list = urls.where((u) => u.trim().isNotEmpty).toList();
-    if (list.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
-      height: height,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: list.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (ctx, i) => _Tap(
-          onTap: () => _viewImage(ctx, list[i]),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: SizedBox(width: height * 1.35, height: height, child: _img(list[i])),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ImgFallback extends StatelessWidget {
   const _ImgFallback();
   @override
-  Widget build(BuildContext context) => ColoredBox(
-        color: Colors.black.withValues(alpha: 0.03),
-        child: const Center(
+  Widget build(BuildContext context) => const ColoredBox(
+        color: Color(0xFFF1F5F9),
+        child: Center(
           child: Icon(Icons.image_not_supported_outlined,
               size: 22, color: Colors.black26),
         ),
@@ -378,7 +260,7 @@ class _ImgFallback extends StatelessWidget {
 /// Image réseau robuste (repli <img> HTML sur le web → évite les erreurs CORS).
 Widget _img(String url, {BoxFit fit = BoxFit.cover, Widget? fallback}) {
   return ColoredBox(
-    color: Colors.black.withValues(alpha: 0.02),
+    color: const Color(0xFFF1F5F9),
     child: Image.network(
       url,
       fit: fit,
@@ -480,51 +362,105 @@ class _Rise extends StatelessWidget {
   }
 }
 
+/// Grille responsive (1 → 3 colonnes selon la largeur disponible).
+class _Grid extends StatelessWidget {
+  const _Grid({required this.children, this.minWidth = 320, this.gap = 16});
+  final List<Widget> children;
+  final double minWidth;
+  final double gap;
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (c, cs) {
+      final maxW = cs.maxWidth;
+      final cols = math.max(1, ((maxW + gap) / (minWidth + gap)).floor());
+      final w = (maxW - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [for (final ch in children) SizedBox(width: w, child: ch)],
+      );
+    });
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Briques UI corporate
+// Briques UI
 // ─────────────────────────────────────────────────────────────────────────────
 class _Avatar extends StatelessWidget {
   const _Avatar({
     required this.url,
     required this.name,
     required this.radius,
-    this.ring,
+    this.square = false,
   });
   final String? url;
   final String name;
   final double radius;
-  final Color? ring;
+  final bool square;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final d = radius * 2;
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final ink = _ink(context);
     final fb = ColoredBox(
-      color: scheme.surfaceContainerHighest,
+      color: ink.withValues(alpha: 0.08),
       child: Center(
-        child: Text(initial,
+        child: Text(_initials(name),
             style: TextStyle(
-                fontSize: radius * 0.9,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurfaceVariant)),
+                fontSize: radius * 0.8,
+                fontWeight: FontWeight.w800,
+                color: ink)),
       ),
     );
     final has = url != null && url!.isNotEmpty;
-    return Container(
-      padding: ring != null ? const EdgeInsets.all(3) : EdgeInsets.zero,
-      decoration: ring != null
-          ? BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              border: Border.all(color: ring!, width: 2),
-            )
-          : null,
-      child: ClipOval(
+    final content = SizedBox(
+      width: d,
+      height: d,
+      child: has ? _img(url!, fallback: fb) : fb,
+    );
+    return square
+        ? ClipRRect(borderRadius: BorderRadius.circular(radius * 0.5), child: content)
+        : ClipOval(child: content);
+  }
+}
+
+/// Vignette : image si disponible, sinon monogramme / icône sobre.
+class _Thumb extends StatelessWidget {
+  const _Thumb({
+    required this.url,
+    required this.label,
+    this.size = 56,
+    this.radius = 12,
+    this.icon,
+  });
+  final String? url;
+  final String label;
+  final double size;
+  final double radius;
+  final IconData? icon;
+  @override
+  Widget build(BuildContext context) {
+    final ink = _ink(context);
+    final has = url != null && url!.trim().isNotEmpty;
+    final ph = Container(
+      color: ink.withValues(alpha: 0.06),
+      alignment: Alignment.center,
+      child: icon != null
+          ? Icon(icon, size: size * 0.42, color: ink.withValues(alpha: 0.7))
+          : Text(_initials(label),
+              style: TextStyle(
+                  fontSize: size * 0.3,
+                  fontWeight: FontWeight.w800,
+                  color: ink.withValues(alpha: 0.65))),
+    );
+    return _Tap(
+      onTap: has ? () => _viewImage(context, url!.trim()) : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
         child: SizedBox(
-          width: d,
-          height: d,
-          child: has ? _img(url!, fallback: fb) : fb,
+          width: size,
+          height: size,
+          child: has ? _img(url!.trim(), fallback: ph) : ph,
         ),
       ),
     );
@@ -538,7 +474,7 @@ class _MoreLink extends StatelessWidget {
   final IconData? icon;
   @override
   Widget build(BuildContext context) {
-    final p = Theme.of(context).colorScheme.primary;
+    final c = _ink(context);
     return _Tap(
       onTap: onTap,
       child: Row(
@@ -546,9 +482,9 @@ class _MoreLink extends StatelessWidget {
         children: [
           Text(label,
               style: TextStyle(
-                  color: p, fontWeight: FontWeight.w700, fontSize: 13)),
+                  color: c, fontWeight: FontWeight.w700, fontSize: 13)),
           const SizedBox(width: 6),
-          Icon(icon ?? Icons.arrow_forward_rounded, size: 16, color: p),
+          Icon(icon ?? Icons.arrow_forward_rounded, size: 16, color: c),
         ],
       ),
     );
@@ -568,48 +504,6 @@ bool _exceeds(
   return over;
 }
 
-class _ClampText extends StatelessWidget {
-  const _ClampText(
-    this.text, {
-    required this.maxLines,
-    required this.onMore,
-    this.style,
-    this.showLink = true,
-  });
-  final String text;
-  final int maxLines;
-  final VoidCallback onMore;
-  final TextStyle? style;
-  final bool showLink;
-
-  @override
-  Widget build(BuildContext context) {
-    final st = style ??
-        Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6) ??
-        const TextStyle(fontSize: 14, height: 1.6);
-    return LayoutBuilder(
-      builder: (c, cs) {
-        final over = showLink && _exceeds(c, text, st, maxLines, cs.maxWidth);
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(text,
-                maxLines: maxLines,
-                overflow: TextOverflow.ellipsis,
-                style: st),
-            if (over)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: _MoreLink(label: _tr(c, 'see_more'), onTap: onMore),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
 class _ExpandText extends StatefulWidget {
   const _ExpandText(this.text, {this.maxLines = 6, this.style});
   final String text;
@@ -624,8 +518,7 @@ class _ExpandTextState extends State<_ExpandText> {
   @override
   Widget build(BuildContext context) {
     final st = widget.style ??
-        Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.7) ??
-        const TextStyle(fontSize: 15, height: 1.7);
+        const TextStyle(fontSize: 15.5, height: 1.75, color: _kMuted);
     return LayoutBuilder(
       builder: (c, cs) {
         final over = _exceeds(c, widget.text, st, widget.maxLines, cs.maxWidth);
@@ -660,7 +553,7 @@ class _ExpandTextState extends State<_ExpandText> {
   }
 }
 
-/// Fiche détail (texte complet) — bottom sheet arrondi.
+/// Fiche détail — bottom sheet sobre.
 void _showDetail(
   BuildContext context, {
   required String title,
@@ -676,32 +569,32 @@ void _showDetail(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.45),
+    barrierColor: Colors.black.withValues(alpha: 0.5),
     builder: (ctx) {
-      final scheme = Theme.of(ctx).colorScheme;
       return Container(
-        decoration: BoxDecoration(
-          color: scheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: SafeArea(
           top: false,
           child: ConstrainedBox(
-            constraints:
-                BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.85),
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.88,
+                maxWidth: 720),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Center(
                     child: Container(
-                      width: 44,
+                      width: 40,
                       height: 4,
                       margin: const EdgeInsets.only(bottom: 20),
                       decoration: BoxDecoration(
-                        color: scheme.outlineVariant,
+                        color: _kLine,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -710,9 +603,11 @@ void _showDetail(
                     Padding(
                       padding: const EdgeInsets.only(bottom: 24),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(14),
                         child: SizedBox(
-                            height: 240, width: double.infinity, child: _img(image)),
+                            height: 240,
+                            width: double.infinity,
+                            child: _img(image)),
                       ),
                     ),
                   if (chip != null && chip.isNotEmpty)
@@ -720,16 +615,16 @@ void _showDetail(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                            horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: _accent(ctx).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(999),
+                          color: _ink(ctx).withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(chip.toUpperCase(),
                             style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: 1.1,
+                                letterSpacing: 1.2,
                                 color: _ink(ctx))),
                       ),
                     ),
@@ -744,18 +639,16 @@ void _showDetail(
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(subtitle,
-                          style: TextStyle(
-                              fontSize: 14, color: scheme.onSurfaceVariant)),
+                          style:
+                              const TextStyle(fontSize: 14, color: _kMuted)),
                     ),
                   if (text != null && text.isNotEmpty) ...[
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
                     SelectableText(text,
-                        style: Theme.of(ctx)
-                            .textTheme
-                            .bodyLarge
-                            ?.copyWith(height: 1.7)),
+                        style: const TextStyle(
+                            fontSize: 15, height: 1.75, color: Color(0xFF334155))),
                   ],
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
                   Row(
                     children: [
                       if (url != null && url.isNotEmpty) ...[
@@ -764,15 +657,20 @@ void _showDetail(
                           icon: const Icon(Icons.open_in_new_rounded, size: 16),
                           label: Text(urlLabel ?? _t(lang, 'open')),
                           style: FilledButton.styleFrom(
-                              shape: const StadiumBorder()),
+                              backgroundColor: _ink(ctx),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10))),
                         ),
                         const SizedBox(width: 12),
                       ],
                       OutlinedButton(
                         onPressed: () => Navigator.of(ctx).pop(),
-                        child: Text(_t(lang, 'close')),
                         style: OutlinedButton.styleFrom(
-                            shape: const StadiumBorder()),
+                            foregroundColor: _ink(ctx),
+                            side: const BorderSide(color: _kLine),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10))),
+                        child: Text(_t(lang, 'close')),
                       ),
                     ],
                   ),
@@ -786,33 +684,57 @@ void _showDetail(
   );
 }
 
-/// En-tête de section « maquette » : barre verticale + titre bold + lien droite.
+/// En-tête de section : numéro + filet + libellé, puis titre fort.
 Widget _secHead(
   BuildContext context,
   String title, {
   String? moreLabel,
   VoidCallback? onMore,
-  Widget? trailing,
   String? eyebrow,
-  String? number,
 }) {
-  final scheme = Theme.of(context).colorScheme;
-  final eyebrowText = eyebrow ?? _eyebrowFor(title);
+  final lang = _LangScope.of(context);
+  final eb = eyebrow ?? _eyebrowFor(title);
+  var num = '';
+  var label = eb;
+  if (eb.contains(' — ')) {
+    final p = eb.split(' — ');
+    num = p.first;
+    label = p.sublist(1).join(' — ');
+  }
+  if (lang == 'en') label = _eyebrowEn[label] ?? label;
   return Padding(
-    padding: const EdgeInsets.only(bottom: 20),
+    padding: const EdgeInsets.only(bottom: 28),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (eyebrowText.isNotEmpty)
+        if (eb.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(
-              eyebrowText.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w800,
-                letterSpacing: 2.2, color: Color(0xFFB8860B),
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(children: [
+              if (num.isNotEmpty) ...[
+                Text(num,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                        color: _accentText(context))),
+                Container(
+                    width: 28,
+                    height: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 10),
+                    color: const Color(0xFFCBD5E1)),
+              ],
+              Flexible(
+                child: Text(label.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.8,
+                        color: _kMuted)),
               ),
-            ),
+            ]),
           ),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -820,15 +742,21 @@ Widget _secHead(
             Expanded(
               child: Text(
                 _tt(context, title),
-                maxLines: 2, overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.5, height: 1.15, color: _ink(context)),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.9,
+                    height: 1.15,
+                    color: _ink(context)),
               ),
             ),
             if (onMore != null) ...[
               const SizedBox(width: 12),
-              _MoreLink(label: moreLabel ?? _tr(context, 'see_all'), onTap: onMore),
+              _MoreLink(
+                  label: moreLabel ?? _tr(context, 'see_all'), onTap: onMore),
             ],
-            if (trailing != null) trailing,
           ],
         ),
       ],
@@ -836,17 +764,133 @@ Widget _secHead(
   );
 }
 
-/// Eyebrow éditorial.
 String _eyebrowFor(String title) {
   final t = title.trim().toLowerCase();
   if (t.contains('propos') || t.contains('about')) return '02 — À propos';
   if (t.contains('service')) return '03 — Expertises';
   if (t.contains('produit') || t.contains('product')) return '03 — Produits';
-  if (t.contains('galerie') || t.contains('réalisation') || t.contains('realisation')) return '04 — Preuves';
-  if (t.contains('équipe') || t.contains('equipe') || t.contains('team')) return '05 — Humain';
+  if (t.contains('galerie') ||
+      t.contains('réalisation') ||
+      t.contains('realisation')) return '04 — Preuves';
+  if (t.contains('équipe') || t.contains('equipe') || t.contains('team')) {
+    return '05 — Humain';
+  }
   if (t.contains('actualit') || t.contains('news')) return '06 — Actualités';
-  if (t.contains('témoignage') || t.contains('temoignage') || t.contains('avis')) return '07 — Ils nous font confiance';
+  if (t.contains('témoignage') ||
+      t.contains('temoignage') ||
+      t.contains('avis')) return '07 — Ils nous font confiance';
   return '';
+}
+
+/// Carte média verticale (image en haut si disponible).
+class _MediaCard extends StatelessWidget {
+  const _MediaCard({
+    required this.title,
+    this.image,
+    this.eyebrow,
+    this.text,
+    this.meta,
+    this.onTap,
+    this.video = false,
+  });
+  final String title;
+  final String? image;
+  final String? eyebrow;
+  final String? text;
+  final String? meta;
+  final VoidCallback? onTap;
+  final bool video;
+
+  @override
+  Widget build(BuildContext context) {
+    final has = image != null && image!.trim().isNotEmpty;
+    return _Tap(
+      onTap: onTap,
+      child: Container(
+        decoration: _cardDeco(context),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (has)
+              AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Stack(fit: StackFit.expand, children: [
+                  _img(image!.trim()),
+                  if (video)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                            color: Colors.white, shape: BoxShape.circle),
+                        child: Icon(Icons.play_arrow_rounded,
+                            color: _ink(context), size: 24),
+                      ),
+                    ),
+                ]),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (eyebrow != null && eyebrow!.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(eyebrow!.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.3,
+                              color: _accentText(context))),
+                    ),
+                  Text(title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
+                          letterSpacing: -0.2,
+                          color: _ink(context))),
+                  if (text != null && text!.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(text!,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13.5, height: 1.6, color: _kMuted)),
+                    ),
+                  if (meta != null && meta!.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _ink(context).withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(meta!,
+                            style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: _ink(context))),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -888,25 +932,24 @@ class _PublicSkeleton extends StatelessWidget {
   const _PublicSkeleton();
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     Widget block(double h) => Container(
           height: h,
           margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(16),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
           ),
         );
     return Scaffold(
       backgroundColor: _kPageBg,
       body: Shimmer.fromColors(
-        baseColor: scheme.surfaceContainerHighest,
-        highlightColor: scheme.surface,
+        baseColor: const Color(0xFFE2E8F0),
+        highlightColor: const Color(0xFFF8FAFC),
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            Container(height: 64, color: Colors.white),
-            Container(height: 420, color: Colors.white),
+            Container(height: 68, color: Colors.white),
+            Container(height: 460, color: Colors.white),
             Padding(
               padding: const EdgeInsets.all(24),
               child: Column(children: [block(96), block(220), block(160)]),
@@ -940,7 +983,7 @@ class _PublicNotFound extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.storefront_outlined,
-                  size: 84, color: theme.colorScheme.outline),
+                  size: 72, color: theme.colorScheme.outline),
               const SizedBox(height: 24),
               Text(
                 invalid ? 'Identifiant invalide' : 'Entreprise introuvable',
@@ -962,7 +1005,9 @@ class _PublicNotFound extends StatelessWidget {
                   onPressed: onRetry,
                   icon: const Icon(Icons.refresh),
                   label: const Text('Réessayer / Retry'),
-                  style: FilledButton.styleFrom(shape: const StadiumBorder()),
+                  style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10))),
                 ),
             ],
           ),
@@ -1003,6 +1048,30 @@ String _titleOf(BusinessSectionContent c) => switch (c) {
       TestimonialsContent() => c.title,
       ContactContent() => c.title,
     };
+
+/// Statistiques RÉELLES uniquement (aucun chiffre inventé).
+List<(String, String)> _realStats(BusinessBundle bundle, String lang) {
+  final b = bundle.business;
+  final stats = <(String, String)>[];
+  if (b.sinceYear != null && b.sinceYear! > 1900) {
+    final years = DateTime.now().year - b.sinceYear!;
+    if (years > 0) {
+      stats.add(('$years+', lang == 'en' ? 'years of experience' : "ans d'expérience"));
+    }
+  }
+  if (b.employees != null && b.employees! > 0) {
+    stats.add(('${b.employees}', lang == 'en' ? 'team members' : 'collaborateurs'));
+  }
+  final svc = bundle.sectionOfType(BusinessSectionType.services)?.content;
+  if (svc is ServicesContent && svc.items.isNotEmpty) {
+    stats.add(('${svc.items.length}', 'services'));
+  }
+  final prod = bundle.sectionOfType(BusinessSectionType.products)?.content;
+  if (prod is ProductsContent && prod.items.isNotEmpty) {
+    stats.add(('${prod.items.length}', lang == 'en' ? 'products' : 'produits'));
+  }
+  return stats;
+}
 
 class _BusinessSite extends ConsumerStatefulWidget {
   const _BusinessSite({required this.bundle});
@@ -1055,14 +1124,13 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
       ctx,
       duration: const Duration(milliseconds: 650),
       curve: Curves.easeInOutCubic,
-      alignment: 0.08,
+      alignment: 0.06,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = bundle.theme;
-    final scheme = Theme.of(context).colorScheme;
     final lang = _lang;
     final sections = bundle.visibleSections;
     final extras = ref
@@ -1073,10 +1141,6 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
     final main = sections
         .where((s) =>
             s.type != BusinessSectionType.contact && !_isEmpty(s.content))
-        .toList();
-    final contact = sections
-        .where((s) =>
-            s.type == BusinessSectionType.contact && !_isEmpty(s.content))
         .toList();
     final blocks = <_Blk>[
       for (final s in main)
@@ -1095,6 +1159,7 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
           ),
     ];
     final firstSection = blocks.isNotEmpty ? blocks[0].id : 'contact-cta';
+    final stats = _realStats(bundle, lang);
 
     return _LangScope(
       code: lang,
@@ -1113,34 +1178,25 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
               SliverAppBar(
                 pinned: true,
                 automaticallyImplyLeading: false,
-                toolbarHeight: 64,
+                toolbarHeight: 68,
                 backgroundColor: Colors.white,
                 surfaceTintColor: Colors.transparent,
-                scrolledUnderElevation: 2,
+                scrolledUnderElevation: 0,
                 elevation: 0,
                 titleSpacing: 0,
                 title: _headerTitle(context, blocks),
-                bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(1),
-                  child: Container(
-                      height: 1,
-                      color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                bottom: const PreferredSize(
+                  preferredSize: Size.fromHeight(1),
+                  child: Divider(height: 1, thickness: 1, color: _kLine),
                 ),
               ),
               SliverToBoxAdapter(
-                child: _Hero(
+                child: _HeroBlock(
                   bundle: bundle,
                   images: _heroImages(),
+                  stats: stats,
                   onContact: _openContactSheet,
                   onDiscover: () => _goTo(firstSection),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _Wrap(
-                  child: Container(
-                    margin: const EdgeInsets.fromLTRB(24, -32, 24, 0),
-                    child: _HeroStatsGlass(bundle: bundle),
-                  ),
                 ),
               ),
               SliverToBoxAdapter(
@@ -1193,10 +1249,10 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
   }
 
   Widget _headerTitle(BuildContext context, List<_Blk> blocks) {
-    final scheme = Theme.of(context).colorScheme;
     final b = bundle.business;
     final wide = MediaQuery.sizeOf(context).width >= 960;
     final canPop = Navigator.of(context).canPop();
+    final ink = _ink(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -1213,7 +1269,7 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
               icon: const Icon(Icons.menu_rounded),
               onPressed: () => _openMenu(blocks),
             ),
-          _Avatar(url: b.logoUrl, name: b.name, radius: 19),
+          _Avatar(url: b.logoUrl, name: b.name, radius: 19, square: true),
           const SizedBox(width: 12),
           Flexible(
             child: Column(
@@ -1227,40 +1283,39 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                   style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 15.5,
-                      letterSpacing: -0.2,
-                      color: _ink(context)),
+                      letterSpacing: -0.3,
+                      color: ink),
                 ),
                 if (b.sector != null && b.sector!.trim().isNotEmpty)
                   Text(
                     b.sector!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 10.5, color: scheme.onSurfaceVariant),
+                    style: const TextStyle(fontSize: 11, color: _kMuted),
                   ),
               ],
             ),
           ),
-          if (b.verified) ...[
+          if (b.verified && wide) ...[
             const SizedBox(width: 12),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: const Color(0xFFDCFCE7),
+                color: const Color(0xFFF0FDF4),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.verified_rounded, size: 14, color: _kGreen),
-                  const SizedBox(width: 6),
+                  const Icon(Icons.verified_rounded, size: 13, color: _kGreen),
+                  const SizedBox(width: 5),
                   Text(
                     _t(_lang, 'verified_status'),
                     style: const TextStyle(
                         color: Color(0xFF15803D),
                         fontSize: 11,
-                        fontWeight: FontWeight.w800),
+                        fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
@@ -1278,35 +1333,38 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                       TextButton(
                         onPressed: () => _goTo(blk.id),
                         style: TextButton.styleFrom(
-                          foregroundColor: _ink(context),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          foregroundColor: ink,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
                         ),
                         child: Text(blk.label,
                             style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 12.5)),
+                                fontWeight: FontWeight.w600, fontSize: 13)),
                       ),
                   ],
                 ),
               ),
             ),
-          ],
+          ] else
+            const Spacer(),
           const SizedBox(width: 8),
           Tooltip(
             message: _t(_lang, 'lang_tip'),
-            child: TextButton(
-              onPressed: () => setState(() => _lang = _lang == 'fr' ? 'en' : 'fr'),
-              style: TextButton.styleFrom(
-                backgroundColor: scheme.primary.withValues(alpha: 0.08),
-                minimumSize: const Size(44, 38),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                shape: const StadiumBorder(),
+            child: OutlinedButton(
+              onPressed: () =>
+                  setState(() => _lang = _lang == 'fr' ? 'en' : 'fr'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: ink,
+                side: const BorderSide(color: _kLine),
+                minimumSize: const Size(44, 36),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
               child: Text(_lang == 'fr' ? 'EN' : 'FR',
-                  style: TextStyle(
+                  style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.0,
-                      fontSize: 12,
-                      color: scheme.primary)),
+                      fontSize: 12)),
             ),
           ),
           PopupMenuButton<int>(
@@ -1355,9 +1413,9 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(ctx).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: SafeArea(
           child: ConstrainedBox(
@@ -1373,13 +1431,15 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                       style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 1.5)),
+                          letterSpacing: 1.8,
+                          color: _kMuted)),
                 ),
                 for (final blk in blocks)
                   ListTile(
-                    shape: const StadiumBorder(),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     leading: Icon(Icons.chevron_right_rounded,
-                        size: 18, color: Theme.of(ctx).colorScheme.primary),
+                        size: 18, color: _ink(ctx)),
                     title: Text(blk.label,
                         style: const TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 15)),
@@ -1415,7 +1475,6 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
   }
 
   void _showQr() {
-    final scheme = Theme.of(context).colorScheme;
     final lang = _lang;
     showDialog<void>(
       context: context,
@@ -1424,8 +1483,8 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
         child: Container(
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(24),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1440,8 +1499,8 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: scheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _kLine),
                 ),
                 child: QrImageView(
                   data: bundle.business.thixId,
@@ -1455,13 +1514,17 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                 bundle.business.thixId,
                 style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: scheme.primary,
+                    color: _ink(context),
                     letterSpacing: 0.5),
               ),
               const SizedBox(height: 20),
               OutlinedButton(
                 onPressed: () => Navigator.of(context).pop(),
-                style: OutlinedButton.styleFrom(shape: const StadiumBorder()),
+                style: OutlinedButton.styleFrom(
+                    foregroundColor: _ink(context),
+                    side: const BorderSide(color: _kLine),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10))),
                 child: Text(_t(lang, 'close')),
               ),
             ],
@@ -1482,9 +1545,9 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(sheetCtx).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: SafeArea(
           child: Padding(
@@ -1500,11 +1563,11 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                     children: [
                       Center(
                         child: Container(
-                          width: 44,
+                          width: 40,
                           height: 4,
                           margin: const EdgeInsets.only(bottom: 20),
                           decoration: BoxDecoration(
-                            color: Theme.of(sheetCtx).colorScheme.outlineVariant,
+                            color: _kLine,
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -1514,6 +1577,7 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
                         style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
+                            letterSpacing: -0.4,
                             color: _ink(sheetCtx)),
                       ),
                       const SizedBox(height: 12),
@@ -1535,7 +1599,7 @@ class _BusinessSiteState extends ConsumerState<_BusinessSite> {
   }
 }
 
-/// FAB pill noire lisérée or (style THIX PRO).
+/// FAB pill navy.
 class _ContactFab extends StatelessWidget {
   const _ContactFab({
     required this.label,
@@ -1552,18 +1616,15 @@ class _ContactFab extends StatelessWidget {
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(999),
-          gradient: const LinearGradient(
-            colors: [Color(0xFF0B0F14), Color(0xFF1B2430)],
-          ),
-          border: Border.all(color: accent.withValues(alpha: 0.9), width: 1.4),
+          color: _ink(context),
           boxShadow: [
             BoxShadow(
-              color: accent.withValues(alpha: 0.35),
-              blurRadius: 26,
-              offset: const Offset(0, 12),
+              color: _ink(context).withValues(alpha: 0.28),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
@@ -1576,9 +1637,9 @@ class _ContactFab extends StatelessWidget {
               label,
               style: const TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                  letterSpacing: 0.4),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  letterSpacing: 0.2),
             ),
           ],
         ),
@@ -1593,14 +1654,17 @@ class _Band extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) {
-    final bg = index.isEven ? Colors.white : const Color(0xFFF7F8FA);
+    final narrow = MediaQuery.sizeOf(context).width < 700;
     return Container(
       width: double.infinity,
-      color: bg,
-      padding: const EdgeInsets.symmetric(vertical: 32),
+      decoration: BoxDecoration(
+        color: index.isEven ? Colors.white : _kPageBg,
+        border: const Border(top: BorderSide(color: _kLine)),
+      ),
+      padding: EdgeInsets.symmetric(vertical: narrow ? 44 : 72),
       child: _Wrap(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: narrow ? 20 : 32),
           child: child,
         ),
       ),
@@ -1609,224 +1673,277 @@ class _Band extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HERO V9
+// HERO
 // ─────────────────────────────────────────────────────────────────────────────
-class _Hero extends StatelessWidget {
-  const _Hero({required this.bundle, required this.images, required this.onContact, required this.onDiscover});
+class _HeroBlock extends StatelessWidget {
+  const _HeroBlock({
+    required this.bundle,
+    required this.images,
+    required this.stats,
+    required this.onContact,
+    required this.onDiscover,
+  });
   final BusinessBundle bundle;
   final List<String> images;
+  final List<(String, String)> stats;
   final VoidCallback onContact;
   final VoidCallback onDiscover;
+
   @override
   Widget build(BuildContext context) {
     final theme = bundle.theme;
     final b = bundle.business;
     final size = MediaQuery.sizeOf(context);
-    final height = math.min(math.max(440.0, size.height * 0.52), 620.0);
     final narrow = size.width < 700;
-    final navy = Color.lerp(theme.primary, Colors.black, 0.45)!;
+    final height = math.min(math.max(500.0, size.height * 0.6), 700.0);
+    final navy = Color.lerp(theme.primary, Colors.black, 0.55)!;
     final accent = theme.accent ?? const Color(0xFFEAB308);
-    final words = b.name.trim().split(RegExp(r'\s+'));
-    final line1 = words.first;
-    final line2 = words.skip(1).join(' ');
     final desc = b.description?.trim() ?? '';
     final lang = _LangScope.of(context);
-    return SizedBox(
-      height: height,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          _HeroCarousel(images: images, colors: theme.heroGradient),
-          IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  stops: const [0, 0.45, 1],
-                  colors: [navy.withValues(alpha: 0.25), navy.withValues(alpha: 0.35), navy.withValues(alpha: 0.92)],
-                ),
+    final hasStats = stats.isNotEmpty;
+    final pad = narrow ? 20.0 : 32.0;
+    final place = [
+      if (b.city != null && b.city!.isNotEmpty) b.city!,
+      if (b.sinceYear != null)
+        (lang == 'en' ? 'Since ${b.sinceYear}' : 'Depuis ${b.sinceYear}'),
+    ].join('  ·  ');
+
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            SizedBox(
+              height: height,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _HeroCarousel(images: images, colors: theme.heroGradient),
+                  IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            navy.withValues(alpha: 0.94),
+                            navy.withValues(alpha: 0.72),
+                            navy.withValues(alpha: 0.38),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: const [0.6, 1],
+                          colors: [
+                            Colors.transparent,
+                            navy.withValues(alpha: 0.55),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: _kMaxW),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                              pad, 32, pad, hasStats ? 96 : 48),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 680),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (place.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 7),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.10),
+                                      border: Border.all(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.25)),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                              width: 6,
+                                              height: 6,
+                                              decoration: BoxDecoration(
+                                                  color: accent,
+                                                  shape: BoxShape.circle)),
+                                          const SizedBox(width: 8),
+                                          Text(place,
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  letterSpacing: 0.3)),
+                                        ]),
+                                  ),
+                                const SizedBox(height: 24),
+                                Container(
+                                    width: 48,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                        color: accent,
+                                        borderRadius:
+                                            BorderRadius.circular(2))),
+                                const SizedBox(height: 18),
+                                _Rise(
+                                  child: Text(b.name,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: narrow ? 38 : 60,
+                                          height: 1.04,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: narrow ? -1.2 : -2)),
+                                ),
+                                if (b.claim != null &&
+                                    b.claim!.trim().isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 18),
+                                    child: _Rise(
+                                      delay: 120,
+                                      child: Text(b.claim!,
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: narrow ? 17 : 21,
+                                              fontWeight: FontWeight.w500,
+                                              height: 1.4)),
+                                    ),
+                                  ),
+                                if (desc.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(desc,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.75),
+                                            fontSize: 14.5,
+                                            height: 1.6)),
+                                  ),
+                                const SizedBox(height: 28),
+                                Wrap(spacing: 12, runSpacing: 12, children: [
+                                  FilledButton(
+                                    onPressed: onDiscover,
+                                    style: FilledButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: navy,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 24, vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(10))),
+                                    child: Text(_tr(context, 'discover'),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14)),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: onContact,
+                                    style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.white,
+                                        side: BorderSide(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.6)),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 24, vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(10))),
+                                    child: Text(_tr(context, 'contact_us'),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14)),
+                                  ),
+                                ]),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _kMaxW),
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 620),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.18),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Icon(Icons.place_rounded, size: 13, color: Colors.white),
-                              const SizedBox(width: 6),
-                              Text(
-                                (b.city != null && b.city!.isNotEmpty ? '${b.city} — ' : '') + (lang == 'en' ? 'Since ${b.sinceYear ?? ''}' : 'Depuis ${b.sinceYear ?? ''}'),
-                                style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w700),
-                              ),
-                            ]),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        _Rise(
-                          child: Text(line1.toUpperCase(), maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white, fontSize: narrow ? 40 : 62, height: 1.0, fontWeight: FontWeight.w900, letterSpacing: -1.5)),
-                        ),
-                        if (line2.isNotEmpty)
-                          _Rise(delay: 80, child: Text(line2.toUpperCase(), maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: accent, fontSize: narrow ? 40 : 62, height: 1.0, fontWeight: FontWeight.w900, letterSpacing: -1.5))),
-                        if (b.claim != null && b.claim!.trim().isNotEmpty)
-                          Padding(padding: const EdgeInsets.only(top: 14),
-                            child: _Rise(delay: 160, child: Text(b.claim!, maxLines: 2, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800, height: 1.3)))),
-                        if (desc.isNotEmpty)
-                          Padding(padding: const EdgeInsets.only(top: 10),
-                            child: Text(desc, maxLines: 3, overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13.5, height: 1.55))),
-                        const SizedBox(height: 22),
-                        Wrap(spacing: 12, runSpacing: 12, children: [
-                          FilledButton(
-                            onPressed: onDiscover,
-                            style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: navy, elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14), shape: const StadiumBorder()),
-                            child: Text(_tr(context, 'discover'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-                          ),
-                          OutlinedButton(
-                            onPressed: onContact,
-                            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white, width: 1.2), padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14), shape: const StadiumBorder()),
-                            child: Text(_tr(context, 'contact_us'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                          ),
-                        ]),
-                      ],
-                    ),
+            if (hasStats)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: -40,
+                child: _Wrap(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: pad),
+                    child: _StatsBar(
+                        stats: stats.take(narrow ? 3 : 4).toList()),
                   ),
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
+        if (hasStats) const SizedBox(height: 56),
+      ],
     );
   }
 }
 
-/// GLASSFLOU n°2 — barre stats qui chevauche le hero. STATS RÉELLES uniquement.
-class _HeroStatsGlass extends StatelessWidget {
-  const _HeroStatsGlass({required this.bundle});
-  final BusinessBundle bundle;
-
+class _StatsBar extends StatelessWidget {
+  const _StatsBar({required this.stats});
+  final List<(String, String)> stats;
   @override
   Widget build(BuildContext context) {
-    final b = bundle.business;
-    final lang = _LangScope.of(context);
-
-    // ✅ STATS RÉELLES UNIQUEMENT — plus aucun '120+' ni '45' inventé
-    final stats = <(String, String)>[];
-
-    // 1. Années d'expérience (calculées depuis sinceYear)
-    if (b.sinceYear != null && b.sinceYear! > 1900) {
-      final years = DateTime.now().year - b.sinceYear!;
-      if (years > 0) {
-        stats.add((
-          '$years+',
-          lang == 'en' ? 'years of experience' : "ans d'expérience",
-        ));
-      }
-    }
-
-    // 2. Collaborateurs (uniquement si renseigné)
-    if (b.employees != null && b.employees! > 0) {
-      stats.add((
-        '${b.employees}',
-        lang == 'en' ? 'collaborators' : 'collaborateurs',
-      ));
-    }
-
-    // 3. Nombre RÉEL de services publiés
-    final svc = bundle.sectionOfType(BusinessSectionType.services)?.content;
-    if (svc is ServicesContent && svc.items.isNotEmpty) {
-      stats.add((
-        '${svc.items.length}',
-        lang == 'en' ? 'services' : 'services',
-      ));
-    }
-
-    // 4. Nombre RÉEL de produits publiés
-    final prod = bundle.sectionOfType(BusinessSectionType.products)?.content;
-    if (prod is ProductsContent && prod.items.isNotEmpty) {
-      stats.add((
-        '${prod.items.length}',
-        lang == 'en' ? 'products' : 'produits',
-      ));
-    }
-
-    // 5. Nombre RÉEL de membres d'équipe
-    final team = bundle.sectionOfType(BusinessSectionType.team)?.content;
-    if (team is TeamContent && team.members.isNotEmpty) {
-      stats.add((
-        '${team.members.length}',
-        lang == 'en' ? 'team members' : 'collaborateurs',
-      ));
-    }
-
-    // Si aucune donnée réelle → on n'affiche RIEN (pas de barre vide)
-    if (stats.isEmpty) return const SizedBox.shrink();
-
-    // On plafonne à 3 colonnes pour rester lisible
-    final visible = stats.take(3).toList();
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.86),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.7)),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.10),
-                blurRadius: 24,
-                offset: const Offset(0, 12))
-          ],
-        ),
-        child: Row(children: [
-          for (var i = 0; i < visible.length; i++) ...[
-            if (i > 0)
-              Container(
-                  width: 1,
-                  height: 36,
-                  color: Colors.black.withValues(alpha: 0.08)),
-            Expanded(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(visible[i].$1,
-                    style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        color: _ink(context))),
-                const SizedBox(height: 2),
-                Text(visible[i].$2,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 10.5,
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant)),
-              ]),
-            ),
-          ],
-        ]),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kLine),
+        boxShadow: [
+          BoxShadow(
+              color: _ink(context).withValues(alpha: 0.10),
+              blurRadius: 32,
+              offset: const Offset(0, 14)),
+        ],
       ),
+      child: Row(children: [
+        for (var i = 0; i < stats.length; i++) ...[
+          if (i > 0) Container(width: 1, height: 40, color: _kLine),
+          Expanded(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(stats[i].$1,
+                  style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                      color: _ink(context))),
+              const SizedBox(height: 4),
+              Text(stats[i].$2,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11.5, color: _kMuted)),
+            ]),
+          ),
+        ],
+      ]),
     );
   }
 }
@@ -1893,19 +2010,19 @@ class _HeroCarouselState extends State<_HeroCarousel> {
           ),
         if (imgs.length > 1)
           Positioned(
-            right: 24,
-            bottom: 76,
+            right: 32,
+            bottom: 64,
             child: Row(
               children: [
                 for (var i = 0; i < imgs.length; i++)
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     margin: const EdgeInsets.only(left: 6),
-                    width: i == _index ? 10 : 8,
-                    height: i == _index ? 10 : 8,
+                    width: i == _index ? 22 : 8,
+                    height: 4,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: i == _index ? accent : Colors.white54,
+                      borderRadius: BorderRadius.circular(2),
+                      color: i == _index ? accent : Colors.white38,
                     ),
                   ),
               ],
@@ -1917,14 +2034,13 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IDENTITÉ V9 — ÉDITORIALE DÉSALIGNÉE
+// IDENTITÉ
 // ─────────────────────────────────────────────────────────────────────────────
 class _IdentityStrip extends StatelessWidget {
   const _IdentityStrip({required this.business});
   final Business business;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final lang = _LangScope.of(context);
     final b = business;
     final where = [
@@ -1934,65 +2050,164 @@ class _IdentityStrip extends StatelessWidget {
     Future<void> copyId() async {
       await Clipboard.setData(ClipboardData(text: b.thixId));
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(behavior: SnackBarBehavior.floating, content: Text('${_tr(context, 'copied')}${b.thixId}')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('${_tr(context, 'copied')}${b.thixId}')));
     }
-    final rows = <(String, String, double, VoidCallback?)>[
-      (_tr(context, 'f_name'), b.name, 0, null),
-      if (b.sector != null && b.sector!.trim().isNotEmpty) (_tr(context, 'f_sector'), b.sector!, 18, null),
-      if (where.isNotEmpty) (_tr(context, 'f_hq'), where, 0, null),
-      if (b.sinceYear != null) (_tr(context, 'f_since'), '${b.sinceYear} — ${b.city ?? ''}'.trim(), 18, null),
-      if (b.employees != null) (_tr(context, 'f_staff'), '${b.employees} ${_tr(context, 'staff')}', 0, null),
-      (_tr(context, 'f_status'), _tr(context, 'verified_status'), 8, null),
+
+    final rows = <(String, String)>[
+      (_tr(context, 'f_name'), b.name),
+      if (b.sector != null && b.sector!.trim().isNotEmpty)
+        (_tr(context, 'f_sector'), b.sector!),
+      if (where.isNotEmpty) (_tr(context, 'f_hq'), where),
+      if (b.sinceYear != null) (_tr(context, 'f_since'), '${b.sinceYear}'),
+      if (b.employees != null)
+        (_tr(context, 'f_staff'), '${b.employees} ${_tr(context, 'staff')}'),
+      (_tr(context, 'f_status'), _tr(context, 'verified_status')),
     ];
+    final links = <Widget>[
+      if (b.website != null && b.website!.isNotEmpty)
+        _LinkChip(
+            icon: Icons.language_rounded,
+            label: _tr(context, 'f_web'),
+            onTap: () => _openUrl(b.website)),
+      if (b.phone != null && b.phone!.isNotEmpty)
+        _LinkChip(
+            icon: Icons.phone_rounded,
+            label: _tr(context, 'f_phone'),
+            onTap: () => _openTel(b.phone!)),
+      if (b.email != null && b.email!.isNotEmpty)
+        _LinkChip(
+            icon: Icons.mail_rounded,
+            label: _tr(context, 'f_email'),
+            onTap: () => _openMail(b.email!)),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _secHead(context, _tr(context, 'identity_title'), eyebrow: '01 — Profil'),
-        for (final r in rows)
-          Padding(
-            padding: EdgeInsets.only(left: r.$3, top: 0, bottom: 0),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)))),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(r.$1.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.4, color: scheme.onSurfaceVariant)),
-                  const SizedBox(height: 5),
-                  Row(children: [
-                    Expanded(child: Text(r.$2, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink(context)))),
-                    if (r.$1 == _tr(context, 'f_status')) Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFF16A34A), shape: BoxShape.circle)),
-                  ]),
-                ])),
-              ]),
-            ),
-          ),
-        const SizedBox(height: 18),
+        _secHead(context, _tr(context, 'identity_title'),
+            eyebrow: '01 — Profil'),
         Container(
-          padding: const EdgeInsets.fromLTRB(18, 16, 14, 16),
-          decoration: BoxDecoration(color: _ink(context), borderRadius: BorderRadius.circular(18), border: const Border(left: BorderSide(color: Color(0xFFFFB800), width: 5))),
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: _cardDeco(context),
+          child: _Grid(
+            minWidth: 240,
+            gap: 24,
+            children: [
+              for (final r in rows)
+                Container(
+                  padding: const EdgeInsets.only(left: 14),
+                  decoration: BoxDecoration(
+                    border: Border(
+                        left: BorderSide(
+                            color: r.$1 == _tr(context, 'f_status')
+                                ? _kGreen
+                                : _kLine,
+                            width: 2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r.$1.toUpperCase(),
+                          style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.4,
+                              color: _kMuted)),
+                      const SizedBox(height: 6),
+                      Text(r.$2,
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              height: 1.3,
+                              color: _ink(context))),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.fromLTRB(22, 18, 16, 18),
+          decoration: BoxDecoration(
+            color: _ink(context),
+            borderRadius: BorderRadius.circular(14),
+          ),
           child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(_tr(context, 'f_id').toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.6, color: Colors.white.withValues(alpha: 0.6))),
-              const SizedBox(height: 5),
-              Text(b.thixId, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 0.5, color: Colors.white)),
-            ])),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_tr(context, 'f_id').toUpperCase(),
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.6,
+                            color: Colors.white.withValues(alpha: 0.6))),
+                    const SizedBox(height: 6),
+                    Text(b.thixId,
+                        style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: Colors.white)),
+                  ]),
+            ),
             FilledButton.icon(
               onPressed: copyId,
               icon: const Icon(Icons.content_copy_rounded, size: 16),
-              label: Text(_tr(context, 'copy'), style: const TextStyle(fontWeight: FontWeight.w800)),
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFFB800), foregroundColor: _ink(context), elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11), shape: const StadiumBorder()),
+              label: Text(_tr(context, 'copy'),
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: _ink(context),
+                  elevation: 0,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
             ),
           ]),
         ),
-        const SizedBox(height: 16),
-        Wrap(alignment: WrapAlignment.center, spacing: 8, children: [
-          if (b.website != null && b.website!.isNotEmpty) _Tap(onTap: () => _openUrl(b.website), child: Text(_tr(context, 'f_web'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary))),
-          if (b.phone != null && b.phone!.isNotEmpty) ...[Text('•', style: TextStyle(color: scheme.onSurfaceVariant)), _Tap(onTap: () => _openTel(b.phone!), child: Text(_tr(context, 'f_phone'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary)))],
-          if (b.email != null && b.email!.isNotEmpty) ...[Text('•', style: TextStyle(color: scheme.onSurfaceVariant)), _Tap(onTap: () => _openMail(b.email!), child: Text(_tr(context, 'f_email'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary)))],
-        ]),
-        const SizedBox(height: 14),
-        Center(child: Text(_tr(context, 'identity_note'), textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant))),
+        if (links.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Wrap(spacing: 10, runSpacing: 10, children: links),
+        ],
       ],
+    );
+  }
+}
+
+class _LinkChip extends StatelessWidget {
+  const _LinkChip(
+      {required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return _Tap(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _kLine),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 15, color: _ink(context)),
+          const SizedBox(width: 8),
+          Text(label,
+              style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: _ink(context))),
+        ]),
+      ),
     );
   }
 }
@@ -2024,334 +2239,370 @@ class _SectionRenderer extends StatelessWidget {
   }
 }
 
-// ── À PROPOS V9 — null-safety + suppression mockup 7/120/12 ──
+// ── À PROPOS ──
 class _AboutSection extends StatelessWidget {
   const _AboutSection({required this.content});
   final AboutContent content;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    // ✅ Promotion null-safe : on extrait le non-null UNE FOIS
     final rawUrl = content.imageUrl;
-    final imageUrl = (rawUrl != null && rawUrl.trim().isNotEmpty) ? rawUrl : null;
+    final imageUrl =
+        (rawUrl != null && rawUrl.trim().isNotEmpty) ? rawUrl.trim() : null;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (content.tagline != null && content.tagline!.trim().isNotEmpty)
+          Container(
+            padding: const EdgeInsets.only(left: 16),
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+                border: Border(
+                    left: BorderSide(color: _accent(context), width: 3))),
+            child: Text(content.tagline!,
+                style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
+                    letterSpacing: -0.2,
+                    color: _ink(context))),
+          ),
+        _ExpandText(content.body, maxLines: 8),
+      ],
+    );
+
+    final image = imageUrl == null
+        ? null
+        : _Tap(
+            onTap: () => _viewImage(context, imageUrl),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: AspectRatio(aspectRatio: 4 / 3, child: _img(imageUrl)),
+            ),
+          );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _secHead(context, content.title, eyebrow: '02 — À propos'),
-        if (content.tagline != null && content.tagline!.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Text(content.tagline!,
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    fontStyle: FontStyle.italic,
-                    color: scheme.primary)),
-          ),
-        _ExpandText(content.body,
-            maxLines: 6,
-            style: TextStyle(
-                fontSize: 14.5,
-                height: 1.8,
-                color: scheme.onSurfaceVariant)),
-        if (imageUrl != null) ...[
-          const SizedBox(height: 24),
-          _Tap(
-            onTap: () => _viewImage(context, imageUrl),
-            child: Stack(children: [
-              Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                          border: Border.all(
-                              color: const Color(0xFFFFB800), width: 2),
-                          borderRadius: BorderRadius.circular(20)))),
-              Padding(
-                padding: const EdgeInsets.only(right: 12, bottom: 12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: SizedBox(
-                      height: 240,
-                      width: double.infinity,
-                      child: _img(imageUrl)),
-                ),
-              ),
-            ]),
-          ),
-          const SizedBox(height: 18),
-          // ✅ Stats réelles uniquement — suppression du mockup 7/120/12
-          _AboutRealStats(content: content, lang: _LangScope.of(context)),
-          const SizedBox(height: 18),
-          _HorizontalPhotoStrip(
-            urls: [imageUrl, _fallbackPhoto(1), _fallbackPhoto(3)],
-            height: 84,
-          ),
+        if (image == null)
+          text
+        else if (wide)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 6, child: text),
+              const SizedBox(width: 48),
+              Expanded(flex: 5, child: image),
+            ],
+          )
+        else ...[
+          image,
+          const SizedBox(height: 28),
+          text,
         ],
       ],
     );
   }
 }
 
-/// Stats réelles calculées depuis le contenu (pas de chiffres inventés).
-class _AboutRealStats extends StatelessWidget {
-  const _AboutRealStats({required this.content, required this.lang});
-  final AboutContent content;
-  final String lang;
-  @override
-  Widget build(BuildContext context) {
-    final items = <(String, String)>[];
-    // On n'affiche QUE ce qu'on peut réellement compter
-    final textLen = content.body.trim().length;
-    if (textLen > 0) {
-      items.add(('${(textLen / 100).round() * 100}+',
-          lang == 'en' ? 'words about us' : 'mots sur nous'));
-    }
-    if (content.tagline != null && content.tagline!.trim().isNotEmpty) {
-      items.add(('✓', lang == 'en' ? 'verified identity' : 'identité vérifiée'));
-    }
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i > 0)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('—', style: TextStyle(color: Colors.black26)),
-            ),
-          Text(items[i].$1,
-              style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                  color: _ink(context))),
-          const SizedBox(width: 4),
-          Text(items[i].$2,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        ],
-      ],
-    );
-  }
-}
-
-// ── SERVICES V9 — lignes HORIZONTALES avec PHOTO à gauche ──
+// ── SERVICES ──
 class _ServicesSection extends StatelessWidget {
   const _ServicesSection({required this.content});
   final ServicesContent content;
-  void _openAll(BuildContext context) {
-    final items = content.items;
-    showModalBottomSheet<void>(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(color: Theme.of(ctx).colorScheme.surface, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
-        child: SafeArea(child: ConstrainedBox(constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.85),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(padding: const EdgeInsets.fromLTRB(24, 24, 24, 8), child: Text(_tt(ctx, content.title), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: _ink(ctx)))),
-            Expanded(child: ListView.separated(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), separatorBuilder: (_, __) => const SizedBox(height: 8), itemCount: items.length,
-              itemBuilder: (c, i) => _ServiceRow(item: items[i], index: i))),
-          ]))),
-      ),
-    );
-  }
+
   @override
   Widget build(BuildContext context) {
     final items = content.items;
-    final photos = [for (var i = 0; i < items.length; i++) _photoOrFallback(items[i].imageUrl, i)];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _secHead(context, content.title, onMore: items.length > 4 ? () => _openAll(context) : null, eyebrow: '03 — Expertises'),
-      if (photos.isNotEmpty) ...[
-        _HorizontalPhotoStrip(urls: photos, height: 88),
-        const SizedBox(height: 16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _secHead(context, content.title, eyebrow: '03 — Expertises'),
+        _Grid(
+          minWidth: 340,
+          children: [
+            for (var i = 0; i < items.length; i++)
+              _ServiceCard(item: items[i], index: i),
+          ],
+        ),
       ],
-      for (var i = 0; i < items.length; i++) Padding(padding: const EdgeInsets.only(bottom: 12), child: _ServiceRow(item: items[i], index: i)),
-    ]);
+    );
   }
 }
 
-class _ServiceRow extends StatefulWidget {
-  const _ServiceRow({required this.item, required this.index});
+class _ServiceCard extends StatelessWidget {
+  const _ServiceCard({required this.item, required this.index});
   final ServiceItem item;
   final int index;
   @override
-  State<_ServiceRow> createState() => _ServiceRowState();
-}
-
-class _ServiceRowState extends State<_ServiceRow> {
-  bool _open = false;
-  @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = _kIconPalette[widget.index % _kIconPalette.length];
-    final item = widget.item;
-    final icon = [Icons.auto_awesome_rounded, Icons.phone_iphone_rounded, Icons.cloud_rounded, Icons.explore_rounded, Icons.school_rounded][widget.index % 5];
+    const icons = [
+      Icons.auto_awesome_rounded,
+      Icons.phone_iphone_rounded,
+      Icons.cloud_rounded,
+      Icons.explore_rounded,
+      Icons.school_rounded,
+    ];
+    final desc = item.description ?? '';
+    final num = (index + 1).toString().padLeft(2, '0');
     return _Tap(
-      onTap: () => _showDetail(context, title: item.title, image: _photoOrFallback(item.imageUrl, widget.index), chip: item.price, text: item.description),
+      onTap: () => _showDetail(context,
+          title: item.title,
+          image: item.imageUrl,
+          chip: item.price,
+          text: item.description),
       child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-            _PhotoThumb(url: item.imageUrl, index: widget.index, width: 76, height: 76, radius: 16, icon: icon),
-            const SizedBox(width: 14),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, height: 1.25, color: _ink(context))),
-              const SizedBox(height: 5),
-              Text(item.description ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, height: 1.5, color: scheme.onSurfaceVariant)),
-              if (item.price != null && item.price!.trim().isNotEmpty)
-                Padding(padding: const EdgeInsets.only(top: 5), child: Text(item.price!, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color))),
-            ])),
+        padding: const EdgeInsets.all(20),
+        decoration: _cardDeco(context),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Thumb(
+                url: item.imageUrl,
+                label: item.title,
+                size: 52,
+                radius: 12,
+                icon: icons[index % icons.length]),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
+                          letterSpacing: -0.2,
+                          color: _ink(context))),
+                  if (desc.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(desc,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13.5, height: 1.6, color: _kMuted)),
+                    ),
+                  if (item.price != null && item.price!.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(item.price!,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: _accentText(context))),
+                    ),
+                ],
+              ),
+            ),
             const SizedBox(width: 10),
-            Column(children: [
-              Text('0${widget.index + 1}', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: scheme.onSurfaceVariant.withValues(alpha: 0.45))),
-              const SizedBox(height: 4),
-              _Tap(onTap: () => setState(() => _open = !_open), child: Icon(_open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20, color: scheme.onSurfaceVariant)),
-            ]),
-          ]),
-          if (_open && (item.description ?? '').isNotEmpty)
-            Padding(padding: const EdgeInsets.only(top: 12),
-              child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF7F8FA), borderRadius: BorderRadius.circular(12)),
-                child: Text(item.description!, style: TextStyle(fontSize: 12.5, height: 1.6, color: scheme.onSurfaceVariant)))),
-        ]),
+            Text(num,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                    color: _kMuted.withValues(alpha: 0.6))),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── PRODUITS V9 ──
+// ── PRODUITS ──
 class _ProductsSection extends StatelessWidget {
   const _ProductsSection({required this.content});
   final ProductsContent content;
   @override
   Widget build(BuildContext context) {
     final items = content.items;
-    final photos = [for (var i = 0; i < items.length; i++) _photoOrFallback(items[i].imageUrl, i)];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _secHead(context, content.title, eyebrow: '03 — Produits'),
-      if (photos.isNotEmpty) ...[_HorizontalPhotoStrip(urls: photos, height: 88), const SizedBox(height: 16)],
-      for (var i = 0; i < items.length; i++) Padding(padding: const EdgeInsets.only(bottom: 12), child: _ProductCard(item: items[i], index: i)),
-    ]);
-  }
-}
-
-class _ProductCard extends StatelessWidget {
-  const _ProductCard({required this.item, this.index = 0});
-  final ProductItem item;
-  final int index;
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    void more() => _showDetail(context, title: item.title, image: _photoOrFallback(item.imageUrl, index), chip: item.price, text: item.description, url: item.url);
-    return _Tap(
-      onTap: more,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          _PhotoThumb(url: item.imageUrl, index: index, width: 92, height: 92, radius: 16),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: _ink(context))),
-            if (item.description != null && item.description!.trim().isNotEmpty)
-              Padding(padding: const EdgeInsets.only(top: 5), child: Text(item.description!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(height: 1.5, fontSize: 12.5, color: scheme.onSurfaceVariant))),
-            if (item.price != null && item.price!.trim().isNotEmpty)
-              Padding(padding: const EdgeInsets.only(top: 6), child: Text(item.price!, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: scheme.primary))),
-          ])),
-          Icon(Icons.arrow_forward_rounded, size: 18, color: scheme.onSurfaceVariant),
-        ]),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _secHead(context, content.title, eyebrow: '03 — Produits'),
+        _Grid(
+          minWidth: 300,
+          children: [
+            for (final it in items)
+              _MediaCard(
+                title: it.title,
+                image: it.imageUrl,
+                text: it.description,
+                meta: it.price,
+                onTap: () => _showDetail(context,
+                    title: it.title,
+                    image: it.imageUrl,
+                    chip: it.price,
+                    text: it.description,
+                    url: it.url),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
 
-// ── GALERIE V9 ──
+// ── GALERIE ──
 class _GallerySection extends StatefulWidget {
   const _GallerySection({required this.content});
   final GalleryContent content;
   @override
   State<_GallerySection> createState() => _GallerySectionState();
 }
+
 class _GallerySectionState extends State<_GallerySection> {
   final ScrollController _c = ScrollController();
   @override
-  void dispose() { _c.dispose(); super.dispose(); }
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
   void _next() {
     if (!_c.hasClients) return;
-    // ✅ FIX 1 : clamp() renvoie num → cast obligatoire en double
     final target = (_c.offset + _c.position.viewportDimension * 0.8)
         .clamp(0.0, _c.position.maxScrollExtent)
         .toDouble();
-    _c.animateTo(target, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
+    _c.animateTo(target,
+        duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
   }
+
+  Widget _caption(String text, double size) => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: Container(
+          padding: EdgeInsets.fromLTRB(size, 28, size, size * 0.8),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.transparent, Colors.black87],
+            ),
+          ),
+          child: Text(text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: size > 12 ? 14 : 11)),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final imgs = widget.content.images;
     if (imgs.isEmpty) return const SizedBox.shrink();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _secHead(context, widget.content.title, eyebrow: '04 — Preuves'),
-      _Tap(
-        onTap: () => _viewImage(context, imgs.first.url),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: SizedBox(height: 220, width: double.infinity, child: Stack(fit: StackFit.expand, children: [
-            _img(imgs.first.url),
-            if (imgs.first.caption != null && imgs.first.caption!.isNotEmpty)
-              Positioned(left: 0, right: 0, bottom: 0, child: Container(padding: const EdgeInsets.fromLTRB(16, 32, 16, 14),
-                decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
-                child: Text(imgs.first.caption!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)))),
-          ])),
-        ),
-      ),
-      const SizedBox(height: 12),
-      SizedBox(
-        height: 132,
-        child: Stack(children: [
-          ListView.separated(
-            controller: _c, scrollDirection: Axis.horizontal, physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.only(right: MediaQuery.sizeOf(context).width < 700 ? 64 : 24),
-            itemCount: imgs.length, separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (ctx, i) => _Tap(
-              onTap: () => _viewImage(ctx, imgs[i].url),
-              child: Container(width: 180, decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: _softShadow(ctx)),
-                child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Stack(fit: StackFit.expand, children: [
-                  _img(imgs[i].url),
-                  if (imgs[i].caption != null && imgs[i].caption!.isNotEmpty)
-                    Positioned(left: 0, right: 0, bottom: 0, child: Container(padding: const EdgeInsets.fromLTRB(10, 20, 10, 8),
-                      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87])),
-                      child: Text(imgs[i].caption!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11)))),
-                ]))),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _secHead(context, widget.content.title, eyebrow: '04 — Preuves'),
+        _Tap(
+          onTap: () => _viewImage(context, imgs.first.url),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: AspectRatio(
+              aspectRatio: 16 / 8,
+              child: Stack(fit: StackFit.expand, children: [
+                _img(imgs.first.url),
+                if (imgs.first.caption != null &&
+                    imgs.first.caption!.isNotEmpty)
+                  _caption(imgs.first.caption!, 20),
+              ]),
             ),
           ),
-          if (imgs.length > 2)
-            Positioned(right: 0, top: 0, bottom: 0, child: Center(child: _Tap(onTap: _next, child: Container(width: 44, height: 44, decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: _softShadow(context)), child: Icon(Icons.arrow_forward_rounded, size: 20, color: _ink(context)))))),
-        ]),
-      ),
-    ]);
+        ),
+        if (imgs.length > 1) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 124,
+            child: Stack(children: [
+              ListView.separated(
+                controller: _c,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.only(
+                    right: MediaQuery.sizeOf(context).width < 700 ? 64 : 24),
+                itemCount: imgs.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (ctx, i) => _Tap(
+                  onTap: () => _viewImage(ctx, imgs[i].url),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      width: 176,
+                      child: Stack(fit: StackFit.expand, children: [
+                        _img(imgs[i].url),
+                        if (imgs[i].caption != null &&
+                            imgs[i].caption!.isNotEmpty)
+                          _caption(imgs[i].caption!, 8),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+              if (imgs.length > 2)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _Tap(
+                      onTap: _next,
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: _kLine),
+                          boxShadow: [
+                            BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 12)
+                          ],
+                        ),
+                        child: Icon(Icons.arrow_forward_rounded,
+                            size: 19, color: _ink(context)),
+                      ),
+                    ),
+                  ),
+                ),
+            ]),
+          ),
+        ],
+      ],
+    );
   }
 }
 
-// ── ÉQUIPE V9 — FIX 4 : suppression bouton "in" factice ──
+// ── ÉQUIPE ──
 class _TeamSection extends StatelessWidget {
   const _TeamSection({required this.content});
   final TeamContent content;
   @override
   Widget build(BuildContext context) {
     final members = content.members;
-    final photos = [for (var i = 0; i < members.length; i++) _photoOrFallback(members[i].photoUrl, i)];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _secHead(context, content.title, eyebrow: '05 — Humain'),
-      if (photos.isNotEmpty) ...[
-        _HorizontalPhotoStrip(urls: photos, height: 104),
-        const SizedBox(height: 16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _secHead(context, content.title, eyebrow: '05 — Humain'),
+        _Grid(
+          minWidth: 320,
+          children: [
+            for (var i = 0; i < members.length; i++)
+              _TeamRow(member: members[i], index: i),
+          ],
+        ),
       ],
-      for (var i = 0; i < members.length; i++) Padding(padding: const EdgeInsets.only(bottom: 10), child: _TeamRow(member: members[i], index: i)),
-    ]);
+    );
   }
 }
 
@@ -2361,49 +2612,90 @@ class _TeamRow extends StatelessWidget {
   final int index;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final name = (member.name as String?) ?? '';
     final role = (member.role as String?) ?? '';
     final bio = (member.bio as String?) ?? '';
     final photoUrl = member.photoUrl as String?;
-    final hasPhoto = photoUrl != null && photoUrl.isNotEmpty;
     return _Tap(
-      onTap: bio.trim().isEmpty ? null : () => _showDetail(context, title: name, subtitle: role, image: _photoOrFallback(photoUrl, index), text: bio),
+      onTap: bio.trim().isEmpty
+          ? null
+          : () => _showDetail(context,
+              title: name, subtitle: role, image: photoUrl, text: bio),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: index.isEven ? const Color(0xFFFFB800) : _ink(context), width: 2)),
-            child: ClipOval(child: SizedBox(width: 60, height: 60, child: hasPhoto ? _img(photoUrl!) : ColoredBox(color: index.isEven ? const Color(0xFFFFB800) : _ink(context), child: Center(child: Text(_initials(name), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)))))),
-          ),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: _ink(context))),
-            if (role.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(role, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant))),
-            if (bio.trim().isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(bio, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)))),
-          ])),
-          const SizedBox(width: 10),
-          // ✅ FIX 4 : chevron réel — visible uniquement si une bio existe
-          if (bio.trim().isNotEmpty)
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: scheme.primary.withValues(alpha: 0.08),
-                shape: BoxShape.circle,
+        padding: const EdgeInsets.all(18),
+        decoration: _cardDeco(context),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipOval(
+              child: SizedBox(
+                width: 64,
+                height: 64,
+                child: (photoUrl != null && photoUrl.isNotEmpty)
+                    ? _img(photoUrl,
+                        fallback: _monogram(context, name))
+                    : _monogram(context, name),
               ),
-              child: Icon(Icons.arrow_forward_rounded,
-                  size: 16, color: scheme.primary),
             ),
-        ]),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          letterSpacing: -0.2,
+                          color: _ink(context))),
+                  if (role.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(role,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: _accentText(context))),
+                    ),
+                  if (bio.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(bio,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5, height: 1.55, color: _kMuted)),
+                    ),
+                ],
+              ),
+            ),
+            if (bio.trim().isNotEmpty) ...[
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward_rounded, size: 16, color: _kMuted),
+            ],
+          ],
+        ),
       ),
     );
   }
+
+  Widget _monogram(BuildContext context, String name) => ColoredBox(
+        color: _ink(context).withValues(alpha: 0.07),
+        child: Center(
+          child: Text(_initials(name),
+              style: TextStyle(
+                  color: _ink(context),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 19)),
+        ),
+      );
 }
 
-// ── ACTUALITÉS V9 ──
+// ── ACTUALITÉS ──
 class _NewsSection extends StatelessWidget {
   const _NewsSection({required this.content});
   final NewsContent content;
@@ -2411,57 +2703,58 @@ class _NewsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final lang = _LangScope.of(context);
     final posts = content.posts;
-    final photos = [for (var i = 0; i < posts.length; i++) _photoOrFallback(posts[i].imageUrl, i)];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _secHead(context, content.title, eyebrow: '06 — Actualités'),
-      if (photos.isNotEmpty) ...[_HorizontalPhotoStrip(urls: photos, height: 88), const SizedBox(height: 16)],
-      for (var i = 0; i < posts.length; i++) Padding(padding: const EdgeInsets.only(bottom: 12), child: _NewsCard(post: posts[i], date: posts[i].publishedAt == null ? null : _fmtDate(lang, posts[i].publishedAt!), index: i)),
-    ]);
-  }
-}
-
-class _NewsCard extends StatelessWidget {
-  const _NewsCard({required this.post, this.date, this.index = 0});
-  final NewsPost post;
-  final String? date;
-  final int index;
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    void more() => _showDetail(context, title: post.title, subtitle: date, image: _photoOrFallback(post.imageUrl, index), text: post.excerpt, url: post.url, urlLabel: _tr(context, 'read_full'));
-    return _Tap(
-      onTap: more,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          _PhotoThumb(url: post.imageUrl, index: index, width: 96, height: 96, radius: 16),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (date != null) Text(date!.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: scheme.primary)),
-            const SizedBox(height: 5),
-            Text(post.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, height: 1.3, color: _ink(context))),
-            if (post.excerpt != null && post.excerpt!.trim().isNotEmpty)
-              Padding(padding: const EdgeInsets.only(top: 5), child: Text(post.excerpt!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(height: 1.5, fontSize: 12.5, color: scheme.onSurfaceVariant))),
-          ])),
-          Icon(Icons.arrow_forward_rounded, size: 18, color: scheme.onSurfaceVariant),
-        ]),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _secHead(context, content.title, eyebrow: '06 — Actualités'),
+        _Grid(
+          minWidth: 300,
+          children: [
+            for (final p in posts)
+              _MediaCard(
+                title: p.title,
+                image: p.imageUrl,
+                eyebrow:
+                    p.publishedAt == null ? null : _fmtDate(lang, p.publishedAt!),
+                text: p.excerpt,
+                onTap: () => _showDetail(context,
+                    title: p.title,
+                    subtitle: p.publishedAt == null
+                        ? null
+                        : _fmtDate(lang, p.publishedAt!),
+                    image: p.imageUrl,
+                    text: p.excerpt,
+                    url: p.url,
+                    urlLabel: _tr(context, 'read_full')),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
 
-// ── TÉMOIGNAGES V9 — FIX 5 : rating défensif ──
+// ── TÉMOIGNAGES ──
 class _TestimonialsSection extends StatelessWidget {
   const _TestimonialsSection({required this.content});
   final TestimonialsContent content;
   @override
   Widget build(BuildContext context) {
     final items = content.items;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _secHead(context, content.title, eyebrow: '07 — Ils nous font confiance'),
-      for (var i = 0; i < items.length; i++) Padding(padding: const EdgeInsets.only(bottom: 12), child: _TestimonialRow(item: items[i], index: i)),
-    ]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _secHead(context, content.title,
+            eyebrow: '07 — Ils nous font confiance'),
+        _Grid(
+          minWidth: 340,
+          children: [
+            for (var i = 0; i < items.length; i++)
+              _TestimonialRow(item: items[i], index: i),
+          ],
+        ),
+      ],
+    );
   }
 }
 
@@ -2471,12 +2764,10 @@ class _TestimonialRow extends StatelessWidget {
   final int index;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final quote = (item.quote as String?) ?? '';
     final author = (item.author as String?) ?? '';
     final role = (item.role as String?) ?? '';
 
-    // ✅ FIX 5 : rating défensif — pas de crash si le champ est absent
     int? rating;
     try {
       final raw = item.rating;
@@ -2485,32 +2776,72 @@ class _TestimonialRow extends StatelessWidget {
       rating = null;
     }
 
-    void more() => _showDetail(context, title: author, subtitle: role, text: quote);
     return _Tap(
-      onTap: more,
+      onTap: () =>
+          _showDetail(context, title: author, subtitle: role, text: quote),
       child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: 56, height: 56,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: index.isEven ? const Color(0xFFFFB800) : _ink(context)),
-            child: Center(child: Text(_initials(author.isNotEmpty ? author : '?'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16))),
-          ),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        padding: const EdgeInsets.all(22),
+        decoration: _cardDeco(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Row(children: [
-              if (rating != null) ...[for (var i = 0; i < 5; i++) Icon(i < rating ? Icons.star_rounded : Icons.star_border_rounded, size: 13, color: _accent(context))],
+              Icon(Icons.format_quote_rounded,
+                  color: _accent(context), size: 30),
               const Spacer(),
-              Icon(Icons.format_quote_rounded, color: _accent(context), size: 20),
+              if (rating != null)
+                for (var i = 0; i < 5; i++)
+                  Icon(i < rating ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 15, color: _accent(context)),
             ]),
-            const SizedBox(height: 6),
-            Text(quote, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(height: 1.6, fontSize: 13, fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant)),
             const SizedBox(height: 8),
-            Text(author, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: _ink(context))),
-            if (role.isNotEmpty) Text(role, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
-          ])),
-        ]),
+            Text(quote,
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    height: 1.7, fontSize: 14.5, color: Color(0xFF334155))),
+            const SizedBox(height: 18),
+            Container(height: 1, color: _kLine),
+            const SizedBox(height: 16),
+            Row(children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _ink(context).withValues(alpha: 0.07)),
+                child: Center(
+                  child: Text(_initials(author.isNotEmpty ? author : '?'),
+                      style: TextStyle(
+                          color: _ink(context),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(author,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
+                            color: _ink(context))),
+                    if (role.isNotEmpty)
+                      Text(role,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              const TextStyle(fontSize: 12, color: _kMuted)),
+                  ],
+                ),
+              ),
+            ]),
+          ],
+        ),
       ),
     );
   }
@@ -2538,7 +2869,6 @@ class _ContactTile extends StatelessWidget {
   final ContactChannel channel;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final c = channel;
     return _Tap(
       onTap: () async {
@@ -2547,18 +2877,20 @@ class _ContactTile extends StatelessWidget {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: _cardDeco(context),
         child: Row(
           children: [
             Container(
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: scheme.primary.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
+                color: _ink(context).withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(_contactIcon(c.type), size: 18, color: scheme.primary),
+              child: Icon(_contactIcon(c.type), size: 18, color: _ink(context)),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -2566,19 +2898,19 @@ class _ContactTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(c.label ?? c.type.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 13.5)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: _ink(context))),
                   const SizedBox(height: 2),
                   Text(c.value,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                      style: const TextStyle(fontSize: 12.5, color: _kMuted)),
                 ],
               ),
             ),
-            Icon(Icons.arrow_outward_rounded,
-                size: 16, color: scheme.onSurfaceVariant),
+            const Icon(Icons.arrow_outward_rounded, size: 16, color: _kMuted),
           ],
         ),
       ),
@@ -2594,27 +2926,55 @@ class _CtaBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = bundle.theme;
-    final navy = Color.lerp(theme.primary, Colors.black, 0.45)!;
+    final navy = Color.lerp(theme.primary, Colors.black, 0.55)!;
     final accent = theme.accent ?? const Color(0xFFEAB308);
-    return _Wrap(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          decoration: BoxDecoration(gradient: LinearGradient(colors: [theme.primary, navy]), borderRadius: BorderRadius.circular(18)),
-          child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text(_tr(context, 'work_together'), style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
-              const SizedBox(height: 3),
-              Text(_tr(context, 'work_sub'), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
-            ])),
-            const SizedBox(width: 12),
-            FilledButton(
-              onPressed: onContact,
-              style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: Color.lerp(navy, Colors.black, 0.3), elevation: 0, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), shape: const StadiumBorder()),
-              child: Text(_tr(context, 'contact_us'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-            ),
-          ]),
+    final narrow = MediaQuery.sizeOf(context).width < 700;
+    final texts = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(_tr(context, 'work_together'),
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: narrow ? 24 : 32,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8)),
+        const SizedBox(height: 8),
+        Text(_tr(context, 'work_sub'),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.72),
+                fontSize: 14.5,
+                height: 1.5)),
+      ],
+    );
+    final button = FilledButton(
+      onPressed: onContact,
+      style: FilledButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: navy,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      child: Text(_tr(context, 'contact_us'),
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+    );
+    return Container(
+      width: double.infinity,
+      color: navy,
+      padding: EdgeInsets.symmetric(vertical: narrow ? 44 : 64),
+      child: _Wrap(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: narrow ? 20 : 32),
+          child: narrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [texts, const SizedBox(height: 24), button])
+              : Row(children: [
+                  Expanded(child: texts),
+                  const SizedBox(width: 24),
+                  button
+                ]),
         ),
       ),
     );
@@ -2622,7 +2982,7 @@ class _CtaBanner extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10 RUBRIQUES AVANCÉES
+// RUBRIQUES AVANCÉES
 // ─────────────────────────────────────────────────────────────────────────────
 String _v(Map<String, String> m, String k) => (m[k] ?? '').trim();
 
@@ -2647,7 +3007,10 @@ class _ExtraSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _secHead(context, title),
-            for (final it in items) Padding(padding: const EdgeInsets.only(bottom: 10), child: _LogoCard(item: it)),
+            _Grid(
+              minWidth: 260,
+              children: [for (final it in items) _LogoCard(item: it)],
+            ),
           ],
         );
       case BizLayout.steps:
@@ -2655,8 +3018,13 @@ class _ExtraSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _secHead(context, title),
-            for (var i = 0; i < items.length; i++)
-              Padding(padding: const EdgeInsets.only(bottom: 12), child: _StepCard(item: items[i], number: i + 1)),
+            _Grid(
+              minWidth: 320,
+              children: [
+                for (var i = 0; i < items.length; i++)
+                  _StepCard(item: items[i], number: i + 1),
+              ],
+            ),
           ],
         );
       case BizLayout.standard:
@@ -2664,8 +3032,12 @@ class _ExtraSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _secHead(context, title),
-            for (final it in items)
-              Padding(padding: const EdgeInsets.only(bottom: 12), child: _StdCard(item: it, kind: spec.key)),
+            _Grid(
+              minWidth: 300,
+              children: [
+                for (final it in items) _StdCard(item: it, kind: spec.key),
+              ],
+            ),
           ],
         );
     }
@@ -2677,7 +3049,6 @@ class _LogoCard extends StatelessWidget {
   final Map<String, String> item;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final img = _v(item, 'image');
     final sub = _v(item, 'subtitle');
     final link = _v(item, 'link');
@@ -2685,16 +3056,38 @@ class _LogoCard extends StatelessWidget {
       onTap: link.isEmpty ? null : () => _openUrl(link),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
+        padding: const EdgeInsets.all(14),
+        decoration: _cardDeco(context),
         child: Row(children: [
-          _PhotoThumb(url: img.isEmpty ? null : img, index: _v(item, 'title').length, width: 56, height: 56, radius: 14),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_v(item, 'title'), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: _ink(context))),
-            if (sub.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant))),
-          ])),
-          if (link.isNotEmpty) Icon(Icons.arrow_outward_rounded, size: 16, color: scheme.onSurfaceVariant),
+          _Thumb(
+              url: img.isEmpty ? null : img,
+              label: _v(item, 'title'),
+              size: 52,
+              radius: 12),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_v(item, 'title'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14.5,
+                          color: _ink(context))),
+                  if (sub.isNotEmpty)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 12, color: _kMuted))),
+                ]),
+          ),
+          if (link.isNotEmpty)
+            const Icon(Icons.arrow_outward_rounded, size: 16, color: _kMuted),
         ]),
       ),
     );
@@ -2707,25 +3100,55 @@ class _StepCard extends StatelessWidget {
   final int number;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final img = _v(item, 'image');
     final text = _v(item, 'text');
-    void more() => _showDetail(context, title: _v(item, 'title'), image: img, chip: '${_tr(context, 'step')} $number', text: text);
+    void more() => _showDetail(context,
+        title: _v(item, 'title'),
+        image: img,
+        chip: '${_tr(context, 'step')} $number',
+        text: text);
     return _Tap(
       onTap: text.isEmpty ? null : more,
       child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Stack(children: [
-            _PhotoThumb(url: img.isEmpty ? null : img, index: number, width: 72, height: 72, radius: 14),
-            Positioned(right: 4, bottom: 4, child: Container(width: 24, height: 24, decoration: const BoxDecoration(color: Color(0xFFFFB800), shape: BoxShape.circle), child: Center(child: Text('$number', style: TextStyle(color: _ink(context), fontWeight: FontWeight.w900, fontSize: 11))))),
-          ]),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_v(item, 'title'), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: _ink(context))),
-            if (text.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(height: 1.5, fontSize: 12.5, color: scheme.onSurfaceVariant))),
-          ])),
+        padding: const EdgeInsets.all(20),
+        decoration: _cardDeco(context),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+                color: _ink(context), borderRadius: BorderRadius.circular(10)),
+            child: Center(
+              child: Text('$number',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15)),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_v(item, 'title'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          letterSpacing: -0.2,
+                          color: _ink(context))),
+                  if (text.isNotEmpty)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(text,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                height: 1.6, fontSize: 13.5, color: _kMuted))),
+                ]),
+          ),
         ]),
       ),
     );
@@ -2738,71 +3161,145 @@ class _StdCard extends StatelessWidget {
   final String kind;
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final img = _v(item, 'image');
     final video = _v(item, 'video');
     final sub = _v(item, 'subtitle');
     final meta = _v(item, 'meta');
     final text = _v(item, 'text');
     final link = _v(item, 'link');
-    final ctaLabel = kind == 'careers' ? _tr(context, 'apply') : _tr(context, 'learn_more');
+    final ctaLabel =
+        kind == 'careers' ? _tr(context, 'apply') : _tr(context, 'learn_more');
     final target = link.isNotEmpty ? link : video;
-    final targetLabel = link.isEmpty && video.isNotEmpty ? _tr(context, 'watch') : ctaLabel;
-    void more() => _showDetail(context, title: _v(item, 'title'), subtitle: sub, image: img, chip: meta, text: text, url: target, urlLabel: targetLabel);
-    return _Tap(
-      onTap: more,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Stack(children: [
-            _PhotoThumb(url: img.isEmpty ? null : img, index: _v(item, 'title').length, width: 92, height: 92, radius: 16),
-            if (video.isNotEmpty) Positioned.fill(child: Center(child: Container(padding: const EdgeInsets.all(7), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: Icon(Icons.play_arrow_rounded, color: _ink(context), size: 20)))),
-          ]),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_v(item, 'title'), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: _ink(context))),
-            if (sub.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant))),
-            if (text.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(height: 1.5, fontSize: 12.5, color: scheme.onSurfaceVariant))),
-            if (meta.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 5), child: Text(meta.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: scheme.primary))),
-          ])),
-          Icon(Icons.arrow_forward_rounded, size: 18, color: scheme.onSurfaceVariant),
-        ]),
-      ),
+    final targetLabel =
+        link.isEmpty && video.isNotEmpty ? _tr(context, 'watch') : ctaLabel;
+    return _MediaCard(
+      title: _v(item, 'title'),
+      image: img.isEmpty ? null : img,
+      eyebrow: sub,
+      text: text,
+      meta: meta,
+      video: video.isNotEmpty,
+      onTap: () => _showDetail(context,
+          title: _v(item, 'title'),
+          subtitle: sub,
+          image: img,
+          chip: meta,
+          text: text,
+          url: target,
+          urlLabel: targetLabel),
     );
   }
 }
 
-// ── FOOTER V9 — 1 seule ligne ──
+// ─────────────────────────────────────────────────────────────────────────────
+// FOOTER
+// ─────────────────────────────────────────────────────────────────────────────
 class _Footer extends StatelessWidget {
-  const _Footer({required this.bundle, required this.links, required this.onTop});
+  const _Footer(
+      {required this.bundle, required this.links, required this.onTop});
   final BusinessBundle bundle;
   final List<(String, VoidCallback)> links;
   final VoidCallback onTop;
+
   @override
   Widget build(BuildContext context) {
     final theme = bundle.theme;
     final b = bundle.business;
-    final navy = Color.lerp(theme.primary, Colors.black, 0.72)!;
+    final navy = Color.lerp(theme.primary, Colors.black, 0.75)!;
+    final accent = theme.accent ?? const Color(0xFFEAB308);
     final publicUrl = '$kThixPublicBaseUrl/b/${b.thixId}';
+    final narrow = MediaQuery.sizeOf(context).width < 700;
     final section = bundle.sectionOfType(BusinessSectionType.contact);
-    final channels = section?.content is ContactContent ? (section!.content as ContactContent).channels : const <ContactChannel>[];
+    final channels = section?.content is ContactContent
+        ? (section!.content as ContactContent).channels
+        : const <ContactChannel>[];
+
+    Widget iconBtn(IconData icon, VoidCallback onTap, {bool strong = false}) =>
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: _Tap(
+            onTap: onTap,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: strong ? accent : Colors.white.withValues(alpha: 0.08),
+              ),
+              child: Icon(icon, size: 16, color: strong ? navy : Colors.white),
+            ),
+          ),
+        );
+
     return Container(
-      width: double.infinity, color: navy,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      width: double.infinity,
+      color: navy,
+      padding: EdgeInsets.symmetric(
+          horizontal: narrow ? 20 : 32, vertical: narrow ? 32 : 44),
       child: _Wrap(
-        child: Row(children: [
-          _Avatar(url: b.logoUrl, name: b.name, radius: 16),
-          const SizedBox(width: 10),
-          Expanded(child: Text('${b.name}  •  © ${DateTime.now().year}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12.5))),
-          for (final c in channels.take(3))
-            Padding(padding: const EdgeInsets.only(left: 8), child: _Tap(
-              onTap: () async { final uri = c.launchUri; if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication); },
-              child: Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.10)), child: Icon(_contactIcon(c.type), size: 14, color: Colors.white)),
-            )),
-          Padding(padding: const EdgeInsets.only(left: 8), child: _Tap(onTap: () => Share.share(publicUrl), child: Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.10)), child: const Icon(Icons.ios_share_rounded, size: 14, color: Colors.white)))),
-          Padding(padding: const EdgeInsets.only(left: 8), child: _Tap(onTap: onTop, child: Container(width: 32, height: 32, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFFFFB800)), child: Icon(Icons.arrow_upward_rounded, size: 16, color: _ink(context))))),
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              _Avatar(url: b.logoUrl, name: b.name, radius: 18, square: true),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(b.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        letterSpacing: -0.2)),
+              ),
+              for (final c in channels.take(3))
+                iconBtn(_contactIcon(c.type), () async {
+                  final uri = c.launchUri;
+                  if (uri != null) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                }),
+              iconBtn(Icons.ios_share_rounded, () => Share.share(publicUrl)),
+              iconBtn(Icons.arrow_upward_rounded, onTop, strong: true),
+            ]),
+            if (links.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              Wrap(
+                spacing: 24,
+                runSpacing: 10,
+                children: [
+                  for (final l in links)
+                    _Tap(
+                      onTap: l.$2,
+                      child: Text(l.$1,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.75),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w500)),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 28),
+            Container(height: 1, color: Colors.white.withValues(alpha: 0.12)),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 16,
+              runSpacing: 6,
+              children: [
+                Text('© ${DateTime.now().year} ${b.name}. ${_tr(context, 'rights')}',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 12)),
+                Text(_tr(context, 'powered'),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 12)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
