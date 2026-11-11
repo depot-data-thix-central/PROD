@@ -3,12 +3,13 @@
 //  Fichier  : lib/presentation/thix_portfolio/data/business_repository.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.1.0 — Novembre 2026
+//  Version  : 1.2.0 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
 //
+//  v1.2.0 : Ajout de `searchBusinessesByName` pour l'autocomplétion 
+//           dans le header de recherche.
 //  v1.1.0 : FIX upsertSections — les sections sans id (nouvelles) ne
 //           envoient plus `id: ''` (uuid invalide). Postgres génère l'uuid.
-//           Les lignes avec id et sans id sont envoyées séparément.
 //  v1.0.2 : import 'dart:async' pour unawaited()
 //
 //  Seul point d'accès à Supabase pour tout le module portfolio business.
@@ -124,6 +125,28 @@ class BusinessRepository {
     return rows
         .map((e) => Business.fromJson(Map<String, dynamic>.from(e)))
         .toList(growable: false);
+  }
+
+  // ✅ NOUVEAU : RECHERCHE POUR L'AUTOCOMPLÉTION
+  /// Recherche des entreprises par nom (uniquement les publiées).
+  /// Utilisé par la barre de recherche du Header.
+  Future<List<Map<String, dynamic>>> searchBusinessesByName(String query) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return [];
+
+    try {
+      final response = await _db
+          .from(_tableBusinesses)
+          .select('thix_id, name, logo_url')
+          .eq('status', BusinessStatus.published.slug)
+          .ilike('name', '%$cleanQuery%') // Recherche insensible à la casse
+          .limit(5); // Maximum 5 suggestions
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('searchBusinessesByName erreur: $e');
+      return [];
+    }
   }
 
   // ── CREATE (génération ID côté DB) ──────────────────────────────────
