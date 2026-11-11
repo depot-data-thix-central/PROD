@@ -1,9 +1,10 @@
 // lib/presentation/network/widgets/story_viewer.dart
 // ============================================================================
-// STORY VIEWER — Plein écran avec Like ❤️ + Vu par 👁️ + Audio + Suppression
+// STORY VIEWER — Plein écran avec Like ❤️ + Vu par 👁️ + Audio + Vidéo + Suppression
 // • Like animé (cœur pop) + persistance DB (story_likes)
 // • Vu par (sheet liste viewers, uniquement pour le créateur)
 // • Support audio (lecteur inline play/pause)
+// • Support vidéo (auto-play, timer synchronisé, pause sur long-press)
 // • Support fond coloré (bg_color)
 // • Suppression de la story (avec confirmation)
 // • Certification badge sur le nom de l'auteur
@@ -15,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../../models/network_story.dart';
 
@@ -48,6 +50,9 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
   final Map<String, Map<String, dynamic>> _likeState = {};
   // ── Animation cœur pop (storyId -> AnimationController) ──
   final Map<String, AnimationController> _heartAnims = {};
+
+  // ── Référence au lecteur vidéo de la page courante (pour synchroniser timer) ──
+  _InlineStoryVideoState? _currentVideoState;
 
   @override
   void initState() {
@@ -85,15 +90,33 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
 
   String? _mediaType(NetworkStory s) {
     try {
-      return (s as dynamic).mediaType as String?;
-    } catch (_) {
-      // Fallback : déduction depuis le contenu
-      final url = _mediaUrl(s);
-      if (url.isEmpty) return 'text';
-      final lower = url.toLowerCase();
-      if (lower.endsWith('.m4a') || lower.endsWith('.mp3') || lower.endsWith('.aac')) return 'audio';
-      return 'image';
+      final explicit = (s as dynamic).mediaType as String?;
+      if (explicit != null && explicit.isNotEmpty) return explicit;
+    } catch (_) {}
+
+    // Fallback : déduction depuis l'URL
+    final url = _mediaUrl(s);
+    if (url.isEmpty) return 'text';
+    final lower = url.toLowerCase();
+
+    // Vidéo
+    if (lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.avi')) {
+      return 'video';
     }
+    // Audio
+    if (lower.endsWith('.m4a') ||
+        lower.endsWith('.mp3') ||
+        lower.endsWith('.aac') ||
+        lower.endsWith('.ogg') ||
+        lower.endsWith('.wav')) {
+      return 'audio';
+    }
+    // Image (par défaut si URL présente)
+    return 'image';
   }
 
   Color? _parseHex(String? hex) {
@@ -114,13 +137,42 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
   void _startTimer() {
     _timer?.cancel();
     _progress = 0;
-    final s = widget.stories[_currentIndex];
-    final hasMedia = _mediaUrl(s).isNotEmpty;
-    final durationMs = hasMedia ? 5000 : 4000;
+    _currentVideoState = null;
 
     const tick = Duration(milliseconds: 50);
     _timer = Timer.periodic(tick, (t) {
       if (_paused || !mounted) return;
+
+      // ── Si la page courante est une vidéo, synchronise le timer avec la lecture ──
+      final video = _currentVideoState;
+      if (video != null && video.isReady) {
+        final pos = video.position.inMilliseconds.toDouble();
+        final total = video.duration.inMilliseconds.toDouble();
+        if (total > 0) {
+          setState(() {
+            _progress = (pos / total).clamp(0.0, 1.0);
+            if (_progress >= 1.0) {
+              _progress = 0;
+              _goNext();
+            }
+          });
+          return;
+        }
+      }
+
+      // ── Sinon : timer fixe (5s image, 4s texte, 60s audio fallback) ──
+      final s = widget.stories[_currentIndex];
+      final mediaType = _mediaType(s) ?? 'image';
+      final hasMedia = _mediaUrl(s).isNotEmpty;
+      int durationMs;
+      if (mediaType == 'audio') {
+        durationMs = 60000; // 60s max pour audio
+      } else if (hasMedia) {
+        durationMs = 5000;
+      } else {
+        durationMs = 4000;
+      }
+
       setState(() {
         _progress += tick.inMilliseconds / durationMs;
         if (_progress >= 1) {
@@ -145,20 +197,34 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
     }
   }
 
+  /// Callback appelé par _InlineStoryVideo quand l'état pause/play change
+  void _onVideoPauseChanged(bool paused) {
+    if (mounted) setState(() => _paused = paused);
+  }
+
+  /// Enregistre le lecteur vidéo courant pour synchroniser le timer
+  void _attachVideo(_InlineStoryVideoState state) {
+    _currentVideoState = state;
+  }
+
+  void _detachVideo(_InlineStoryVideoState state) {
+    if (_currentVideoState == state) _currentVideoState = null;
+  }
+
   // ════════════════════════════════════════════════════════════════════════
   // VIEWS + LIKES
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _markViewed(NetworkStory s) async {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid == null || uid == s.userId) return; // ✅ créateur exclu
+      if (uid == null || uid == s.userId) return;
       await Supabase.instance.client.from('story_views').upsert(
         {
           'story_id': s.id,
-          'viewer_id': uid,   // ✅ était 'user_id'
+          'viewer_id': uid,
           'viewed_at': DateTime.now().toUtc().toIso8601String(),
         },
-        onConflict: 'story_id,viewer_id',   // ✅ était 'story_id,user_id'
+        onConflict: 'story_id,viewer_id',
         ignoreDuplicates: true,
       );
     } catch (_) {}
@@ -174,7 +240,6 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
     try {
       final supa = Supabase.instance.client;
 
-      // Comptages
       final counts = await supa.from('story_likes').select('story_id').inFilter('story_id', ids);
       final countMap = <String, int>{};
       for (final row in counts as List) {
@@ -182,7 +247,6 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
         if (id != null) countMap[id] = (countMap[id] ?? 0) + 1;
       }
 
-      // Mes likes
       final myLikes = await supa.from('story_likes').select('story_id').eq('user_id', uid).inFilter('story_id', ids);
       final likedSet = <String>{};
       for (final row in myLikes as List) {
@@ -230,7 +294,6 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
       }
     } catch (e) {
       debugPrint('[Story] toggleLike: $e');
-      // Rollback
       setState(() {
         _likeState[s.id] = {'liked': wasLiked, 'count': state['count'] as int};
       });
@@ -325,8 +388,15 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
             _toggleLike(); // Tap central = like
           }
         },
-        onLongPressStart: (_) => setState(() => _paused = true),
-        onLongPressEnd: (_) => setState(() => _paused = false),
+        onLongPressStart: (_) {
+          setState(() => _paused = true);
+          // Met aussi en pause la vidéo si c'est une vidéo
+          _currentVideoState?.pause();
+        },
+        onLongPressEnd: (_) {
+          setState(() => _paused = false);
+          _currentVideoState?.play();
+        },
         child: PageView.builder(
           controller: _controller,
           itemCount: widget.stories.length,
@@ -354,29 +424,18 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
               fit: StackFit.expand,
               children: [
                 // ── MÉDIA ──
-                _buildMediaContent(url, text, bgColor, mediaType),
+                _buildMediaContent(
+                  s,
+                  url,
+                  text,
+                  bgColor,
+                  mediaType,
+                  isActive: index == _currentIndex,
+                ),
 
                 // ── CŒUR POP ANIMÉ ──
                 if (heartAnim != null)
                   Center(child: _AnimatedHeartPop(progress: heartAnim.value)),
-
-                // ── TEXTE OVERLAY si image + texte ──
-                if (url.isNotEmpty && text.isNotEmpty && mediaType != 'audio')
-                  Positioned(
-                    left: 20,
-                    right: 20,
-                    bottom: 110,
-                    child: Text(
-                      text,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
-                      ),
-                    ),
-                  ),
 
                 // ── BARRES DE PROGRESSION ──
                 Positioned(
@@ -507,7 +566,7 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
                 ),
 
                 // ── PAUSE INDICATOR ──
-                if (_paused)
+                if (_paused && index == _currentIndex)
                   Center(
                     child: Container(
                       padding: const EdgeInsets.all(16),
@@ -545,28 +604,45 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
     );
   }
 
-  // ── CONTENU MÉDIA (image / audio / texte) ──
-  Widget _buildMediaContent(String url, String text, Color? bgColor, String mediaType) {
+  // ── CONTENU MÉDIA (image / audio / vidéo / texte) ──
+  Widget _buildMediaContent(
+    NetworkStory s,
+    String url,
+    String text,
+    Color? bgColor,
+    String mediaType, {
+    required bool isActive,
+  }) {
     final hasText = text.isNotEmpty;
-    final hasBg = bgColor != null;
+
+    // ── CAS 1 : VIDÉO ──
+    if (mediaType == 'video' && url.isNotEmpty) {
+      return _InlineStoryVideo(
+        key: ValueKey(s.id),
+        url: url,
+        isActive: isActive,
+        isPaused: _paused,
+        onAttach: _attachVideo,
+        onDetach: _detachVideo,
+        onPauseChanged: _onVideoPauseChanged,
+        onEnded: _goNext,
+        bgColor: bgColor,
+        text: text,
+      );
+    }
+
+    // ── CAS 2 : AUDIO ──
     final isAudio = mediaType == 'audio' ||
         url.toLowerCase().endsWith('.m4a') ||
         url.toLowerCase().endsWith('.mp3');
-
-    // ── DEBUG : vérifie que bgColor est bien passé ──
-    debugPrint('[StoryView] id=${widget.stories[_currentIndex].id} '
-        'mediaType=$mediaType url=${url.isEmpty ? "<empty>" : "ok"} '
-        'bgColor=${bgColor?.toARGB32().toRadixString(16)} text="${text.substring(0, text.length.clamp(0, 30))}"');
-
-    // ── CAS 1 : AUDIO — fond dégradé + lecteur ──
     if (isAudio) {
       return Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: hasBg
-                ? [bgColor!, bgColor.withOpacity(0.6)]
+            colors: bgColor != null
+                ? [bgColor, bgColor.withOpacity(0.6)]
                 : const [Color(0xFF1A1F2E), Color(0xFF0A0E1A)],
           ),
         ),
@@ -607,14 +683,12 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
       );
     }
 
-    // ── CAS 2 : IMAGE (avec ou sans texte) ──
+    // ── CAS 3 : IMAGE ──
     if (url.isNotEmpty) {
       return Stack(
         fit: StackFit.expand,
         children: [
-          // Fond coloré en dessous (visible si image transparente / chargement)
           Container(color: bgColor ?? const Color(0xFF0B1B3D)),
-          // Image par-dessus
           Image.network(
             url,
             fit: BoxFit.contain,
@@ -625,7 +699,6 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
             },
             errorBuilder: (_, __, ___) => _textFallback(text, bgColor),
           ),
-          // Texte overlay en bas
           if (hasText)
             Positioned(
               left: 20,
@@ -646,14 +719,13 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
       );
     }
 
-    // ── CAS 3 : TEXTE SEUL — fond coloré OU dégradé ──
+    // ── CAS 4 : TEXTE SEUL ──
     return _textFallback(text, bgColor);
   }
 
   Widget _textFallback(String text, Color? bgColor) {
     final hasText = text.isNotEmpty;
     return Container(
-      // ✅ Fond coloré en priorité, sinon dégradé
       color: bgColor,
       decoration: bgColor == null
           ? const BoxDecoration(
@@ -676,7 +748,6 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
                     fontSize: 26,
                     fontWeight: FontWeight.w700,
                     height: 1.3,
-                    // Ombre plus forte sur fond clair (jaune, or) pour lisibilité
                     shadows: [
                       Shadow(blurRadius: 10, color: Colors.black.withOpacity(0.7), offset: const Offset(0, 2)),
                     ],
@@ -857,6 +928,226 @@ class _InlineStoryAudioState extends State<_InlineStoryAudio> {
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         ],
       ),
+    );
+  }
+}
+
+// ============================================================================
+// LECTEUR VIDÉO INLINE (pour stories vidéo)
+// • Auto-play à l'initialisation
+// • Synchronise timer parent avec position de la vidéo
+// • Gère pause/play global (long-press)
+// • Affiche texte overlay en bas si présent
+// • Fallback sur placeholder si chargement échoue
+// ============================================================================
+class _InlineStoryVideo extends StatefulWidget {
+  final String url;
+  final bool isActive;
+  final bool isPaused;
+  final Color? bgColor;
+  final String text;
+  final void Function(_InlineStoryVideoState) onAttach;
+  final void Function(_InlineStoryVideoState) onDetach;
+  final void Function(bool paused) onPauseChanged;
+  final VoidCallback onEnded;
+
+  const _InlineStoryVideo({
+    super.key,
+    required this.url,
+    required this.isActive,
+    required this.isPaused,
+    required this.bgColor,
+    required this.text,
+    required this.onAttach,
+    required this.onDetach,
+    required this.onPauseChanged,
+    required this.onEnded,
+  });
+
+  @override
+  State<_InlineStoryVideo> createState() => _InlineStoryVideoState();
+}
+
+class _InlineStoryVideoState extends State<_InlineStoryVideo> {
+  VideoPlayerController? _controller;
+  bool _hasError = false;
+  bool _isLoading = true;
+  bool _muted = false;
+
+  bool get isReady => _controller != null && _controller!.value.isInitialized;
+  Duration get position => _controller?.value.position ?? Duration.zero;
+  Duration get duration => _controller?.value.duration ?? Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _initController();
+    widget.onAttach(this);
+  }
+
+  @override
+  void didUpdateWidget(covariant _InlineStoryVideo old) {
+    super.didUpdateWidget(old);
+    // Synchronise pause/play depuis le parent (long-press)
+    if (widget.isPaused != old.isPaused && _controller != null && _controller!.value.isInitialized) {
+      if (widget.isPaused) {
+        _controller!.pause();
+      } else {
+        _controller!.play();
+      }
+    }
+  }
+
+  Future<void> _initController() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      _controller = controller;
+
+      controller.addListener(() {
+        if (!mounted) return;
+        // Si la vidéo se termine → story suivante
+        if (controller.value.position >= controller.value.duration &&
+            controller.value.duration > Duration.zero &&
+            !controller.value.isPlaying) {
+          widget.onEnded();
+        }
+      });
+
+      await controller.initialize();
+      await controller.setLooping(false);
+
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      // Auto-play si la story est active et non pausée
+      if (widget.isActive && !widget.isPaused) {
+        await controller.play();
+      }
+    } catch (e) {
+      debugPrint('[StoryVideo] init error: $e');
+      if (mounted) setState(() { _hasError = true; _isLoading = false; });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.onDetach(this);
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void pause() {
+    if (_controller != null && _controller!.value.isInitialized && _controller!.value.isPlaying) {
+      _controller!.pause();
+    }
+  }
+
+  void play() {
+    if (_controller != null && _controller!.value.isInitialized && !_controller!.value.isPlaying) {
+      _controller!.play();
+    }
+  }
+
+  Future<void> _toggleMute() async {
+    if (_controller == null) return;
+    final newVol = _muted ? 1.0 : 0.0;
+    await _controller!.setVolume(newVol);
+    if (mounted) setState(() => _muted = !newVol.isNaN && newVol == 0.0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // ── ERREUR : fallback texte/coloré ──
+    if (_hasError) {
+      return Container(
+        color: widget.bgColor ?? const Color(0xFF0B1B3D),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 48),
+              const SizedBox(height: 12),
+              const Text('Vidéo indisponible', style: TextStyle(color: Colors.white70, fontSize: 15)),
+              if (widget.text.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  child: Text(widget.text,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ── LOADING ──
+    if (_isLoading || _controller == null || !_controller!.value.isInitialized) {
+      return Container(
+        color: widget.bgColor ?? const Color(0xFF0B1B3D),
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+        ),
+      );
+    }
+
+    // ── VIDÉO OK ──
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Fond coloré (visible si la vidéo a des bandes noires)
+        Container(color: widget.bgColor ?? Colors.black),
+
+        // Vidéo (contain pour respecter l'aspect ratio)
+        Center(
+          child: AspectRatio(
+            aspectRatio: _controller!.value.aspectRatio,
+            child: VideoPlayer(_controller!),
+          ),
+        ),
+
+        // Texte overlay en bas (si présent)
+        if (widget.text.isNotEmpty)
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 110,
+            child: Text(
+              widget.text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
+              ),
+            ),
+          ),
+
+        // Bouton mute/unmute en haut à droite (sous la barre de progression)
+        Positioned(
+          top: 90,
+          right: 16,
+          child: GestureDetector(
+            onTap: _toggleMute,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.4),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
