@@ -5,7 +5,7 @@
 // ✅ AUCUN mock-up : hero / récentes / vidéos / tendances / fil = prov.articles.
 // ✅ HERO EDGE-TO-EDGE : banner occupe 100% de la largeur, image bien cadrée.
 // ✅ FINITIONS PREMIUM : skeleton shimmer, pills animées, CTA shimmer,
-//    auto-play avec pause tactile, haptic feedback, slots notifications push.
+//    auto-play avec pause tactile, slots notifications push.
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
@@ -1187,7 +1187,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
           child: PageView.builder(
             controller: _pageCtrl,
             onPageChanged: (v) {
-              HapticFeedback.selectionClick();
+              // ✅ Vibration supprimée ici
               setState(() => _page = v);
             },
             itemCount: list.length,
@@ -1229,7 +1229,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     );
   }
 
-  // ✅ Correction ici : ajout du paramètre itemCount pour remplacer _items.length
   Widget _buildHeroSlide(NewsArticle a, int index, int itemCount) {
     final categoryColor = _categoryColor(a.category);
     return GestureDetector(
@@ -1309,24 +1308,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                       ),
                     ),
                   ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 100,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            Colors.black.withOpacity(0.15),
-                            Colors.transparent,
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                  // ✅ Suppression du dégradé noir en bas de la photo
                   Positioned(
                     left: 20,
                     top: 20,
@@ -1473,7 +1455,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                         ),
                       ),
                     ),
-                  // ✅ Correction ici : itemCount au lieu de _items.length
                   if (index < itemCount - 1)
                     Positioned(
                       right: 8,
