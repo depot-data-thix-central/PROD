@@ -143,7 +143,7 @@ class ThixInfoHome extends ConsumerStatefulWidget {
 
 class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   String _cat = 'featured';
-  final PageController _pageCtrl = PageController(viewportFraction: 0.92);
+  final PageController _pageCtrl = PageController(viewportFraction: 0.88);
   final ScrollController _breakingCtrl = ScrollController();
   final ScrollController _mainScrollCtrl = ScrollController();
   Timer? _timer; Timer? _breakingTimer; int _page = 0;
@@ -452,59 +452,142 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   Widget _buildHeroSection(List<NewsArticle> list) {
   return Column(children: [
     SizedBox(height: 300,
-      child: PageView.builder(controller: _pageCtrl, onPageChanged: (v) => setState(() => _page = v), itemCount: list.length,
+      child: PageView.builder(
+        controller: _pageCtrl, 
+        onPageChanged: (v) => setState(() => _page = v), 
+        itemCount: list.length,
         itemBuilder: (_, i) {
           final a = list[i];
-          return GestureDetector(onTap: () => context.push('/thix-info/article/${a.id}'),
-            child: Container(margin: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 8))]),
-              child: ClipRRect(borderRadius: BorderRadius.circular(20),
-                child: Stack(children: [
-                  // 1. L'image en fond
-                  if (a.imageUrl != null) 
-                    Positioned.fill(child: Image.network(a.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _kBorder))),
-                  
-                  // 2. Le dégradé corrigé (On réduit la zone blanche pour laisser respirer la photo)
-                  Positioned.fill(child: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft, 
-                        end: Alignment.centerRight, 
-                        stops: [0.0, 0.40, 0.70], // Le blanc s'arrête à 40%, la transition se finit à 70%
-                        colors: [Colors.white, Colors.white, Colors.transparent] 
-                      )
-                    )
-                  )),
-                  
-                  // 3. Le contenu (Texte)
-                  Positioned(left: 16, top: 16, bottom: 16, right: 80, // right réduit à 80 pour laisser plus de place au texte
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: _kGold, borderRadius: BorderRadius.circular(6)), child: const Text('À LA UNE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1, color: _kInk))),
-                      const SizedBox(height: 10),
-                      
-                      // Ajout d'une ombre portée sur le titre pour la lisibilité
-                      Text(a.title, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.w900, height: 1.2, color: _kInk,
-                        shadows: [Shadow(color: Colors.white, blurRadius: 8, offset: Offset(0, 0))] // Ombre blanche
-                      )),
-                      
-                      const SizedBox(height: 8),
-                      
-                      // Ombre portée sur le résumé
-                      Text(a.summary ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(
-                        fontSize: 12.5, height: 1.45, color: _kMuted, fontWeight: FontWeight.w500,
-                        shadows: [Shadow(color: Colors.white, blurRadius: 8, offset: Offset(0, 0))] // Ombre blanche
-                      )),
-                      
-                      const Spacer(),
-                      Row(children: [const Icon(Icons.schedule_rounded, size: 13, color: _kMuted), const SizedBox(width: 4), Text(_formatTimeAgo(a.publishedAt), style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600)), const SizedBox(width: 12), const Icon(Icons.remove_red_eye_rounded, size: 13, color: _kMuted), const SizedBox(width: 4), Text(_compactViews(a.viewsCount), style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600))]),
-                      const SizedBox(height: 10),
-                      Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: _kGold, borderRadius: BorderRadius.circular(20)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Text("Lire l'article", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: _kInk)), SizedBox(width: 6), Icon(Icons.arrow_forward_rounded, size: 14, color: _kInk)])),
-                    ]),
-                  ),
-                  Positioned(left: 4, top: 0, bottom: 0, child: Center(child: _heroArrow(Icons.chevron_left_rounded, () { if (_page > 0) _pageCtrl.previousPage(duration: const Duration(milliseconds: 400), curve: Curves.easeOut); }))),
-                  Positioned(right: 4, top: 0, bottom: 0, child: Center(child: _heroArrow(Icons.chevron_right_rounded, () { if (_page < list.length - 1) _pageCtrl.nextPage(duration: const Duration(milliseconds: 400), curve: Curves.easeOut); }))),
-                ]),
+          return GestureDetector(
+            onTap: () => context.push('/thix-info/article/${a.id}'),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 12), // Marge augmentée pour séparer les cartes
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20), 
+                color: Colors.white, 
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 8))]
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // On définit des proportions strictes
+                    final imageWidth = constraints.maxWidth * 0.45; // L'image prend 45% à droite
+                    final textWidth = constraints.maxWidth * 0.60; // Le texte a de la place (60%) mais reste à gauche
+                    
+                    return Stack(
+                      children: [
+                        // 1. L'image, calée strictement à droite
+                        if (a.imageUrl != null)
+                          Positioned(
+                            top: 0, bottom: 0, right: 0,
+                            width: imageWidth,
+                            child: Image.network(
+                              a.imageUrl!, 
+                              fit: BoxFit.cover, 
+                              alignment: Alignment.centerLeft, // Aligne le focus de l'image vers le texte
+                              errorBuilder: (_, __, ___) => Container(color: _kBorder)
+                            ),
+                          ),
+
+                        // 2. Le dégradé pour lier l'image au fond blanc
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                stops: const [0.45, 0.75], // Le blanc pur s'arrête à 45%, transition jusqu'à 75%
+                                colors: [Colors.white, Colors.white.withOpacity(0.0)],
+                              )
+                            )
+                          )
+                        ),
+
+                        // 3. Le contenu (Texte élargi à gauche)
+                        Positioned(
+                          left: 16, top: 16, bottom: 16,
+                          width: textWidth, // Largeur contrôlée
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start, 
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween, // Pousse le bouton en bas
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), 
+                                    decoration: BoxDecoration(color: _kGold, borderRadius: BorderRadius.circular(6)), 
+                                    child: const Text('À LA UNE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1, color: _kInk))
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    a.title, 
+                                    maxLines: 3, 
+                                    overflow: TextOverflow.ellipsis, 
+                                    style: const TextStyle(
+                                      fontSize: 18, // Ajusté pour tenir dans la largeur
+                                      fontWeight: FontWeight.w900, 
+                                      height: 1.2, 
+                                      color: _kInk,
+                                      shadows: [Shadow(color: Colors.white, blurRadius: 6, offset: Offset(0, 0))] // Ombre pour lisibilité
+                                    )
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    a.summary ?? '', 
+                                    maxLines: 2, 
+                                    overflow: TextOverflow.ellipsis, 
+                                    style: const TextStyle(
+                                      fontSize: 12.5, 
+                                      height: 1.45, 
+                                      color: _kMuted, 
+                                      fontWeight: FontWeight.w500,
+                                      shadows: [Shadow(color: Colors.white, blurRadius: 6, offset: Offset(0, 0))]
+                                    )
+                                  ),
+                                ]
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.schedule_rounded, size: 13, color: _kMuted), 
+                                      const SizedBox(width: 4), 
+                                      Text(_formatTimeAgo(a.publishedAt), style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600)), 
+                                      const SizedBox(width: 12), 
+                                      const Icon(Icons.remove_red_eye_rounded, size: 13, color: _kMuted), 
+                                      const SizedBox(width: 4), 
+                                      Text(_compactViews(a.viewsCount), style: const TextStyle(fontSize: 11.5, color: _kMuted, fontWeight: FontWeight.w600))
+                                    ]
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), 
+                                    decoration: BoxDecoration(color: _kGold, borderRadius: BorderRadius.circular(20)), 
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min, 
+                                      children: [
+                                        Text("Lire l'article", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: _kInk)), 
+                                        SizedBox(width: 6), 
+                                        Icon(Icons.arrow_forward_rounded, size: 14, color: _kInk)
+                                      ]
+                                    )
+                                  ),
+                                ]
+                              )
+                            ]
+                          ),
+                        ),
+
+                        // Boutons de navigation (Flèches)
+                        Positioned(left: 4, top: 0, bottom: 0, child: Center(child: _heroArrow(Icons.chevron_left_rounded, () { if (_page > 0) _pageCtrl.previousPage(duration: const Duration(milliseconds: 400), curve: Curves.easeOut); }))),
+                        Positioned(right: 4, top: 0, bottom: 0, child: Center(child: _heroArrow(Icons.chevron_right_rounded, () { if (_page < list.length - 1) _pageCtrl.nextPage(duration: const Duration(milliseconds: 400), curve: Curves.easeOut); }))),
+                      ],
+                    );
+                  }
+                ),
               ),
             ),
           );
@@ -512,10 +595,19 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
       ),
     ),
     const SizedBox(height: 12),
-    Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(list.length, (index) {
-      final isActive = _page == index;
-      return AnimatedContainer(duration: const Duration(milliseconds: 300), margin: const EdgeInsets.symmetric(horizontal: 3), width: isActive ? 22 : 6, height: 6, decoration: BoxDecoration(color: isActive ? _kGoldDark : _kBorder, borderRadius: BorderRadius.circular(3)));
-    })),
+    Row(
+      mainAxisAlignment: MainAxisAlignment.center, 
+      children: List.generate(list.length, (index) {
+        final isActive = _page == index;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300), 
+          margin: const EdgeInsets.symmetric(horizontal: 3), 
+          width: isActive ? 22 : 6, 
+          height: 6, 
+          decoration: BoxDecoration(color: isActive ? _kGoldDark : _kBorder, borderRadius: BorderRadius.circular(3))
+        );
+      })
+    ),
   ]);
 }
   Widget _heroArrow(IconData icon, VoidCallback onTap) => GestureDetector(onTap: onTap, child: Container(width: 28, height: 28, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6)]), child: Icon(icon, size: 18, color: _kInk)));
