@@ -493,39 +493,303 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> with Sing
   }
 
   Widget _gridCard(OpportunityItem o, AppLocalizations l10n) {
-    final d = _daysLeft(o);
-    final isSaved = _saved.contains(o.id);
-    final reward = _rewardOf(o);
-    final url = ThixInputGuard.url(o.imageAssetPath);
-    final closed = d <= 0;
-    final col = _Opp.urgency(d);
-    return GestureDetector(onTap: () => context.push('/opportunities/${o.id}'), child: Container(decoration: BoxDecoration(color: _Opp.card, borderRadius: BorderRadius.circular(20), border: Border.all(color: _Opp.line), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 5))]), clipBehavior: Clip.antiAlias, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      SizedBox(height: _kGridPhotoHeight, child: Stack(fit: StackFit.expand, children: [
-        if (url != null) CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, placeholder: (_, __) => Container(color: _Opp.blueSoft), errorWidget: (_, __, ___) => _letter(o, _kGridPhotoHeight)) else _letter(o, _kGridPhotoHeight),
-        Positioned(top: 9, left: 9, right: 44, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6)]), child: Text(o.category, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _Opp.txt, fontSize: 9.5, fontWeight: FontWeight.w800))))),
-        Positioned(top: 8, right: 8, child: GestureDetector(onTap: () => _toggleSave(o.id), child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: isSaved ? _Opp.blue : Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 6)]), child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, size: 14, color: isSaved ? Colors.white : _Opp.sub)))),
-        if (_isNew(o) && !closed) Positioned(bottom: 9, left: 9, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: _Opp.blue, borderRadius: BorderRadius.circular(7)), child: Text(_tr(l10n, 'opp_new', 'NOUVEAU'), style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5)))),
-        Positioned(bottom: 9, right: 9, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: (closed || d <= 7) ? col : Colors.white, borderRadius: BorderRadius.circular(7)), child: Text(closed ? _tr(l10n, 'opp_closed', 'Clôturé') : 'J-$d', style: TextStyle(color: (closed || d <= 7) ? Colors.white : _Opp.blueDeep, fontSize: 9, fontWeight: FontWeight.w900)))),
-      ])),
-      Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(11, 10, 11, 11), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(ThixInputGuard.text(o.title, maxLength: 90), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _Opp.txt, height: 1.25)),
-        const SizedBox(height: 4),
-        Row(children: [const Icon(Icons.domain_rounded, size: 11, color: _Opp.mut), const SizedBox(width: 4), Expanded(child: Text(ThixInputGuard.text(o.organizer, maxLength: 40), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: _Opp.mut, fontWeight: FontWeight.w600)))]),
-        if (reward.isNotEmpty && reward != '—') ...[const SizedBox(height: 8), Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), decoration: BoxDecoration(color: _Opp.blueSoft, borderRadius: BorderRadius.circular(9)), child: Row(children: [const Icon(Icons.workspace_premium_rounded, size: 11, color: _Opp.blue), const SizedBox(width: 4), Expanded(child: Text(reward, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: _Opp.blueDeep)))])],
-        const Spacer(),
-        Row(children: [const Icon(Icons.event_rounded, size: 11, color: _Opp.mut), const SizedBox(width: 4), Expanded(child: Text(ThixInputGuard.text(o.deadlineLabel, maxLength: 20), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9.5, color: _Opp.sub, fontWeight: FontWeight.w700)))]),
-        const SizedBox(height: 7),
-        ClipRRect(borderRadius: BorderRadius.circular(3), child: LinearProgressIndicator(value: closed ? 1.0 : _ratio(o), minHeight: 4.5, backgroundColor: _Opp.line, valueColor: AlwaysStoppedAnimation(closed ? _Opp.mut : col))),
-      ]))),
-    ]))));
-  }
-  Widget _miniLogo(OpportunityItem o, double size) {
-    final url = ThixInputGuard.url(o.imageAssetPath);
-    return ClipRRect(borderRadius: BorderRadius.circular(9), child: SizedBox(width: size, height: size, child: url != null ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, size)) : _letter(o, size)));
-  }
-  Widget _letter(OpportunityItem o, double size) {
-    return Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_Opp.blueSoft, Color(0xFFD3E3FD)])), alignment: Alignment.center, child: Text(ThixInputGuard.text(o.organizer, maxLength: 1, fallback: 'T').toUpperCase(), style: TextStyle(fontSize: size * 0.35, fontWeight: FontWeight.w800, color: _Opp.blue)));
-  }
+  final d = _daysLeft(o);
+  final isSaved = _saved.contains(o.id);
+  final reward = _rewardOf(o);
+  final url = ThixInputGuard.url(o.imageAssetPath);
+  final closed = d <= 0;
+  final col = _Opp.urgency(d);
+
+  return GestureDetector(
+    onTap: () => context.push('/opportunities/${o.id}'),
+    child: Container(
+      decoration: BoxDecoration(
+        color: _Opp.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _Opp.line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: _kGridPhotoHeight,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (url != null)
+                  CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) =>
+                        Container(color: _Opp.blueSoft),
+                    errorWidget: (_, __, ___) =>
+                        _letter(o, _kGridPhotoHeight),
+                  )
+                else
+                  _letter(o, _kGridPhotoHeight),
+                Positioned(
+                  top: 9,
+                  left: 9,
+                  right: 44,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4.5),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        o.category,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _Opp.txt,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () => _toggleSave(o.id),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: isSaved ? _Opp.blue : Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.12),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        isSaved
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        size: 14,
+                        color: isSaved ? Colors.white : _Opp.sub,
+                      ),
+                    ),
+                  ),
+                ),
+                if (_isNew(o) && !closed)
+                  Positioned(
+                    bottom: 9,
+                    left: 9,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _Opp.blue,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(
+                        _tr(l10n, 'opp_new', 'NOUVEAU'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  bottom: 9,
+                  right: 9,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (closed || d <= 7) ? col : Colors.white,
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(
+                      closed ? _tr(l10n, 'opp_closed', 'Clôturé') : 'J-$d',
+                      style: TextStyle(
+                        color: (closed || d <= 7)
+                            ? Colors.white
+                            : _Opp.blueDeep,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ThixInputGuard.text(o.title, maxLength: 90),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: _Opp.txt,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.domain_rounded,
+                          size: 11, color: _Opp.mut),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          ThixInputGuard.text(o.organizer, maxLength: 40),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: _Opp.mut,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (reward.isNotEmpty && reward != '—') ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _Opp.blueSoft,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.workspace_premium_rounded,
+                              size: 11, color: _Opp.blue),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              reward,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: _Opp.blueDeep,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ], // ✅ fin du spread
+                  const Spacer(),
+                  Row(
+                    children: [
+                      const Icon(Icons.event_rounded,
+                          size: 11, color: _Opp.mut),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          ThixInputGuard.text(o.deadlineLabel,
+                              maxLength: 20),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            color: _Opp.sub,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 7),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: closed ? 1.0 : _ratio(o),
+                      minHeight: 4.5,
+                      backgroundColor: _Opp.line,
+                      valueColor: AlwaysStoppedAnimation(
+                          closed ? _Opp.mut : col),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _miniLogo(OpportunityItem o, double size) {
+  final url = ThixInputGuard.url(o.imageAssetPath);
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(9),
+    child: SizedBox(
+      width: size,
+      height: size,
+      child: url != null
+          ? CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => _letter(o, size),
+            )
+          : _letter(o, size),
+    ),
+  );
+}
+
+Widget _letter(OpportunityItem o, double size) {
+  return Container(
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [_Opp.blueSoft, Color(0xFFD3E3FD)],
+      ),
+    ),
+    alignment: Alignment.center,
+    child: Text(
+      ThixInputGuard.text(o.organizer, maxLength: 1, fallback: 'T')
+          .toUpperCase(),
+      style: TextStyle(
+        fontSize: size * 0.35,
+        fontWeight: FontWeight.w800,
+        color: _Opp.blue,
+      ),
+    ),
+  );
+}
   void _openFilters() {
     final l10n = AppLocalizations.of(context);
     showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) => ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(28)), child: Container(color: Colors.white, padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(ctx).padding.bottom), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
