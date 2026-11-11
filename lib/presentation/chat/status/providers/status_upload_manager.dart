@@ -1,5 +1,4 @@
 // lib/presentation/chat/status/providers/status_upload_manager.dart
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -17,7 +16,8 @@ class UploadTask {
     required this.type,
     this.text,
     this.background,
-    this.filePath,
+    this.bytes,
+    this.ext,
     this.caption,
     this.status = UploadStatus.queued,
     this.errorMessage,
@@ -27,7 +27,8 @@ class UploadTask {
   final UploadType type;
   final String? text;
   final String? background;
-  final String? filePath;
+  final Uint8List? bytes;
+  final String? ext;
   final String? caption;
   final UploadStatus status;
   final String? errorMessage;
@@ -41,7 +42,8 @@ class UploadTask {
       type: type,
       text: text,
       background: background,
-      filePath: filePath,
+      bytes: bytes,
+      ext: ext,
       caption: caption,
       status: status ?? this.status,
       errorMessage: errorMessage,
@@ -66,20 +68,22 @@ class StatusUploadManager extends Notifier<List<UploadTask>> {
     ));
   }
 
-  void enqueueImage(String filePath, {String? caption}) {
+  void enqueueImage(Uint8List bytes, String ext, {String? caption}) {
     _add(UploadTask(
       id: _newId(),
       type: UploadType.image,
-      filePath: filePath,
+      bytes: bytes,
+      ext: ext,
       caption: caption,
     ));
   }
 
-  void enqueueVideo(String filePath, {String? caption}) {
+  void enqueueVideo(Uint8List bytes, String ext, {String? caption}) {
     _add(UploadTask(
       id: _newId(),
       type: UploadType.video,
-      filePath: filePath,
+      bytes: bytes,
+      ext: ext,
       caption: caption,
     ));
   }
@@ -154,16 +158,16 @@ class StatusUploadManager extends Notifier<List<UploadTask>> {
 
         case UploadType.image:
         case UploadType.video:
-          final file = File(task.filePath!);
-          if (!await file.exists()) {
+          final bytes = task.bytes;
+          if (bytes == null || bytes.isEmpty) {
             throw Exception('Fichier introuvable');
           }
 
-          final bytes = Uint8List.fromList(await file.readAsBytes());
-          final ext = task.filePath!.split('.').last.toLowerCase();
+          final isImage = task.type == UploadType.image;
+          final ext = (task.ext ?? (isImage ? 'jpg' : 'mp4')).toLowerCase();
           final service = ref.read(statusServiceProvider);
 
-          final id = task.type == UploadType.image
+          final id = isImage
               ? await service.createImageStatus(
                   bytes: bytes,
                   extension: ext,
