@@ -5,6 +5,22 @@ allprojects {
     }
 }
 
+// Donne un namespace aux anciens plugins qui n'en déclarent pas (requis par AGP 8+/9)
+subprojects {
+    plugins.withId("com.android.library") {
+        def androidExt = project.extensions.findByName("android")
+        if (androidExt != null && !androidExt.namespace) {
+            def manifest = project.file("src/main/AndroidManifest.xml")
+            if (manifest.exists()) {
+                def pkg = new XmlSlurper().parse(manifest).@package.toString()
+                if (pkg) {
+                    androidExt.namespace = pkg
+                }
+            }
+        }
+    }
+}
+
 rootProject.layout.buildDirectory.value(
     rootProject.layout.buildDirectory.dir("../../build").get()
 )
