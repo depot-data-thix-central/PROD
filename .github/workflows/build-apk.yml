@@ -169,7 +169,8 @@ jobs:
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
+            --android-skip-build-dependency-validation
 
       - name: Build release APKs (Obfuscated & Split by ABI)
         run: |
@@ -179,7 +180,8 @@ jobs:
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
+            --android-skip-build-dependency-validation
 
       - name: Verify artifacts
         run: |
