@@ -3,8 +3,7 @@ plugins {
     // START: FlutterFire Configuration
     id "com.google.gms.google-services"
     // END: FlutterFire Configuration
-    id "org.jetbrains.kotlin.android"
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin plugins.
+    // The Flutter Gradle Plugin must be applied after the Android plugin.
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -25,17 +24,17 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        coreLibraryDesugaringEnabled true
+        coreLibraryDesugaringEnabled = true
     }
 
     signingConfigs {
         release {
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
-            storeFile keystoreProperties['storeFile']
+            keyAlias = keystoreProperties['keyAlias']
+            keyPassword = keystoreProperties['keyPassword']
+            storeFile = keystoreProperties['storeFile']
                     ? file(keystoreProperties['storeFile'])
                     : null
-            storePassword keystoreProperties['storePassword']
+            storePassword = keystoreProperties['storePassword']
         }
     }
 
@@ -51,15 +50,14 @@ android {
 
     buildTypes {
         release {
-            // Utilise la clé release si key.properties existe,
-            // sinon utilise la clé debug pour les tests.
+            // Clé release si key.properties existe, sinon clé debug pour les tests.
             signingConfig = keystorePropertiesFile.exists()
                     ? signingConfigs.release
                     : signingConfigs.debug
 
-            // Activer la minification (obfuscation) et le nettoyage des ressources
-            minifyEnabled true
-            shrinkResources true
+            // Obfuscation (R8) et nettoyage des ressources
+            minifyEnabled = true
+            shrinkResources = true
 
             proguardFiles getDefaultProguardFile(
                 'proguard-android-optimize.txt'
