@@ -1,14 +1,11 @@
-//lib/core/media/thix_media_optimizer.dart
-
-import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:light_compressor_v2/light_compressor_v2.dart';
 import 'package:video_player/video_player.dart';
+
+import 'video_compressor/video_compressor.dart';
 
 class MediaOptimizeException implements Exception {
   const MediaOptimizeException(this.message);
@@ -33,8 +30,6 @@ class OptimizedVideo {
 
 class ThixMediaOptimizer {
   ThixMediaOptimizer._();
-
-  static final LightCompressor _compressor = LightCompressor();
 
   // ------------------------------------------------------------------ IMAGES
   /// Compresse par paliers (qualité puis dimensions) jusqu'à passer sous
@@ -88,7 +83,7 @@ class ThixMediaOptimizer {
   static Future<int> fileSize(String path) => File(path).length();
 
   /// Découpe (optionnel) + compresse si nécessaire. Garantit un fichier
-  /// ≤ [maxMB] (2 passes si besoin). Mobile uniquement.
+  /// ≤ [maxMB]. Mobile uniquement.
   static Future<OptimizedVideo> processVideo(
     String path, {
     int maxMB = 64,
@@ -110,74 +105,24 @@ class ThixMediaOptimizer {
       );
     }
 
-    // Le plugin raisonne en MB décimaux → on garde une marge sous la limite.
-    final targetMb = math.max(1, maxMB - 4);
-
-    StreamSubscription<double>? sub;
-    if (onProgress != null) {
-      sub = _compressor.onProgressUpdated.listen(onProgress);
-    }
-    try {
-      // Passe 1 : découpage et/ou compression vers la taille cible.
-      var out = await _compressOnce(
-        path,
-        quality: needsCompress ? VideoQuality.medium : VideoQuality.high,
-        targetMb: needsCompress ? targetMb : null,
-        twoPass: needsCompress,
-        trim: trim,
-      );
-
-      // Passe 2 (plus agressive) si échec ou encore trop gros.
-      if (out == null || await File(out).length() > maxBytes) {
-        out = await _compressOnce(
-          out ?? path,
-          quality: VideoQuality.low,
-          targetMb: targetMb,
-          twoPass: true,
-          trim: out == null ? trim : null, // déjà découpé si la passe 1 a réussi
-        );
-      }
-
-      if (out != null && await File(out).length() <= maxBytes) {
-        return OptimizedVideo(
-          path: out,
-          bytes: await File(out).readAsBytes(),
-          ext: 'mp4',
-        );
-      }
+    final outPath = await VideoCompressor.process(
+      path,
+      maxMB: maxMB,
+      needsCompress: needsCompress,
+      trimStartMs: trim?.startMs,
+      trimEndMs: trim?.endMs,
+      onProgress: onProgress,
+    );
+    if (outPath == null) {
       throw MediaOptimizeException(
         'Vidéo toujours trop volumineuse après compression (max $maxMB MB).',
       );
-    } finally {
-      await sub?.cancel();
     }
-  }
-
-  static Future<String?> _compressOnce(
-    String path, {
-    required VideoQuality quality,
-    required int? targetMb,
-    required bool twoPass,
-    VideoTrimRange? trim,
-  }) async {
-    final result = await _compressor.compressVideo(
-      path: path,
-      videoQuality: quality,
-      isMinBitrateCheckEnabled: false, // force le traitement (trim inclus)
-      android: AndroidConfig(isSharedStorage: false), // stockage app, pas la galerie
-      ios: IOSConfig(saveInGallery: false),
-      video: Video(
-        videoName: 'status_${DateTime.now().millisecondsSinceEpoch}.mp4',
-        targetSizeMb: targetMb,
-        twoPass: twoPass,
-      ),
-      edit: trim == null
-          ? null
-          : VideoEdit(trimStartMs: trim.startMs, trimEndMs: trim.endMs),
+    return OptimizedVideo(
+      path: outPath,
+      bytes: await File(outPath).readAsBytes(),
+      ext: 'mp4',
     );
-    if (result is OnSuccess) return result.destinationPath;
-    debugPrint('[Optimizer] ❌ échec compression vidéo: $result');
-    return null;
   }
 
   static String _extOf(String path) {
