@@ -40,7 +40,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: "3.24.5"
+          flutter-version: "3.27.0"
           cache: true
           cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
@@ -94,17 +94,18 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: "3.24.5"
+          flutter-version: "3.27.0"
           cache: true
           cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: 🩹 Patch video_thumbnail (jcenter + plugins order)
+      - name: 🩹 Patch video_thumbnail (jcenter removed)
         run: |
           set -euo pipefail
-          for dir in $HOME/.pub-cache/hosted/pub.dev/video_thumbnail-*/android; do
+          PUB_CACHE_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
+          for dir in $PUB_CACHE_DIR/hosted/pub.dev/video_thumbnail-*/android; do
             if [ -d "$dir" ] && [ -f "$dir/build.gradle" ]; then
               BUILD_FILE="$dir/build.gradle"
               sed -i 's/jcenter()/mavenCentral()/g' "$BUILD_FILE"
@@ -116,15 +117,16 @@ jobs:
       - name: 🩹 Patch flutter_app_badger (compileSdk + namespace)
         run: |
           set -euo pipefail
-          for dir in $HOME/.pub-cache/hosted/pub.dev/flutter_app_badger-*/android; do
+          PUB_CACHE_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
+          for dir in $PUB_CACHE_DIR/hosted/pub.dev/flutter_app_badger-*/android; do
             if [ -d "$dir" ] && [ -f "$dir/build.gradle" ]; then
               BUILD_FILE="$dir/build.gradle"
               sed -i -E 's/compileSdkVersion[[:space:]]+[0-9]+/compileSdkVersion 35/g' "$BUILD_FILE"
               sed -i -E 's/compileSdk[[:space:]]+[0-9]+/compileSdk 35/g' "$BUILD_FILE"
+              sed -i 's/jcenter()/mavenCentral()/g' "$BUILD_FILE"
               if ! grep -q "namespace" "$BUILD_FILE"; then
                 sed -i "/^android[[:space:]]*{/a\    namespace 'fr.g123k.flutterappbadger.flutterappbadger'" "$BUILD_FILE"
               fi
-              sed -i 's/jcenter()/mavenCentral()/g' "$BUILD_FILE"
               echo "✅ flutter_app_badger patché"
             fi
           done
@@ -147,14 +149,13 @@ jobs:
         run: |
           set -euo pipefail
           echo "Setting up Android keystore..."
-
-          if [ -z "${KEYSTORE_B64}" ]; then echo "Empty"; exit 1; fi
-          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then echo "Missing"; exit 1; fi
-
+          if [ -z "${KEYSTORE_B64}" ]; then echo "Empty secret"; exit 1; fi
+          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then echo "Missing secrets"; exit 1; fi
+          
           mkdir -p android/app
           printf '%s' "${KEYSTORE_B64}" | tr -d '\n\r\t ' | base64 --decode > android/app/keystore.jks
           if [ ! -s android/app/keystore.jks ]; then echo "Empty keystore"; exit 1; fi
-
+          
           cat > android/key.properties <<EOF
           storePassword=${STORE_PASSWORD}
           keyPassword=${KEY_PASSWORD}
@@ -200,6 +201,7 @@ jobs:
           test -f build/app/outputs/bundle/release/app-release.aab
           APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
           test "$APK_COUNT" -gt 0
+          echo "Found 1 AAB and $APK_COUNT APKs"
 
       - name: Generate checksums & Compress symbols
         run: |
