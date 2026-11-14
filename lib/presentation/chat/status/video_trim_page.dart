@@ -1,5 +1,3 @@
-
-//lib/presentation/chat/status/video_trim_page.dart
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -11,17 +9,20 @@ import 'package:thix_id/core/media/thix_media_optimizer.dart';
 /// Sélecteur d'extrait : l'utilisateur choisit la partie à garder
 /// (fenêtre glissante limitée à [maxSeconds]). Renvoie un [VideoTrimRange]
 /// ou null si annulé.
-class VideoTrimPage extends StatefulWidget {
-  const VideoTrimPage({super.key, required this.videoPath, this.maxSeconds = 120});
+///
+/// Nommée StatusVideoTrimPage pour éviter la collision avec le
+/// VideoTrimPage déjà exporté par thix_media_editor.dart.
+class StatusVideoTrimPage extends StatefulWidget {
+  const StatusVideoTrimPage({super.key, required this.videoPath, this.maxSeconds = 120});
 
   final String videoPath;
   final int maxSeconds;
 
   @override
-  State<VideoTrimPage> createState() => _VideoTrimPageState();
+  State<StatusVideoTrimPage> createState() => _VideoTrimPageState();
 }
 
-class _VideoTrimPageState extends State<VideoTrimPage> {
+class _VideoTrimPageState extends State<StatusVideoTrimPage> {
   VideoPlayerController? _c;
   bool _ready = false;
   String? _error;
@@ -44,14 +45,16 @@ class _VideoTrimPageState extends State<VideoTrimPage> {
     _c = c;
     try {
       await c.initialize();
-      if (!mounted) {
-        c.dispose();
+      if (!mounted) return; // l'État a déjà libéré le contrôleur
+      _totalMs = c.value.duration.inMilliseconds.toDouble();
+      if (_totalMs <= 0) {
+        setState(() => _error = 'Durée de la vidéo inconnue.');
         return;
       }
-      _totalMs = c.value.duration.inMilliseconds.toDouble();
       _endMs = math.min(_totalMs, _maxWindowMs);
       c.addListener(_onTick);
       await c.play();
+      if (!mounted) return;
       setState(() => _ready = true);
     } catch (e) {
       debugPrint('[Trim] ❌ init: $e');
@@ -91,15 +94,15 @@ class _VideoTrimPageState extends State<VideoTrimPage> {
     // Fenêtre maximale : la poignée opposée suit.
     if (e - s > _maxWindowMs) {
       if (startMoved) {
-        s = (e - _maxWindowMs).clamp(0.0, _totalMs);
+        s = math.max(0.0, e - _maxWindowMs);
       } else {
-        e = (s + _maxWindowMs).clamp(0.0, _totalMs);
+        e = math.min(_totalMs, s + _maxWindowMs);
       }
     }
     // Extrait minimum : 1 seconde.
     if (e - s < 1000) {
       if (startMoved) {
-        s = math.max(0, e - 1000);
+        s = math.max(0.0, e - 1000);
       } else {
         e = math.min(_totalMs, s + 1000);
       }
