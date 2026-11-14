@@ -102,7 +102,7 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Patch plugins (jcenter, compileSdk, namespace)
+      - name: Patch plugins (jcenter, compileSdk, namespace, Kotlin)
         run: |
           PUB_DIR="${PUB_CACHE:-$HOME/.pub-cache}/hosted/pub.dev"
 
@@ -125,6 +125,15 @@ jobs:
               fi
             fi
           done
+
+          # 4. Kotlin languageVersion/apiVersion 1.x -> 2.0 (Kotlin 2.2 refuse 1.6)
+          grep -rlE "(languageVersion|apiVersion)|KOTLIN_1_" "$PUB_DIR" --include=build.gradle --include=build.gradle.kts 2>/dev/null \
+            | xargs -r sed -i -E \
+              -e "s/(languageVersion|apiVersion)([[:space:]]*=[[:space:]]*|[[:space:]]+)[\"']1\.[0-9]+[\"']/\1\2\"2.0\"/g" \
+              -e 's/KOTLIN_1_[0-9]+/KOTLIN_2_0/g'
+
+          echo "=== sentry_flutter (Kotlin) ==="
+          grep -nE "languageVersion|apiVersion|jvmTarget|KOTLIN_" "$PUB_DIR"/sentry_flutter-*/android/build.gradle || true
 
           echo "=== flutter_app_badger ==="
           cat "$PUB_DIR"/flutter_app_badger-*/android/build.gradle || true
