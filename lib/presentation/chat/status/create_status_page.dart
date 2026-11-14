@@ -214,7 +214,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       }
       return;
     }
-    _activate(removedIndex.clamp(0, _drafts.length - 1));
+    _activate(removedIndex.clamp(0, _drafts.length - 1).toInt());
   }
 
   Future<void> _discard() async {
@@ -426,7 +426,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
           trim = await Navigator.of(context).push<VideoTrimRange>(
             MaterialPageRoute(
               fullscreenDialog: true,
-              builder: (_) => VideoTrimPage(
+              builder: (_) => StatusVideoTrimPage(
                 videoPath: path,
                 maxSeconds: _kMaxVideoDurationSeconds,
               ),
@@ -702,7 +702,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                   width: 42,
                   height: 42,
                   child: CircularProgressIndicator(
-                    value: p == null ? null : (p / 100).clamp(0.0, 1.0),
+                    value: p == null ? null : (p / 100).clamp(0.0, 1.0).toDouble(),
                     color: Colors.white,
                     strokeWidth: 3,
                   ),
