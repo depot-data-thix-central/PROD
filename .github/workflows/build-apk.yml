@@ -96,8 +96,19 @@ jobs:
           cache: true
           cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
+      - name: Flutter version
+        run: flutter --version
+
       - name: Flutter pub get
         run: flutter pub get
+
+      - name: Patch plugins (jcenter supprimé dans Gradle 9)
+        run: |
+          PUB_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
+          grep -rl "jcenter()" "$PUB_DIR/hosted" --include=build.gradle --include=build.gradle.kts 2>/dev/null \
+            | xargs -r sed -i 's/jcenter()/mavenCentral()/g'
+          echo "Vérification video_thumbnail :"
+          grep -n "jcenter\|mavenCentral" "$PUB_DIR"/hosted/pub.dev/video_thumbnail-*/android/build.gradle || true
 
       - name: Generate code (build_runner)
         run: |
