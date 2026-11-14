@@ -1,4 +1,3 @@
-// lib/presentation/chat/status/create_status_page.dart
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -10,10 +9,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:thix_id/core/media/thix_media_editor.dart';
+import 'package:thix_id/core/media/thix_media_optimizer.dart';
 import 'package:thix_id/core/media/thix_photo_editor.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/chat/status/providers/status_upload_manager.dart';
+import 'package:thix_id/presentation/chat/status/video_trim_page.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -28,6 +29,10 @@ const double _kColorPickerBorderSelected = 3.0;
 const double _kColorPickerBorderDefault = 1.0;
 const double _kFontSizeStatus = 26.0;
 const double _kFontSizeHint = 24.0;
+
+const Set<String> _kVideoExts = {
+  'mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm', '3gp', 'hevc', 'mpg', 'mpeg',
+};
 
 const List<Color> _kStatusColors = [
   ThixPolicy.primary,
@@ -99,7 +104,10 @@ class CreateStatusPage extends ConsumerStatefulWidget {
 
 class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
   final _textCtrl = TextEditingController();
+  final _picker = ImagePicker();
   bool _busy = false;
+  String? _busyMessage;      // message de l'overlay de traitement
+  double? _videoProgress;    // 0–100 pendant la compression vidéo
   Color _bg = _kStatusColors.first;
 
   final List<_Draft> _drafts = [];
@@ -163,7 +171,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     final d = _drafts[i];
     if (d.isVideo && d.videoPath != null) {
-      final c = ThixMediaEditor.controllerFor(d.videoPath!);
+      final c = ThixMediaOptimizer.controllerFor(d.videoPath!);
       try {
         await c.initialize();
         await c.setLooping(true);
@@ -287,11 +295,19 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       }
     } on MediaEditorException catch (e) {
       _showError(e.message);
+    } on MediaOptimizeException catch (e) {
+      _showError(e.message);
     } catch (e) {
       debugPrint('[CreateStatus] ❌ Erreur média: $e');
       _showError(_StatusValidators.friendlyError(e));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyMessage = null;
+          _videoProgress = null;
+        });
+      }
     }
   }
 
@@ -303,52 +319,158 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     );
   }
 
+  // Sélection brute (sans rejet) → le pipeline _processFiles optimise ensuite.
   Future<void> _fromGallery() async {
-    final res = await ThixMediaEditor.pickMultiple(
-      context,
-      limit: _kMaxDrafts - _drafts.length,
-      maxVideoSeconds: _kMaxVideoDurationSeconds,
-      maxImageMB: _kMaxImageMB,
-      maxVideoMB: _kMaxVideoMB,
-    );
-    if (!mounted) return;
+    final remaining = _kMaxDrafts - _drafts.length;
+    final files = await _picker.pickMultipleMedia(requestFullMetadata: false);
+    if (!mounted || files.isEmpty) return;
 
-    final list = res.items.map((m) {
-      if (m.isVideo) {
-        final v = m.video!;
-        return _Draft.video(bytes: v.bytes, ext: v.ext, videoPath: v.path);
-      }
-      final i = m.image!;
-      return _Draft.image(bytes: i.bytes, ext: i.ext);
-    }).toList();
+    final kept = files.length > remaining ? files.sublist(0, remaining) : files;
+    await _processFiles(kept);
 
-    await _addDrafts(list);
-
-    if (res.skipped > 0 && mounted) {
-      _showError(res.firstError ?? '${res.skipped} média(s) ignoré(s)');
+    if (files.length > remaining && mounted) {
+      _showError('Maximum $_kMaxDrafts médias — ${files.length - remaining} ignoré(s)');
     }
   }
 
   Future<void> _fromCameraPhoto() async {
-    final img = await ThixMediaEditor.pickImage(
-      context,
-      source: ImageSource.camera,
-      crop: false,
-      maxMB: _kMaxImageMB,
-    );
-    if (img == null || !mounted) return;
-    await _addDrafts([_Draft.image(bytes: img.bytes, ext: img.ext)]);
+    final f = await _picker.pickImage(source: ImageSource.camera);
+    if (f == null || !mounted) return;
+    await _processFiles([f]);
   }
 
   Future<void> _fromCameraVideo() async {
-    final v = await ThixMediaEditor.pickVideo(
-      context,
-      maxSeconds: _kMaxVideoDurationSeconds,
-      maxMB: _kMaxVideoMB,
-      source: ImageSource.camera,
-    );
-    if (v == null || !mounted) return;
-    await _addDrafts([_Draft.video(bytes: v.bytes, ext: v.ext, videoPath: v.path)]);
+    // Pas de maxDuration : si > 2 min, le trimmer s'ouvre.
+    final f = await _picker.pickVideo(source: ImageSource.camera);
+    if (f == null || !mounted) return;
+    await _processFiles([f]);
+  }
+
+  // ------------------------------------------------------------------ PIPELINE
+  String _extOf(XFile f, {String fallback = 'jpg'}) {
+    final name = f.name;
+    final dot = name.lastIndexOf('.');
+    if (dot >= 0 && dot < name.length - 1) return name.substring(dot + 1).toLowerCase();
+    final mime = f.mimeType;
+    if (mime != null && mime.contains('/')) return mime.split('/').last.toLowerCase();
+    return fallback;
+  }
+
+  bool _isVideo(XFile f) {
+    if (f.mimeType?.startsWith('video/') ?? false) return true;
+    return _kVideoExts.contains(_extOf(f, fallback: ''));
+  }
+
+  /// Au lieu de rejeter : photo > 5MB → compression ; vidéo > 64MB →
+  /// compression ; vidéo > 2min → sélection d'extrait puis découpage.
+  Future<void> _processFiles(List<XFile> files) async {
+    if (files.isEmpty) return;
+    final maxImgBytes = _kMaxImageMB * 1024 * 1024;
+    final maxVidBytes = _kMaxVideoMB * 1024 * 1024;
+    final added = <_Draft>[];
+    final errors = <String>[];
+
+    for (var i = 0; i < files.length; i++) {
+      if (!mounted) return;
+      final f = files[i];
+      final tag = files.length > 1 ? ' (${i + 1}/${files.length})' : '';
+
+      try {
+        // ---------------- PHOTO ----------------
+        if (!_isVideo(f)) {
+          setState(() {
+            _busyMessage = 'Préparation de la photo$tag…';
+            _videoProgress = null;
+          });
+          var bytes = await f.readAsBytes();
+          var ext = _extOf(f);
+          if (bytes.length > maxImgBytes) {
+            setState(() => _busyMessage = 'Compression de la photo$tag…');
+            bytes = await ThixMediaOptimizer.compressImage(bytes, maxMB: _kMaxImageMB);
+            ext = 'jpg';
+          }
+          added.add(_Draft.image(bytes: bytes, ext: ext));
+          continue;
+        }
+
+        // ---------------- VIDÉO ----------------
+        final path = f.path;
+        final ext = _extOf(f, fallback: 'mp4');
+        setState(() {
+          _busyMessage = 'Analyse de la vidéo$tag…';
+          _videoProgress = null;
+        });
+
+        if (kIsWeb) {
+          // Pas de compression/découpage natif sur le web → limites conservées.
+          final bytes = await f.readAsBytes();
+          if (bytes.length > maxVidBytes) {
+            errors.add('Vidéo trop volumineuse (max $_kMaxVideoMB MB). '
+                'Compression disponible sur mobile uniquement.');
+            continue;
+          }
+          final dur = await ThixMediaOptimizer.videoDuration(path);
+          if (dur.inSeconds > _kMaxVideoDurationSeconds) {
+            errors.add('Vidéo trop longue (max 2 min). '
+                'Découpage disponible sur mobile uniquement.');
+            continue;
+          }
+          added.add(_Draft.video(bytes: bytes, ext: ext, videoPath: path));
+          continue;
+        }
+
+        final duration = await ThixMediaOptimizer.videoDuration(path);
+        VideoTrimRange? trim;
+        if (duration.inMilliseconds > _kMaxVideoDurationSeconds * 1000) {
+          if (!mounted) return;
+          trim = await Navigator.of(context).push<VideoTrimRange>(
+            MaterialPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => VideoTrimPage(
+                videoPath: path,
+                maxSeconds: _kMaxVideoDurationSeconds,
+              ),
+            ),
+          );
+          if (!mounted) return;
+          if (trim == null) continue; // découpage annulé → vidéo ignorée
+        }
+
+        final size = await ThixMediaOptimizer.fileSize(path);
+        if (trim != null || size > maxVidBytes) {
+          setState(() {
+            _busyMessage = size > maxVidBytes
+                ? 'Compression de la vidéo$tag…'
+                : 'Découpage de la vidéo$tag…';
+            _videoProgress = 0;
+          });
+          final out = await ThixMediaOptimizer.processVideo(
+            path,
+            maxMB: _kMaxVideoMB,
+            trim: trim,
+            onProgress: (p) {
+              if (mounted) setState(() => _videoProgress = p);
+            },
+          );
+          added.add(_Draft.video(bytes: out.bytes, ext: out.ext, videoPath: out.path));
+        } else {
+          added.add(_Draft.video(bytes: await f.readAsBytes(), ext: ext, videoPath: path));
+        }
+      } on MediaOptimizeException catch (e) {
+        errors.add(e.message);
+      } catch (e) {
+        debugPrint('[CreateStatus] ❌ traitement média: $e');
+        errors.add(_StatusValidators.friendlyError(e));
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _busyMessage = null;
+      _videoProgress = null;
+    });
+    if (added.isNotEmpty) await _addDrafts(added);
+    if (errors.isNotEmpty && mounted) _showError(errors.first);
   }
 
   // ------------------------------------------------------------------ ÉDITION
@@ -359,19 +481,34 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     try {
       final path = await ThixMediaEditor.persistTemp(d.bytes, d.ext);
       if (!mounted) return;
-      final img = await ThixMediaEditor.editImage(context, path, maxMB: _kMaxImageMB);
+      // Limite large côté éditeur : on compresse nous-mêmes ensuite.
+      final img = await ThixMediaEditor.editImage(context, path, maxMB: 50);
       if (img != null && mounted) {
+        var bytes = img.bytes;
+        var ext = img.ext;
+        if (bytes.length > _kMaxImageMB * 1024 * 1024) {
+          setState(() => _busyMessage = 'Compression de la photo…');
+          bytes = await ThixMediaOptimizer.compressImage(bytes, maxMB: _kMaxImageMB);
+          ext = 'jpg';
+        }
         setState(() {
-          d.bytes = img.bytes;
-          d.ext = img.ext;
+          d.bytes = bytes;
+          d.ext = ext;
         });
       }
     } on MediaEditorException catch (e) {
       _showError(e.message);
+    } on MediaOptimizeException catch (e) {
+      _showError(e.message);
     } catch (e) {
       _showError(_StatusValidators.friendlyError(e));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _busyMessage = null;
+        });
+      }
     }
   }
 
@@ -387,13 +524,34 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     );
     if (res == null || !mounted) return;
 
-    if (res.bytes.length > _kMaxImageMB * 1024 * 1024) {
-      _showError('Image trop volumineuse (max ${_kMaxImageMB}MB)');
-      return;
+    var bytes = res.bytes;
+    var ext = res.ext;
+
+    // Au lieu de rejeter : on compresse si l'édition a dépassé 5MB.
+    if (bytes.length > _kMaxImageMB * 1024 * 1024) {
+      setState(() {
+        _busy = true;
+        _busyMessage = 'Compression de la photo…';
+      });
+      try {
+        bytes = await ThixMediaOptimizer.compressImage(bytes, maxMB: _kMaxImageMB);
+        ext = 'jpg';
+      } on MediaOptimizeException catch (e) {
+        _showError(e.message);
+        return;
+      } finally {
+        if (mounted) {
+          setState(() {
+            _busy = false;
+            _busyMessage = null;
+          });
+        }
+      }
     }
+    if (!mounted) return;
     setState(() {
-      d.bytes = res.bytes;
-      d.ext = res.ext;
+      d.bytes = bytes;
+      d.ext = ext;
     });
   }
 
@@ -513,8 +671,60 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             ),
         ],
       ),
-      body: SafeArea(
-        child: hasMedia ? _buildMediaView(l10n) : _buildTextView(l10n),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: hasMedia ? _buildMediaView(l10n) : _buildTextView(l10n),
+          ),
+          if (_busyMessage != null) _processingOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _processingOverlay() {
+    final p = _videoProgress;
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withOpacity(0.65),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111827),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: CircularProgressIndicator(
+                    value: p == null ? null : (p / 100).clamp(0.0, 1.0),
+                    color: Colors.white,
+                    strokeWidth: 3,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _busyMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (p != null) ...[
+                  const SizedBox(height: 6),
+                  Text('${p.round()}%',
+                      style: const TextStyle(color: Colors.white54)),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
