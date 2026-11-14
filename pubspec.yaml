@@ -146,7 +146,7 @@ dependencies:
   # SÉCURITÉ / CHIFFREMENT
   # ═══════════════════════════════════════════════════════════════════════
   encrypt: ^5.0.3
-  local_auth: ^3.0.2
+  local_auth: 3.0.0
   flutter_secure_storage: ^9.2.2
   zxcvbn: ^1.0.0
 
