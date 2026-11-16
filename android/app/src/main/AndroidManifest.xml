@@ -46,12 +46,10 @@
     <!-- Biométrie -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
-    <!-- Médias -->
+    <!-- Médias (⚠️ READ_MEDIA_IMAGES et READ_MEDIA_VIDEO retirés pour conformité Play Store) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- Notifications & Appel VoIP -->
@@ -106,9 +104,7 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true">
 
-        <!-- Firebase Messaging : canal par défaut (notifications générales)
-             Android verrouille un canal une fois créé : les canaux v2 sont muets
-             à jamais, on utilise donc thix_id_default_v3. -->
+        <!-- Firebase Messaging : canal par défaut (notifications générales) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="thix_id_default_v3" />
@@ -186,16 +182,14 @@
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false"/>
 
-        <!-- Service de premier plan : garde le micro/la caméra actifs pendant un
-             appel quand l'app passe en arrière-plan (flutter_foreground_task).
-             Sans lui, Android coupe le micro puis tue l'app. -->
+        <!-- Service de premier plan -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="microphone|camera|phoneCall"
             android:exported="false"
             tools:replace="android:foregroundServiceType" />
 
-        <!-- ✅ AJOUTÉ : Service de lecture audio en arrière-plan (just_audio_background + audio_service) -->
+        <!-- ✅ AJOUTÉ : Service de lecture audio en arrière-plan -->
         <service
             android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
@@ -206,7 +200,7 @@
             </intent-filter>
         </service>
 
-        <!-- ✅ AJOUTÉ : Receiver des boutons média (casque, Bluetooth, notification) -->
+        <!-- ✅ AJOUTÉ : Receiver des boutons média -->
         <receiver
             android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true">
@@ -214,9 +208,6 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
-
-        <!-- Service FCM : NE PAS redéclarer ici.
-             firebase_messaging déclare déjà son propre service (via manifest merge). -->
 
         <!-- Flutter Embedder -->
         <meta-data
@@ -227,6 +218,14 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="true" />
+        
+        <!-- Configuration Shorebird OTA -->
+        <meta-data
+            android:name="shorebird.app_id"
+            android:value="6c8cacf3-a2a5-430b-9d9e-67d244ff3316" />
+        <meta-data
+            android:name="shorebird.updater_config_url"
+            android:value="https://api.shorebird.dev/api/v1/apps/6c8cacf3-a2a5-430b-9d9e-67d244ff3316/releases" />
 
     </application>
 
