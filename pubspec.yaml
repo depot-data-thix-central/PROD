@@ -205,3 +205,4 @@ flutter:
     - assets/sounds/offline.mp3
     - assets/sounds/ringtone.caf
     - assets/sounds/notification.mp3
+    - shorebird.yaml
