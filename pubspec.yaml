@@ -209,8 +209,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    # 🆕 OTA : généré par `shorebird init` à la racine (contient l'app_id).
-    # Obligatoire — l'updater Shorebird lit ce fichier embarqué dans l'app.
+    # 🆕 OTA : généré par `shorebird init` (app_id). Une seule occurrence suffit.
     - shorebird.yaml
     - assets/images/
     - assets/icons/
@@ -218,4 +217,3 @@ flutter:
     - assets/sounds/offline.mp3
     - assets/sounds/ringtone.caf
     - assets/sounds/notification.mp3
-    - shorebird.yaml
