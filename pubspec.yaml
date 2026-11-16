@@ -2,7 +2,9 @@ name: thix_id
 description: "THIX ID - Une identité numérique sécurisée pour la RDC et l'Afrique"
 publish_to: 'none'
 
-version: 3.5.0+25
+# 🆕 OTA : chaque release Shorebird = version UNIQUE (ne jamais réutiliser
+# un couple version+build déjà publié). Source de vérité unique du versioning.
+version: 3.5.1+26
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
@@ -26,8 +28,8 @@ dependencies:
   flutter_svg: ^2.0.10+1
   shimmer: ^3.0.0
   flutter_markdown: ^0.7.4
-  flutter_animate: ^4.5.2          
-  animated_text_kit: ^4.2.3        
+  flutter_animate: ^4.5.2
+  animated_text_kit: ^4.2.3
   # ═══════════════════════════════════════════════════════════════════════
   # STATE MANAGEMENT
   # ═══════════════════════════════════════════════════════════════════════
@@ -96,7 +98,7 @@ dependencies:
   screenshot_callback: ^3.0.1
   image_cropper: ^8.0.2
   video_compress: ^3.1.2
-  
+
   light_compressor_v2: ^1.11.0
   # ═══════════════════════════════════════════════════════════════════════
   # IDENTIFICATION & SCANNING
@@ -177,6 +179,13 @@ dependencies:
   package_info_plus: ^8.1.0
   device_info_plus: ^10.1.0
 
+  # ═══════════════════════════════════════════════════════════════════════
+  # 🆕 OTA — MISES À JOUR OVER-THE-AIR (Shorebird)
+  # Patchs du code Dart sans passer par le Play Store ni réinstaller l'APK.
+  # Utilisé par lib/services/ota_update_service.dart
+  # ═══════════════════════════════════════════════════════════════════════
+  shorebird_code_push: ^2.0.7
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -200,6 +209,9 @@ flutter:
   uses-material-design: true
 
   assets:
+    # 🆕 OTA : généré par `shorebird init` à la racine (contient l'app_id).
+    # Obligatoire — l'updater Shorebird lit ce fichier embarqué dans l'app.
+    - shorebird.yaml
     - assets/images/
     - assets/icons/
     - assets/sounds/ringtone.mp3
