@@ -4,7 +4,7 @@ publish_to: 'none'
 
 # 🆕 OTA : chaque release Shorebird = version UNIQUE (ne jamais réutiliser
 # un couple version+build déjà publié). Source de vérité unique du versioning.
-version: 3.5.1+26
+version: 3.6.2+27
 
 environment:
   sdk: ">=3.6.0 <4.0.0"
