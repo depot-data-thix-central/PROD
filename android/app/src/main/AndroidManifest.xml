@@ -99,7 +99,7 @@
         android:name="${applicationName}"
         android:label="Thix Hub"
         android:icon="@mipmap/ic_launcher"
-        android:extractNativeLibs="true"
+        tools:remove="android:extractNativeLibs"
         android:allowBackup="true"
         android:fullBackupContent="false"
         android:usesCleartextTraffic="false"

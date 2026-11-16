@@ -1,9 +1,10 @@
 // lib/presentation/network/widgets/create_story_dialog.dart
 // ============================================================================
-// CRÉATEUR DE STORY — PLEIN ÉCRAN (design moderne type Instagram)
-// • 4 modes : Texte • Photo • Audio • Vidéo
-// • Photo : rognage / rotation / ratios (image_cropper)
-// • Vidéo : découpage de la partie voulue + coupure du son
+// CRÉATEUR DE STORY — PLEIN ÉCRAN
+// • Modes : Texte • Média (photos/vidéos, jusqu'à 10) • Audio
+// • Photo : rogner/pivoter, filtres, dessin, texte, emojis
+// • Vidéo : choix du passage (max 60 s), son coupable
+// • Sélection multiple : chaque média devient une story distincte
 // • Upload en arrière-plan (file d'attente globale)
 // ============================================================================
 import 'dart:async';
@@ -12,18 +13,20 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:video_player/video_player.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:html/parser.dart' as html_parser;
 import 'package:cross_file/cross_file.dart';
 
-import 'package:thix_id/core/media/media_picker_service.dart';
+import 'package:thix_id/core/media/thix_media_editor.dart';
+import 'package:thix_id/core/media/thix_photo_editor.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/presentation/network/providers/story_upload_manager.dart';
 
 // ============================================================================
@@ -38,6 +41,7 @@ class _StoryValidators {
   static const int maxVideoSizeMB = 50;
   static const int maxAudioDurationSeconds = 60;
   static const int maxVideoDurationSeconds = 60;
+  static const int maxDrafts = 10;
 
   static String sanitizeText(String? input, {int maxLength = maxTextLength}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -61,6 +65,29 @@ class _StoryValidators {
   }
 }
 
+/// Compression légère (appel plateforme asynchrone, ne bloque pas l'UI).
+/// Retourne aussi la bonne extension (jpg après compression).
+Future<({Uint8List bytes, String ext})> _compressImage(Uint8List bytes, String ext) async {
+  if (kIsWeb) return (bytes: bytes, ext: ext);
+  if (bytes.length < 800 * 1024 && (ext == 'jpg' || ext == 'jpeg')) {
+    return (bytes: bytes, ext: ext);
+  }
+  try {
+    final out = await FlutterImageCompress.compressWithList(
+      bytes,
+      minHeight: 1080,
+      minWidth: 1080,
+      quality: 85,
+      format: CompressFormat.jpeg,
+    );
+    if (out.isEmpty) return (bytes: bytes, ext: ext);
+    return (bytes: out, ext: 'jpg');
+  } catch (e) {
+    debugPrint('[Story] Compression error: $e');
+    return (bytes: bytes, ext: ext);
+  }
+}
+
 // ============================================================================
 // POINT D'ENTRÉE
 // ============================================================================
@@ -73,10 +100,28 @@ class CreateStoryDialog {
 }
 
 // ============================================================================
+// MODÈLES LOCAUX
+// ============================================================================
+enum _StoryMode { text, media, audio }
+enum _MediaChoice { gallery, cameraPhoto, cameraVideo }
+
+class _StoryDraft {
+  _StoryDraft.image({required this.bytes, required this.ext})
+      : isVideo = false,
+        videoPath = null;
+
+  _StoryDraft.video({required this.bytes, required this.ext, required this.videoPath})
+      : isVideo = true;
+
+  final bool isVideo;
+  Uint8List bytes;
+  String ext;
+  final String? videoPath;
+}
+
+// ============================================================================
 // PAGE PLEIN ÉCRAN
 // ============================================================================
-enum _StoryMode { text, photo, audio, video }
-
 class CreateStoryPage extends ConsumerStatefulWidget {
   const CreateStoryPage({super.key});
   @override
@@ -89,10 +134,10 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
 
   _StoryMode _mode = _StoryMode.text;
 
-  // Photo
-  PickedMedia? _imageMedia;
-  Uint8List? _imageBytes;
-  String? _imageExt;
+  // Média (photos / vidéos)
+  final List<_StoryDraft> _drafts = [];
+  int _index = 0;
+  VideoPlayerController? _videoController;
 
   // Audio
   final AudioRecorder _recorder = AudioRecorder();
@@ -102,14 +147,9 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   Uint8List? _audioBytes;
   String? _audioPath;
 
-  // Vidéo
-  Uint8List? _videoBytes;
-  String? _videoExt;
-  VideoPlayerController? _videoController;
-
   // UI
   bool _isUploading = false;
-  bool _isBusyMedia = false;
+  bool _isProcessing = false;
   Color _bgColor = Colors.transparent;
   late final AnimationController _pulseCtrl;
 
@@ -141,157 +181,257 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   }
 
   bool get _hasBgColor => _bgColor != Colors.transparent;
-  bool get _blocked => _isUploading || _isRecording || _isBusyMedia;
-  bool get _hasContent =>
-      _textController.text.trim().isNotEmpty ||
-      _imageBytes != null ||
-      _audioBytes != null ||
-      _videoBytes != null;
+  bool get _isBusy => _isUploading || _isRecording || _isProcessing;
+  bool get _needsConfirm => _drafts.isNotEmpty || _audioBytes != null;
+  _StoryDraft? get _current => _drafts.isEmpty ? null : _drafts[_index];
+
+  bool get _hasContent {
+    switch (_mode) {
+      case _StoryMode.text:
+        return _textController.text.trim().isNotEmpty;
+      case _StoryMode.media:
+        return _drafts.isNotEmpty;
+      case _StoryMode.audio:
+        return _audioBytes != null;
+    }
+  }
 
   String _colorToHex(Color c) => '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
-  void _disposeVideo() {
+  void _releaseController() {
     final old = _videoController;
     _videoController = null;
-    old?.dispose();
-  }
-
-  // ════════════════════════════════════════════════════════════════════════
-  // PHOTO
-  // ════════════════════════════════════════════════════════════════════════
-  Future<void> _pickImage() async {
-    if (_blocked) return;
-    final source = await MediaPickerService.askSource(context);
-    if (source == null || !mounted) return;
-
-    setState(() => _isBusyMedia = true);
-    try {
-      final media = await MediaPickerService.pickImage(
-        context,
-        source: source,
-        maxBytes: _StoryValidators.maxImageSizeMB * 1024 * 1024,
-      );
-      if (!mounted) return;
-      if (media == null) {
-        setState(() => _isBusyMedia = false);
-        return;
-      }
-
-      setState(() {
-        _mode = _StoryMode.photo;
-        _imageMedia = media;
-        _imageBytes = media.bytes;
-        _imageExt = media.ext;
-        _audioBytes = null;
-        _audioPath = null;
-        _videoBytes = null;
-        _videoExt = null;
-        _disposeVideo();
-        _isBusyMedia = false;
-      });
-      HapticFeedback.lightImpact();
-    } catch (e) {
-      debugPrint('[Story] pickImage: $e');
-      if (mounted) setState(() => _isBusyMedia = false);
-      _showError(e is MediaException ? e.message : 'Erreur lors de la sélection');
+    if (old != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
     }
   }
 
-  Future<void> _editImage() async {
-    final media = _imageMedia;
-    if (media == null || _blocked) return;
-
-    setState(() => _isBusyMedia = true);
-    try {
-      final edited = await MediaPickerService.editImage(
-        context,
-        media,
-        maxBytes: _StoryValidators.maxImageSizeMB * 1024 * 1024,
+  // ════════════════════════════════════════════════════════════════════════
+  // MÉDIA : choix, brouillons, édition
+  // ════════════════════════════════════════════════════════════════════════
+  Future<_MediaChoice?> _askChoice({bool cameraOnly = false}) {
+    Widget tile(BuildContext ctx, IconData icon, String label, _MediaChoice v) {
+      return ListTile(
+        leading: Icon(icon, color: Colors.white),
+        title: Text(label, style: const TextStyle(color: Colors.white)),
+        onTap: () => Navigator.pop(ctx, v),
       );
-      if (!mounted) return;
-      setState(() {
-        if (edited != null) {
-          _imageMedia = edited;
-          _imageBytes = edited.bytes;
-          _imageExt = edited.ext;
-        }
-        _isBusyMedia = false;
-      });
+    }
+
+    return showModalBottomSheet<_MediaChoice>(
+      context: context,
+      backgroundColor: const Color(0xFF111827),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            if (!cameraOnly)
+              tile(ctx, Icons.photo_library_outlined,
+                  'Galerie (photos et vidéos, jusqu\'à ${_StoryValidators.maxDrafts})',
+                  _MediaChoice.gallery),
+            if (!kIsWeb) ...[
+              tile(ctx, Icons.photo_camera_outlined, 'Prendre une photo', _MediaChoice.cameraPhoto),
+              tile(ctx, Icons.video_camera_back_outlined, 'Filmer une vidéo', _MediaChoice.cameraVideo),
+            ],
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickFromSheet({bool cameraOnly = false}) async {
+    if (_isBusy) return;
+    final choice = await _askChoice(cameraOnly: cameraOnly);
+    if (choice == null || !mounted) return;
+    await _runChoice(choice);
+  }
+
+  Future<void> _runChoice(_MediaChoice choice) async {
+    if (_isBusy) return;
+    if (_drafts.length >= _StoryValidators.maxDrafts) {
+      _showError('Maximum ${_StoryValidators.maxDrafts} médias');
+      return;
+    }
+
+    HapticFeedback.selectionClick();
+    setState(() => _isProcessing = true);
+    try {
+      switch (choice) {
+        case _MediaChoice.gallery:
+          await _fromGallery();
+          break;
+        case _MediaChoice.cameraPhoto:
+          await _fromCameraPhoto();
+          break;
+        case _MediaChoice.cameraVideo:
+          await _fromCameraVideo();
+          break;
+      }
+    } on MediaEditorException catch (e) {
+      _showError(e.message);
     } catch (e) {
-      debugPrint('[Story] editImage: $e');
-      if (mounted) setState(() => _isBusyMedia = false);
-      _showError(e is MediaException ? e.message : "Erreur lors de la modification");
+      debugPrint('[Story] media: $e');
+      _showError('Erreur lors de la sélection');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  void _clearImage() => setState(() {
-        _imageMedia = null;
-        _imageBytes = null;
-        _imageExt = null;
-        _mode = _StoryMode.text;
-      });
+  Future<void> _fromGallery() async {
+    final res = await ThixMediaEditor.pickMultiple(
+      context,
+      limit: _StoryValidators.maxDrafts - _drafts.length,
+      maxVideoSeconds: _StoryValidators.maxVideoDurationSeconds,
+      maxImageMB: _StoryValidators.maxImageSizeMB,
+      maxVideoMB: _StoryValidators.maxVideoSizeMB,
+    );
+    if (!mounted) return;
 
-  // ════════════════════════════════════════════════════════════════════════
-  // VIDÉO
-  // ════════════════════════════════════════════════════════════════════════
-  Future<void> _pickVideo() async {
-    if (_blocked) return;
-    final source = await MediaPickerService.askSource(context, video: true);
-    if (source == null || !mounted) return;
-
-    setState(() => _isBusyMedia = true);
-    try {
-      final media = await MediaPickerService.pickVideo(
-        context,
-        source: source,
-        maxSeconds: _StoryValidators.maxVideoDurationSeconds,
-        maxBytes: _StoryValidators.maxVideoSizeMB * 1024 * 1024,
-      );
-      if (!mounted) return;
-      if (media == null) {
-        setState(() => _isBusyMedia = false);
-        return;
+    final list = res.items.map((m) {
+      if (m.isVideo) {
+        final v = m.video!;
+        return _StoryDraft.video(bytes: v.bytes, ext: v.ext, videoPath: v.path);
       }
+      final i = m.image!;
+      return _StoryDraft.image(bytes: i.bytes, ext: i.ext);
+    }).toList();
 
-      final controller = MediaPickerService.controllerFor(media.path);
-      await controller.initialize();
-      await controller.setLooping(true);
+    await _addDrafts(list);
 
-      if (!mounted) {
-        controller.dispose();
-        return;
-      }
-
-      final old = _videoController;
-      setState(() {
-        _mode = _StoryMode.video;
-        _videoBytes = media.bytes;
-        _videoExt = media.ext;
-        _videoController = controller;
-        _imageMedia = null;
-        _imageBytes = null;
-        _imageExt = null;
-        _audioBytes = null;
-        _audioPath = null;
-        _isBusyMedia = false;
-      });
-      old?.dispose();
-
-      await controller.play();
-      HapticFeedback.lightImpact();
-    } catch (e) {
-      debugPrint('[Story] pickVideo: $e');
-      if (mounted) setState(() => _isBusyMedia = false);
-      _showError(e is MediaException ? e.message : 'Erreur lors de la sélection vidéo');
+    if (res.skipped > 0 && mounted) {
+      _showError(res.firstError ?? '${res.skipped} média(s) ignoré(s)');
     }
   }
 
-  void _clearVideo() {
+  Future<void> _fromCameraPhoto() async {
+    final img = await ThixMediaEditor.pickImage(
+      context,
+      source: ImageSource.camera,
+      crop: false,
+      maxMB: _StoryValidators.maxImageSizeMB,
+    );
+    if (img == null || !mounted) return;
+    await _addDrafts([_StoryDraft.image(bytes: img.bytes, ext: img.ext)]);
+  }
+
+  Future<void> _fromCameraVideo() async {
+    final v = await ThixMediaEditor.pickVideo(
+      context,
+      maxSeconds: _StoryValidators.maxVideoDurationSeconds,
+      maxMB: _StoryValidators.maxVideoSizeMB,
+      source: ImageSource.camera,
+    );
+    if (v == null || !mounted) return;
+    await _addDrafts([_StoryDraft.video(bytes: v.bytes, ext: v.ext, videoPath: v.path)]);
+  }
+
+  Future<void> _addDrafts(List<_StoryDraft> list) async {
+    if (list.isEmpty) return;
+    final first = _drafts.length;
+    _drafts.addAll(list);
+    await _activate(first);
+    HapticFeedback.lightImpact();
+  }
+
+  Future<void> _activate(int i) async {
+    if (i < 0 || i >= _drafts.length) return;
+
     setState(() {
-      _videoBytes = null;
-      _videoExt = null;
-      _disposeVideo();
-      _mode = _StoryMode.text;
+      _index = i;
+      _mode = _StoryMode.media;
+      _audioBytes = null;
+      _audioPath = null;
+      _releaseController();
+    });
+
+    final d = _drafts[i];
+    if (d.isVideo && d.videoPath != null) {
+      final c = ThixMediaEditor.controllerFor(d.videoPath!);
+      try {
+        await c.initialize();
+        await c.setLooping(true);
+      } catch (e) {
+        debugPrint('[Story] preview vidéo: $e');
+        c.dispose();
+        return;
+      }
+      if (!mounted || _index != i || i >= _drafts.length || !identical(_drafts[i], d)) {
+        c.dispose();
+        return;
+      }
+      setState(() => _videoController = c);
+      await c.play();
+    }
+  }
+
+  void _removeCurrent() {
+    final d = _current;
+    if (d == null) return;
+    final removedIndex = _index;
+    _drafts.removeAt(removedIndex);
+
+    if (_drafts.isEmpty) {
+      setState(() {
+        _index = 0;
+        _mode = _StoryMode.text;
+        _releaseController();
+      });
+      return;
+    }
+    _activate(removedIndex.clamp(0, _drafts.length - 1));
+  }
+
+  Future<void> _cropCurrent() async {
+    final d = _current;
+    if (d == null || d.isVideo || _isBusy) return;
+    setState(() => _isProcessing = true);
+    try {
+      final path = await ThixMediaEditor.persistTemp(d.bytes, d.ext);
+      if (!mounted) return;
+      final img = await ThixMediaEditor.editImage(
+        context,
+        path,
+        maxMB: _StoryValidators.maxImageSizeMB,
+      );
+      if (img != null && mounted) {
+        setState(() {
+          d.bytes = img.bytes;
+          d.ext = img.ext;
+        });
+      }
+    } on MediaEditorException catch (e) {
+      _showError(e.message);
+    } catch (e) {
+      _showError('Erreur lors de la modification');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _openEditor(EditorTool tool) async {
+    final d = _current;
+    if (d == null || d.isVideo || _isBusy) return;
+
+    final res = await Navigator.of(context).push<EditedPhoto>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ThixPhotoEditorPage(bytes: d.bytes, initialTool: tool),
+      ),
+    );
+    if (res == null || !mounted) return;
+
+    if (!_StoryValidators.validateFileSize(res.bytes.length, _StoryValidators.maxImageSizeMB)) {
+      _showError('Image trop volumineuse (max ${_StoryValidators.maxImageSizeMB}MB)');
+      return;
+    }
+    setState(() {
+      d.bytes = res.bytes;
+      d.ext = res.ext;
     });
   }
 
@@ -299,7 +439,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   // AUDIO
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _startRecording() async {
-    if (_blocked) return;
+    if (_isBusy) return;
 
     final ok = await _checkPermission(
       Permission.microphone,
@@ -329,10 +469,9 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         _audioBytes = null;
         _audioPath = null;
         _mode = _StoryMode.audio;
-        _imageMedia = null;
-        _imageBytes = null;
-        _videoBytes = null;
-        _disposeVideo();
+        _drafts.clear();
+        _index = 0;
+        _releaseController();
       });
 
       _recordTimer?.cancel();
@@ -374,10 +513,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         _audioBytes = bytes;
         _audioPath = path;
         _mode = _StoryMode.audio;
-        _imageMedia = null;
-        _imageBytes = null;
-        _videoBytes = null;
-        _disposeVideo();
       });
       HapticFeedback.mediumImpact();
     } catch (e) {
@@ -396,6 +531,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
       setState(() {
         _isRecording = false;
         _recordDuration = 0;
+        _mode = _StoryMode.text;
       });
     }
   }
@@ -458,34 +594,71 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   // ════════════════════════════════════════════════════════════════════════
   // PUBLICATION — EN FILE D'ATTENTE (arrière-plan)
   // ════════════════════════════════════════════════════════════════════════
-  void _createStory() {
-    if (_blocked) return;
-    if (!_hasContent) return _showError('Ajoutez du texte, une photo, un audio ou une vidéo');
-
-    final text = _StoryValidators.sanitizeText(_textController.text.trim());
-    final bgColor = (_mode == _StoryMode.text && _hasBgColor) ? _colorToHex(_bgColor) : null;
-
-    HapticFeedback.mediumImpact();
+  Future<void> _createStory() async {
+    if (_isBusy) return;
+    if (!_hasContent) {
+      return _showError('Ajoutez du texte, une photo, un audio ou une vidéo');
+    }
 
     final manager = ref.read(storyUploadManagerProvider.notifier);
+    var count = 1;
 
-    if (_mode == _StoryMode.photo && _imageBytes != null) {
-      manager.enqueueImage(_imageBytes!, _imageExt ?? 'jpg');
-    } else if (_mode == _StoryMode.audio && _audioBytes != null) {
-      manager.enqueueAudio(_audioBytes!);
-    } else if (_mode == _StoryMode.video && _videoBytes != null) {
-      manager.enqueueVideo(_videoBytes!, _videoExt ?? 'mp4');
-    } else {
+    if (_mode == _StoryMode.text) {
+      final text = _StoryValidators.sanitizeText(_textController.text.trim());
       if (text.isEmpty) return _showError('Ajoutez du texte');
+      final bgColor = _hasBgColor ? _colorToHex(_bgColor) : null;
+      HapticFeedback.mediumImpact();
       manager.enqueueText(text, bgColor: bgColor);
+    } else if (_mode == _StoryMode.audio && _audioBytes != null) {
+      HapticFeedback.mediumImpact();
+      manager.enqueueAudio(_audioBytes!);
+    } else if (_mode == _StoryMode.media && _drafts.isNotEmpty) {
+      HapticFeedback.mediumImpact();
+      setState(() => _isUploading = true);
+      try {
+        count = _drafts.length;
+        for (final d in _drafts) {
+          if (d.isVideo) {
+            manager.enqueueVideo(d.bytes, d.ext);
+          } else {
+            final c = await _compressImage(d.bytes, d.ext);
+            manager.enqueueImage(c.bytes, c.ext);
+          }
+        }
+      } catch (e) {
+        debugPrint('[Story] enqueue: $e');
+        if (mounted) setState(() => _isUploading = false);
+        return _showError('Erreur lors de la publication');
+      }
+    } else {
+      return _showError('Ajoutez du texte, une photo, un audio ou une vidéo');
     }
 
     if (!mounted) return;
-    _showQueuedSnackBar();
+    _showQueuedSnackBar(count);
     Navigator.pop(context, true);
   }
 
-  void _showQueuedSnackBar() {
+  Future<void> _confirmClose() async {
+    if (_isBusy) return;
+    if (!_needsConfirm) {
+      Navigator.pop(context, false);
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Abandonner cette story ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Non')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Oui')),
+        ],
+      ),
+    );
+    if (ok == true && mounted) Navigator.pop(context, false);
+  }
+
+  void _showQueuedSnackBar(int count) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
@@ -497,7 +670,11 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
             ),
             const SizedBox(width: 10),
-            const Expanded(child: Text('Publication en arrière-plan…')),
+            Expanded(
+              child: Text(count > 1
+                  ? 'Publication de $count stories en arrière-plan…'
+                  : 'Publication en arrière-plan…'),
+            ),
           ]),
           backgroundColor: const Color(0xFF0F172A),
           behavior: SnackBarBehavior.floating,
@@ -508,12 +685,14 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
 
   void _showError(String m) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(m, style: ThixPolicy.labelStyle.copyWith(color: Colors.white)),
-      backgroundColor: ThixPolicy.danger,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
-    ));
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(m, style: ThixPolicy.labelStyle.copyWith(color: Colors.white)),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
+      ));
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -522,96 +701,114 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
+    final canPublish = !_isBusy && _hasContent;
+    final isMedia = _mode == _StoryMode.media && _drafts.isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(child: _previewBackground()),
+    final publishLabel = (isMedia && _drafts.length > 1) ? 'Publier (${_drafts.length})' : 'Publier';
 
-          // Texte centré (pas en mode audio ni vidéo)
-          if (_mode != _StoryMode.audio && _mode != _StoryMode.video)
-            Positioned.fill(
-              top: top + 70,
-              bottom: 190,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: TextField(
-                    controller: _textController,
-                    maxLines: null,
-                    maxLength: _StoryValidators.maxTextLength,
-                    textAlign: TextAlign.center,
-                    onChanged: (_) => setState(() {}),
-                    style: TextStyle(
-                      color: _mode == _StoryMode.photo ? Colors.white : (_hasBgColor ? Colors.white : ThixPolicy.textMain),
-                      fontSize: _hasBgColor || _mode == _StoryMode.photo ? 26 : 20,
-                      fontWeight: FontWeight.w800,
-                      height: 1.35,
-                      shadows: _mode == _StoryMode.photo
-                          ? const [Shadow(color: Colors.black54, blurRadius: 8)]
-                          : null,
-                    ),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      counterText: '',
-                      hintText: 'Quoi de neuf ?',
-                      hintStyle: TextStyle(
-                        color: _mode == _StoryMode.photo
-                            ? Colors.white70
-                            : (_hasBgColor ? Colors.white70 : ThixPolicy.textSecondary),
-                        fontSize: _hasBgColor || _mode == _StoryMode.photo ? 26 : 20,
-                        fontWeight: FontWeight.w600,
+    return PopScope(
+      canPop: !_needsConfirm,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmClose();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            if (isMedia)
+              Positioned.fill(
+                child: Column(
+                  children: [
+                    Expanded(child: _mediaPreview(top)),
+                    _bottomPanel(),
+                  ],
+                ),
+              )
+            else ...[
+              Positioned.fill(child: _previewBackground()),
+
+              if (_mode == _StoryMode.text)
+                Positioned.fill(
+                  top: top + 70,
+                  bottom: 190,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: TextField(
+                        controller: _textController,
+                        maxLines: null,
+                        maxLength: _StoryValidators.maxTextLength,
+                        textAlign: TextAlign.center,
+                        onChanged: (_) => setState(() {}),
+                        style: TextStyle(
+                          color: _hasBgColor ? Colors.white : ThixPolicy.textMain,
+                          fontSize: _hasBgColor ? 26 : 20,
+                          fontWeight: FontWeight.w800,
+                          height: 1.35,
+                        ),
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          counterText: '',
+                          hintText: 'Quoi de neuf ?',
+                          hintStyle: TextStyle(
+                            color: _hasBgColor ? Colors.white70 : ThixPolicy.textSecondary,
+                            fontSize: _hasBgColor ? 26 : 20,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
+
+              Positioned(left: 0, right: 0, bottom: 0, child: _bottomPanel()),
+            ],
+
+            // Barre haute
+            Positioned(
+              top: top + 8,
+              left: 16,
+              right: 16,
+              child: Row(
+                children: [
+                  _glassBtn(
+                    icon: Icons.close_rounded,
+                    onTap: _isBusy ? null : _confirmClose,
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: canPublish ? _createStory : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      decoration: BoxDecoration(
+                        gradient: canPublish
+                            ? const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)])
+                            : null,
+                        color: canPublish ? null : Colors.white24,
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: _isUploading
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Text(publishLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                    ),
+                  ),
+                ],
               ),
             ),
 
-          // Barre haute
-          Positioned(
-            top: top + 8,
-            left: 16,
-            right: 16,
-            child: Row(
-              children: [
-                _glassBtn(
-                  icon: Icons.close_rounded,
-                  onTap: _blocked ? null : () => Navigator.pop(context, false),
+            // Chargement (lecture de la galerie, rognage…)
+            if (_isProcessing && !isMedia)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black38,
+                  child: const Center(child: CircularProgressIndicator(color: ThixPolicy.gold)),
                 ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: (_blocked || !_hasContent) ? null : _createStory,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    decoration: BoxDecoration(
-                      gradient: (_blocked || !_hasContent)
-                          ? null
-                          : const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)]),
-                      color: (_blocked || !_hasContent) ? Colors.white24 : null,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: _isUploading
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Publier', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Panneau bas
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _bottomPanel(),
-          ),
-        ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -627,46 +824,57 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     );
   }
 
-  Widget _previewBackground() {
-    // Photo
-    if (_mode == _StoryMode.photo && _imageBytes != null) {
-      return Image.memory(_imageBytes!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
-    }
-    // Vidéo
-    if (_mode == _StoryMode.video && _videoController != null && _videoController!.value.isInitialized) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Center(
-            child: AspectRatio(
-              aspectRatio: _videoController!.value.aspectRatio,
-              child: VideoPlayer(_videoController!),
-            ),
-          ),
-          Center(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _videoController!.value.isPlaying
-                      ? _videoController!.pause()
-                      : _videoController!.play();
-                });
-              },
-              child: Container(
+  // ── Aperçu média (photo / vidéo) ─────────────────────────────────────────
+  Widget _mediaPreview(double top) {
+    final d = _current;
+    if (d == null) return const SizedBox.shrink();
+    final vc = _videoController;
+
+    Widget content;
+    if (!d.isVideo) {
+      content = Image.memory(d.bytes, fit: BoxFit.contain, gaplessPlayback: true);
+    } else if (vc != null && vc.value.isInitialized) {
+      content = GestureDetector(
+        onTap: () {
+          vc.value.isPlaying ? vc.pause() : vc.play();
+          setState(() {});
+        },
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            AspectRatio(aspectRatio: vc.value.aspectRatio, child: VideoPlayer(vc)),
+            if (!vc.value.isPlaying)
+              Container(
                 padding: const EdgeInsets.all(18),
                 decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
-                child: Icon(
-                  _videoController!.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 44,
-                ),
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 44),
+              ),
+          ],
+        ),
+      );
+    } else {
+      content = const CircularProgressIndicator(color: Colors.white);
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(top: top + 56),
+      child: Stack(
+        children: [
+          Positioned.fill(child: Center(child: content)),
+          if (_isProcessing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black38,
+                child: const Center(child: CircularProgressIndicator(color: Colors.white)),
               ),
             ),
-          ),
         ],
-      );
-    }
-    // Audio
+      ),
+    );
+  }
+
+  // ── Fond (texte / audio) ─────────────────────────────────────────────────
+  Widget _previewBackground() {
     if (_mode == _StoryMode.audio) {
       return Container(
         decoration: const BoxDecoration(
@@ -704,11 +912,11 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         ),
       );
     }
-    // Texte
     if (_hasBgColor) return Container(color: _bgColor);
     return Container(color: ThixPolicy.surfaceSoft);
   }
 
+  // ── Panneau bas ──────────────────────────────────────────────────────────
   Widget _bottomPanel() {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 16),
@@ -720,22 +928,9 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
           ? _recordingPanel()
           : (_mode == _StoryMode.audio && _audioBytes != null)
               ? _audioPreviewPanel()
-              : _defaultPanel(),
-    );
-  }
-
-  Widget _outlinedAction(IconData icon, String label, VoidCallback onPressed) {
-    return Expanded(
-      child: OutlinedButton.icon(
-        onPressed: _blocked ? null : onPressed,
-        icon: Icon(icon, size: 18),
-        label: Text(label),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white70,
-          side: const BorderSide(color: Colors.white38),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-        ),
-      ),
+              : (_mode == _StoryMode.media && _drafts.isNotEmpty)
+                  ? _mediaPanel()
+                  : _defaultPanel(),
     );
   }
 
@@ -743,7 +938,6 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Couleurs (uniquement mode texte)
         if (_mode == _StoryMode.text) ...[
           SizedBox(
             height: 34,
@@ -775,47 +969,118 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
         ],
         Row(
           children: [
-            _actionTile(Icons.image_rounded, 'Photo', ThixPolicy.success, _pickImage),
-            const SizedBox(width: 8),
-            _actionTile(Icons.videocam_rounded, 'Vidéo', const Color(0xFF00A4FF), _pickVideo),
+            _actionTile(Icons.photo_library_rounded, 'Galerie', ThixPolicy.success,
+                () => _runChoice(_MediaChoice.gallery)),
+            if (!kIsWeb) ...[
+              const SizedBox(width: 8),
+              _actionTile(Icons.photo_camera_rounded, 'Caméra', const Color(0xFF00A4FF),
+                  () => _pickFromSheet(cameraOnly: true)),
+            ],
             const SizedBox(width: 8),
             _actionTile(Icons.mic_rounded, 'Audio', ThixPolicy.gold, _startRecording),
-            const SizedBox(width: 8),
-            _actionTile(Icons.format_size_rounded, 'Texte', ThixPolicy.primary, () {
-              setState(() {
-                _mode = _StoryMode.text;
-                _imageMedia = null;
-                _imageBytes = null;
-                _audioBytes = null;
-                _audioPath = null;
-                _videoBytes = null;
-                _disposeVideo();
-              });
-            }),
           ],
         ),
-        // Photo : modifier + supprimer
-        if (_mode == _StoryMode.photo && _imageBytes != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              children: [
-                _outlinedAction(Icons.crop_rotate_rounded, 'Modifier', _editImage),
-                const SizedBox(width: 10),
-                _outlinedAction(Icons.delete_outline_rounded, 'Supprimer', _clearImage),
-              ],
+      ],
+    );
+  }
+
+  Widget _toolBtn(IconData icon, String label, VoidCallback? onTap) {
+    final enabled = onTap != null && !_isBusy;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: enabled ? Colors.white : Colors.white38, size: 24),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                color: enabled ? Colors.white70 : Colors.white38,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _thumb(int i) {
+    final d = _drafts[i];
+    final sel = i == _index;
+    return GestureDetector(
+      onTap: () {
+        if (!_isBusy && i != _index) _activate(i);
+      },
+      child: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: sel ? Colors.white : Colors.white24, width: sel ? 2.5 : 1),
+          color: Colors.white10,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: d.isVideo
+              ? const Center(child: Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 26))
+              : Image.memory(d.bytes, fit: BoxFit.cover, cacheWidth: 120, gaplessPlayback: true),
+        ),
+      ),
+    );
+  }
+
+  Widget _mediaPanel() {
+    final d = _current!;
+    final canAdd = _drafts.length < _StoryValidators.maxDrafts;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            if (!d.isVideo) ...[
+              _toolBtn(Icons.crop_rotate_rounded, 'Rogner', _cropCurrent),
+              _toolBtn(Icons.auto_fix_high_rounded, 'Filtres', () => _openEditor(EditorTool.filter)),
+              _toolBtn(Icons.brush_rounded, 'Dessin', () => _openEditor(EditorTool.draw)),
+              _toolBtn(Icons.title_rounded, 'Texte', () => _openEditor(EditorTool.text)),
+              _toolBtn(Icons.emoji_emotions_outlined, 'Emoji', () => _openEditor(EditorTool.emoji)),
+            ],
+            _toolBtn(Icons.delete_outline_rounded, 'Supprimer', _removeCurrent),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 52,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _drafts.length + (canAdd ? 1 : 0),
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              if (i == _drafts.length) {
+                return GestureDetector(
+                  onTap: _isBusy ? null : _pickFromSheet,
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white38),
+                    ),
+                    child: const Icon(Icons.add_rounded, color: Colors.white),
+                  ),
+                );
+              }
+              return _thumb(i);
+            },
           ),
-        // Vidéo : supprimer
-        if (_mode == _StoryMode.video && _videoBytes != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              children: [
-                _outlinedAction(Icons.delete_outline_rounded, 'Supprimer la vidéo', _clearVideo),
-              ],
-            ),
-          ),
+        ),
       ],
     );
   }
@@ -823,7 +1088,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
   Widget _actionTile(IconData icon, String label, Color color, VoidCallback onTap) {
     return Expanded(
       child: GestureDetector(
-        onTap: _blocked ? null : onTap,
+        onTap: _isBusy ? null : onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -932,9 +1197,13 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
           children: [
             _actionTile(Icons.mic_rounded, 'Réenregistrer', ThixPolicy.gold, _startRecording),
             const SizedBox(width: 8),
-            _actionTile(Icons.image_rounded, 'Photo', ThixPolicy.success, _pickImage),
-            const SizedBox(width: 8),
-            _actionTile(Icons.videocam_rounded, 'Vidéo', const Color(0xFF00A4FF), _pickVideo),
+            _actionTile(Icons.photo_library_rounded, 'Galerie', ThixPolicy.success,
+                () => _runChoice(_MediaChoice.gallery)),
+            if (!kIsWeb) ...[
+              const SizedBox(width: 8),
+              _actionTile(Icons.photo_camera_rounded, 'Caméra', const Color(0xFF00A4FF),
+                  () => _pickFromSheet(cameraOnly: true)),
+            ],
             const SizedBox(width: 8),
             _actionTile(Icons.delete_outline_rounded, 'Supprimer', ThixPolicy.danger, _clearAudio),
           ],
@@ -1052,7 +1321,7 @@ class _StoryAudioPreviewState extends State<_StoryAudioPreview> {
                   child: Slider(
                     min: 0,
                     max: maxMs,
-                    value: _position.inMilliseconds.toDouble().clamp(0, maxMs),
+                    value: _position.inMilliseconds.toDouble().clamp(0.0, maxMs),
                     onChanged: (v) => _player.seek(Duration(milliseconds: v.toInt())),
                   ),
                 ),

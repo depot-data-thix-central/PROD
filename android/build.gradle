@@ -21,6 +21,27 @@ subprojects {
     }
 }
 
+// Remonte compileSdk à 36 pour les anciens plugins compilés avec une version trop basse
+def raiseCompileSdk = { p ->
+    if (p.plugins.hasPlugin("com.android.library")) {
+        def ext = p.extensions.findByName("android")
+        if (ext != null) {
+            def current = ext.compileSdk
+            if (current == null || current < 36) {
+                ext.compileSdk = 36
+            }
+        }
+    }
+}
+
+subprojects { p ->
+    if (p.state.executed) {
+        raiseCompileSdk(p)
+    } else {
+        p.afterEvaluate { raiseCompileSdk(p) }
+    }
+}
+
 rootProject.layout.buildDirectory.value(
     rootProject.layout.buildDirectory.dir("../../build").get()
 )

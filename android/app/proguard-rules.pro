@@ -1,13 +1,12 @@
 # ═══════════════════════════════════════════════════════════════
-# R8 / ProGuard — THIX ID (version optimisée pour full mode)
+# R8 / ProGuard — THIX ID (Version Équilibrée : Safe & Optimized)
 # ═══════════════════════════════════════════════════════════════
-# Principe : les plugins Flutter modernes injectent leurs propres
-# règles via consumer-rules.pro. On ne garde QUE ce qui casse
-# vraiment (entry points Android, JNI, réflexion spécifique).
+# Objectif : Stabilité pour les appels/notifs (Fichier 1) + 
+#            Optimisation de la taille (Fichier 2).
 # ═══════════════════════════════════════════════════════════════
 
 # ───────────────────────────────────────────────────────────────
-# ENTRY POINTS ANDROID (indispensables, système Android les cherche par réflexion)
+# 1. ENTRY POINTS ANDROID
 # ───────────────────────────────────────────────────────────────
 -keep public class * extends android.app.Activity
 -keep public class * extends android.app.Application
@@ -18,7 +17,7 @@
 -keep public class * extends android.preference.Preference
 
 # ───────────────────────────────────────────────────────────────
-# MÉTADONNÉES (nécessaires pour stack traces lisibles + sérialisation)
+# 2. MÉTADONNÉES
 # ───────────────────────────────────────────────────────────────
 -keepattributes Signature
 -keepattributes *Annotation*
@@ -28,23 +27,17 @@
 -renamesourcefileattribute SourceFile
 
 # ───────────────────────────────────────────────────────────────
-# JNI / NATIVES (Agora, SQLite, etc. : méthodes appelées depuis C/C++)
+# 3. JNI, ENUMS, PARCELABLE, KOTLIN
 # ───────────────────────────────────────────────────────────────
 -keepclasseswithmembernames class * {
     native <methods>;
 }
 
-# ───────────────────────────────────────────────────────────────
-# ENUMS (accédés par réflexion : valueOf, values)
-# ───────────────────────────────────────────────────────────────
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 
-# ───────────────────────────────────────────────────────────────
-# PARCELABLE / SERIALIZABLE
-# ───────────────────────────────────────────────────────────────
 -keepclassmembers class * implements android.os.Parcelable {
     public static final ** CREATOR;
 }
@@ -59,21 +52,14 @@
     java.lang.Object readResolve();
 }
 
-# ───────────────────────────────────────────────────────────────
-# KOTLIN METADATA (nécessaire pour la réflexion Kotlin / Moshi / Serialization)
-# ───────────────────────────────────────────────────────────────
 -keep class kotlin.Metadata { *; }
 
 # ───────────────────────────────────────────────────────────────
-# AGORA RTC (SDK natif complexe, beaucoup de réflexion + JNI)
-# On garde TOUT pour Agora : trop de points d'entrée cachés.
+# 4. SDKS NATIFS CRITIQUES (Agora, ML Kit)
 # ───────────────────────────────────────────────────────────────
 -keep class io.agora.** { *; }
 -dontwarn io.agora.**
 
-# ───────────────────────────────────────────────────────────────
-# ML KIT TEXT RECOGNITION (utilisé pour scan OCR)
-# ───────────────────────────────────────────────────────────────
 -keep class com.google.mlkit.vision.text.** { *; }
 -dontwarn com.google.mlkit.vision.text.chinese.**
 -dontwarn com.google.mlkit.vision.text.devanagari.**
@@ -81,7 +67,39 @@
 -dontwarn com.google.mlkit.vision.text.korean.**
 
 # ───────────────────────────────────────────────────────────────
-# AVERTISSEMENTS À IGNORER (bibliothèques optionnelles non utilisées)
+# 5. PLUGINS NOTIFICATIONS / APPELS (Stabilité garantie)
+# ───────────────────────────────────────────────────────────────
+-keep class com.dexterous.** { *; }
+-keep class com.hiennv.flutter_callkit_incoming.** { *; }
+-keep class com.google.firebase.messaging.** { *; }
+-keep class io.flutter.plugins.GeneratedPluginRegistrant { *; }
+
+# ───────────────────────────────────────────────────────────────
+# 6. GSON (Sérialisation JSON pour le chat/API)
+# ───────────────────────────────────────────────────────────────
+-keep class com.google.gson.** { *; }
+-keep class * extends com.google.gson.TypeAdapter
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+
+# ───────────────────────────────────────────────────────────────
+# 7. CODE MÉTIER THIX ID (L'équilibre parfait)
+# ───────────────────────────────────────────────────────────────
+# On autorise R8 à optimiser le code, SAUF :
+# - Les classes annotées @Keep
+# - Les modèles de données (si tu utilises Gson, remplace "models" par ton vrai dossier, ex: "com.thixhub.data.models.**")
+-keep @androidx.annotation.Keep class * { *; }
+-keep class com.thixhub.models.** { *; }
+-keep class com.thixhub.data.dto.** { *; }
+
+# Protège les champs Gson dans tout le code métier
+-keepclassmembers class com.thixhub.** {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
+
+# ───────────────────────────────────────────────────────────────
+# 8. AVERTISSEMENTS À IGNORER
 # ───────────────────────────────────────────────────────────────
 -dontwarn com.google.android.play.core.**
 -dontwarn okhttp3.**
@@ -89,15 +107,3 @@
 -dontwarn javax.annotation.**
 -dontwarn sun.misc.**
 -dontwarn org.codehaus.mojo.**
-
-# ═══════════════════════════════════════════════════════════════
-# ❌ SUPPRIMÉ (déjà géré par consumer-rules des plugins) :
-#   io.flutter, io.flutter.plugins
-#   com.google.firebase, com.google.android.gms
-#   com.google.gson
-#   com.baseflow.permissionhandler
-#   okhttp3
-#
-# ❌ SUPPRIMÉ (empêchait toute optimisation du code métier) :
-#   com.thixhub.** { *; }
-# ═══════════════════════════════════════════════════════════════

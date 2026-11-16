@@ -1,0 +1,92 @@
+# ═══════════════════════════════════════════════════════════════════════
+# THIX ID — PROMOTE / ROLLBACK / ROLLFORWARD (Shorebird)
+#
+# Gestion du cycle de vie d'un patch SANS rebuild (pas de keystore requis) :
+#   promote     : staging → stable (tous les utilisateurs)
+#   rollback    : retire le patch des appareils servis (urgence)
+#   rollforward : re-sert un patch rollbacké
+#
+# Le patch_number est visible dans la console Shorebird ou via :
+#   shorebird patches list --release-version X.Y.Z+B
+# ═══════════════════════════════════════════════════════════════════════
+name: Shorebird Promote / Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action à effectuer'
+        required: true
+        type: choice
+        options: [promote, rollback, rollforward]
+        default: promote
+      release_version:
+        description: 'Version de la release (ex: 3.5.1+26)'
+        required: true
+        type: string
+      patch_number:
+        description: 'N° du patch (ex: 1)'
+        required: true
+        type: string
+
+concurrency:
+  group: shorebird-manage-${{ github.event.inputs.release_version }}
+  cancel-in-progress: false
+
+env:
+  SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+
+jobs:
+  manage:
+    name: ${{ github.event.inputs.action }} patch ${{ github.event.inputs.patch_number }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐦 Setup Shorebird
+        uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          RV="${{ github.event.inputs.release_version }}"
+          if ! [[ "$RV" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]; then
+            echo "::error::release_version doit être au format X.Y.Z+B. Reçu: '$RV'"
+            exit 1
+          fi
+          PN="${{ github.event.inputs.patch_number }}"
+          if ! [[ "$PN" =~ ^[0-9]+$ ]] || [ "$PN" -lt 1 ]; then
+            echo "::error::patch_number doit être un entier ≥ 1. Reçu: '$PN'"
+            exit 1
+          fi
+
+      - name: List patches (état actuel)
+        run: |
+          shorebird patches list \
+            --release-version=${{ github.event.inputs.release_version }}
+
+      - name: Execute action
+        run: |
+          shorebird patches ${{ github.event.inputs.action }} \
+            --release-version=${{ github.event.inputs.release_version }} \
+            --patch-number=${{ github.event.inputs.patch_number }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 🐦 Shorebird — ${{ github.event.inputs.action }}"
+            echo ""
+            echo "**Release:** ${{ github.event.inputs.release_version }}"
+            echo "**Patch:** n° ${{ github.event.inputs.patch_number }}"
+            echo ""
+            echo "- promote → le patch part sur le canal stable (tous les appareils)."
+            echo "- rollback → le patch n'est plus servi ; les appareils reviennent"
+            echo "  au code de la release (ou au patch stable précédent)."
+            echo "- rollforward → le patch est de nouveau servi."
+          } >> "$GITHUB_STEP_SUMMARY"
