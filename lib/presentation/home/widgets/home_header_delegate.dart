@@ -2,6 +2,8 @@
 //
 // ✅ MISE À JOUR : la recherche du header résout désormais les THIX ID
 //    BUSINESS ET LEURS NOMS avec suggestions (autocomplete).
+// 🆕 OTA : double canal de mise à jour — patch Dart Shorebird (prioritaire,
+//    appliqué au redémarrage) + release native Play Store (existant).
 import 'dart:async';
 import 'dart:ui';
 
@@ -20,6 +22,7 @@ import 'package:thix_id/l10n/locale_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/services/app_update_service.dart';
+import 'package:thix_id/services/ota_update_service.dart'; // 🆕 OTA
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 // ✅ FIX : module portfolio business
@@ -28,6 +31,7 @@ import 'package:thix_id/presentation/thix_portfolio/data/business_repository.dar
 
 import 'app_update_sheet.dart';
 import 'app_update_strings.dart';
+import 'ota_update_sheet.dart'; // 🆕 OTA
 import 'home_theme.dart';
 
 const double _kHeaderHeight = 58.0;
@@ -191,6 +195,10 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
   bool _searchOpen = false;
   bool _resolvingBusiness = false;
 
+  // 🆕 OTA : verrou anti-empilement — un seul sheet de mise à jour par
+  // lancement (OTA ou Play Store), jamais les deux en même temps.
+  bool _updateSheetOpen = false;
+
   // ✅ AUTOCOMPLETE VARIABLES
   final LayerLink _layerLink = LayerLink();
   OverlayEntry? _overlayEntry;
@@ -213,18 +221,49 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
     super.dispose();
   }
 
+  // 🆕 OTA : orchestration des deux canaux, en parallèle et non bloquant.
   Future<void> _initUpdateCheck() async {
+    // Canal 1 — OTA Shorebird (patch Dart déjà téléchargé → « Redémarrer »).
+    unawaited(_initOtaCheck());
+    // Canal 2 — Play Store (release native), logique existante inchangée.
+    await _initStoreCheck();
+  }
+
+  // 🆕 OTA : propose le redémarrage si un patch est prêt (throttle 24 h).
+  Future<void> _initOtaCheck() async {
+    final ota = OtaUpdateService.instance;
+    await ota.checkAndDownload();
+    if (!mounted || _updateSheetOpen) return;
+    if (!ota.patchReadyToRestart.value) return;
+    if (!await ota.shouldPromptRestart()) return;
+    if (!mounted || _updateSheetOpen) return;
+    _updateSheetOpen = true;
+    await OtaUpdateSheet.show(context);
+    _updateSheetOpen = false;
+  }
+
+  Future<void> _initStoreCheck() async {
     final svc = AppUpdateService.instance;
     await svc.checkForUpdate();
-    if (!mounted || !svc.updateAvailable.value) return;
+    if (!mounted || _updateSheetOpen || !svc.updateAvailable.value) return;
     if (!await svc.shouldPromptNow()) return;
-    if (!mounted) return;
+    if (!mounted || _updateSheetOpen) return;
+    _updateSheetOpen = true;
     await AppUpdateSheet.show(context);
+    _updateSheetOpen = false;
   }
 
   void _openUpdateSheet() {
     HapticFeedback.selectionClick();
     AppUpdateSheet.show(context);
+  }
+
+  // 🆕 OTA : ouverture manuelle depuis le badge « PATCH → Redémarrer ».
+  // force: true → le tap explicite de l'utilisateur ignore le throttle 24 h
+  // (même comportement que _openUpdateSheet côté Play Store).
+  void _openOtaSheet() {
+    HapticFeedback.selectionClick();
+    OtaUpdateSheet.show(context, force: true);
   }
 
   void _openSearch() {
@@ -431,7 +470,12 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _UpdateHint(localeCode: localeCode, onTap: _openUpdateSheet),
+              // 🆕 OTA : badge double canal (PATCH prioritaire sur MAJ store).
+              _UpdateHint(
+                localeCode: localeCode,
+                onTap: _openUpdateSheet,
+                onOtaTap: _openOtaSheet,
+              ),
               const SizedBox(height: 2),
               Row(
                 children: [
@@ -579,20 +623,43 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
 }
 
 // ============================================================================
-// RESTE DU FICHIER INCHANGÉ (_UpdateHint, _HeaderIconButton, etc.)
+// WIDGETS DU HEADER (_UpdateHint double canal 🆕, _HeaderIconButton, etc.)
 // ============================================================================
 
 class _UpdateHint extends StatelessWidget {
   final String localeCode;
   final VoidCallback onTap;
-  const _UpdateHint({required this.localeCode, required this.onTap});
+  final VoidCallback onOtaTap; // 🆕 OTA
+  const _UpdateHint({
+    required this.localeCode,
+    required this.onTap,
+    required this.onOtaTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final t = AppUpdateStrings.of(localeCode);
-    return ValueListenableBuilder<bool>(
-      valueListenable: AppUpdateService.instance.updateAvailable,
-      builder: (context, available, _) {
+    final otaStrings = _OtaHintStrings(localeCode); // 🆕 OTA
+    final store = AppUpdateService.instance;
+    final ota = OtaUpdateService.instance; // 🆕 OTA
+
+    // 🆕 OTA : écoute les deux canaux. Le patch OTA (déjà téléchargé,
+    // instantané, sans données mobiles) est prioritaire sur la release store.
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        store.updateAvailable,
+        ota.patchReadyToRestart,
+      ]),
+      builder: (context, _) {
+        final otaReady = ota.patchReadyToRestart.value;
+        final available = otaReady || store.updateAvailable.value;
+
+        final tag = otaReady ? otaStrings.tag : t.hintTag;
+        final action = otaReady ? otaStrings.action : t.hintAction;
+        final semanticsLabel =
+            otaReady ? otaStrings.semantics : t.hintAction;
+        final handleTap = otaReady ? onOtaTap : onTap;
+
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
           transitionBuilder: (child, anim) => FadeTransition(
@@ -602,11 +669,11 @@ class _UpdateHint extends StatelessWidget {
           ),
           child: available
               ? Semantics(
-                  key: const ValueKey('update_hint'),
+                  key: ValueKey(otaReady ? 'ota_hint' : 'update_hint'),
                   button: true,
-                  label: t.hintAction,
+                  label: semanticsLabel,
                   child: GestureDetector(
-                    onTap: onTap,
+                    onTap: handleTap,
                     behavior: HitTestBehavior.opaque,
                     child: SizedBox(
                       height: 17,
@@ -623,7 +690,7 @@ class _UpdateHint extends StatelessWidget {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              t.hintTag,
+                              tag,
                               style: ThixPolicy.microStyle.copyWith(
                                 color: HomeTheme.skyDeep,
                                 fontSize: 8,
@@ -634,7 +701,7 @@ class _UpdateHint extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            t.hintAction,
+                            action,
                             style: ThixPolicy.captionStyle.copyWith(
                               color: HomeTheme.skyDeep,
                               fontSize: 11,
@@ -642,8 +709,13 @@ class _UpdateHint extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 2),
-                          const Icon(Icons.chevron_right_rounded,
-                              size: 14, color: HomeTheme.skyDeep),
+                          Icon(
+                            otaReady
+                                ? Icons.restart_alt_rounded
+                                : Icons.chevron_right_rounded,
+                            size: 14,
+                            color: HomeTheme.skyDeep,
+                          ),
                         ],
                       ),
                     ),
@@ -654,6 +726,20 @@ class _UpdateHint extends StatelessWidget {
       },
     );
   }
+}
+
+// 🆕 OTA — chaînes du badge (fr / en, fallback en pour les autres langues).
+// Fusionnable plus tard dans AppUpdateStrings / vos fichiers l10n.
+class _OtaHintStrings {
+  const _OtaHintStrings(this.localeCode);
+  final String localeCode;
+  bool get _fr => localeCode == 'fr';
+
+  String get tag => 'PATCH';
+  String get action => _fr ? 'Redémarrer' : 'Restart';
+  String get semantics => _fr
+      ? 'Mise à jour prête. Redémarrer pour appliquer.'
+      : 'Update ready. Restart to apply.';
 }
 
 BoxDecoration _circleDeco() => BoxDecoration(
