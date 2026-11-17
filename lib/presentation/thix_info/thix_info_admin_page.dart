@@ -1,5 +1,11 @@
 // ============================================================================
-// ADMIN THIX INFO — Gestion des articles (CORRIGÉ v3)
+// ADMIN THIX INFO — Gestion des articles (v4)
+//  • ✅ NOUVEAU : section « Diffusion » avec 2 cartes : URGENT et À LA UNE
+//  • ✅ NOUVEAU : URGENT / À LA UNE déclenchent aussi une notification push
+//    (confirmation avant envoi, pas de doublon à chaque modification,
+//     jamais pour un brouillon ou une date de publication future)
+//    → RPC SQL attendue : rpc_notify_news_article(p_article_id, p_kind)
+//      p_kind = 'breaking' (URGENT) | 'featured' (À LA UNE)
 //  • ✅ Lecteur Audio local supprimé (conflit just_audio_background réglé)
 //  • ✅ Utilisation du podcastPlayerProvider global pour la prévisualisation
 //  • ✅ Buckets alignés : news/images/, news/videos/, news/audios/
@@ -266,6 +272,8 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
     return '';
   }
 
+  /// Bascule rapide depuis la liste : ne déclenche PAS de notification push
+  /// (les notifications partent uniquement depuis le formulaire, avec confirmation).
   Future<void> _toggleFlag(NewsArticle article, String field, bool value) async {
     try {
       final idx = _articles.indexWhere((a) => a.id == article.id);
@@ -612,8 +620,8 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
                 article.status == 'published'
                     ? ThixPolicy.success
                     : ThixPolicy.warning),
-            if (article.isFeatured) _badge('À la une', ThixPolicy.primary),
-            if (article.isBreaking) _badge('Flash', ThixPolicy.danger),
+            if (article.isFeatured) _badge('À LA UNE', ThixPolicy.primary),
+            if (article.isBreaking) _badge('URGENT', ThixPolicy.danger),
             if (article.audioUrl != null) _badge('🎧 AUDIO', const Color(0xFF6366F1)),
             if (article.videoUrl != null) _badge('🎥 VIDÉO', Colors.redAccent),
             _badge('${article.viewsCount} vues', Colors.white24),
@@ -635,7 +643,7 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
                 icon: article.isBreaking
                     ? Icons.flash_on_rounded
                     : Icons.flash_off_rounded,
-                label: 'Flash',
+                label: 'Urgent',
                 color: article.isBreaking
                     ? ThixPolicy.danger
                     : Colors.white24,
@@ -701,7 +709,7 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
 }
 
 // ============================================================================
-// FORMULAIRE CRÉATION / ÉDITION (UPLOAD RÉEL + MAGAZINE + DATE + AUDIO)
+// FORMULAIRE CRÉATION / ÉDITION (UPLOAD RÉEL + MAGAZINE + DATE + AUDIO + PUSH)
 // ============================================================================
 class _ArticleFormPage extends ConsumerStatefulWidget {
   final NewsArticle? article;
@@ -731,8 +739,8 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
 
   String _category = 'politique';
   String _status = 'published';
-  bool _isFeatured = false;
-  bool _isBreaking = false;
+  bool _isFeatured = false; // À LA UNE
+  bool _isBreaking = false; // URGENT
   bool _saving = false;
   DateTime _publishedAt = DateTime.now();
   bool _hasUnsavedChanges = false;
@@ -751,9 +759,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   bool _isUploadingImage = false;
   bool _isUploadingVideo = false;
   bool _isUploadingAudio = false;
-
-  // ⚠️ SUPPRIMÉ : final AudioPlayer _audioPreview = AudioPlayer();
-  // ⚠️ SUPPRIMÉ : bool _audioPreviewPlaying = false; (on utilise le provider global)
 
   bool get _isEditing => widget.article != null;
   bool get _isMagazine => _category == 'Magazine';
@@ -791,10 +796,10 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
 
   @override
   void dispose() {
-    // ⚠️ On ne dispose plus de lecteur ici, on l'arrête juste s'il joue notre preview
+    // On arrête le lecteur global s'il joue notre preview
     final playerState = ref.read(podcastPlayerProvider);
     if (playerState.article?.audioUrl == _audioUrl && _audioUrl != null) {
-       ref.read(podcastPlayerProvider.notifier).stop();
+      ref.read(podcastPlayerProvider.notifier).stop();
     }
 
     _titleCtrl.dispose();
@@ -808,6 +813,112 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     _authorRoleCtrl.dispose();
     super.dispose();
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 🔔 LOGIQUE PUSH (URGENT / À LA UNE)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Retourne 'breaking' (URGENT), 'featured' (À LA UNE) ou null.
+  /// - null si l'article n'est pas publié, ou publié dans le futur
+  /// - null si le flag était déjà actif (pas de doublon à chaque modification)
+  /// - si les deux sont nouveaux : URGENT prioritaire
+  String? _pushKindToSend() {
+    if (_status != 'published') return null;
+    if (_publishedAt.isAfter(DateTime.now().add(const Duration(minutes: 1)))) {
+      return null;
+    }
+
+    final a = widget.article;
+    final newlyPublished = a == null || a.status != 'published';
+    final urgentNew = _isBreaking && (newlyPublished || !(a?.isBreaking ?? false));
+    final featuredNew =
+        _isFeatured && (newlyPublished || !(a?.isFeatured ?? false));
+
+    if (urgentNew) return 'breaking';
+    if (featuredNew) return 'featured';
+    return null;
+  }
+
+  String? get _pushHint {
+    if (!_isBreaking && !_isFeatured) return null;
+    if (_status != 'published') {
+      return 'La notification partira quand l\'article sera publié.';
+    }
+    if (_publishedAt.isAfter(DateTime.now().add(const Duration(minutes: 1)))) {
+      return 'Date de publication dans le futur : aucune notification pour le moment.';
+    }
+    final kind = _pushKindToSend();
+    if (kind == 'breaking') {
+      return '🔴 Une alerte push URGENT sera proposée à l\'enregistrement.';
+    }
+    if (kind == 'featured') {
+      return '⭐ Une notification push « À la une » sera proposée à l\'enregistrement.';
+    }
+    return 'Aucune nouvelle notification : cet article a déjà été diffusé.';
+  }
+
+  /// 'push' | 'nopush' | null (annulé)
+  Future<String?> _askPush(String kind) {
+    final urgent = kind == 'breaking';
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ThixPolicy.inkDeep,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+        title: Text(
+          urgent
+              ? '🔴 Envoyer l\'alerte URGENT ?'
+              : '⭐ Envoyer la notification À LA UNE ?',
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17),
+        ),
+        content: const Text(
+          'Tous les utilisateurs recevront une notification push avec cet article.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Annuler',
+                style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'nopush'),
+            child: const Text('Sans notification',
+                style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, 'push'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: urgent ? ThixPolicy.danger : ThixPolicy.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Enregistrer et notifier'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Appelle la fonction SQL qui crée les notifications (type news_breaking /
+  /// news_featured) → webhook → send-push-notification → FCM.
+  Future<bool> _sendPush(String articleId, String kind) async {
+    try {
+      await _supabase.rpc('rpc_notify_news_article', params: {
+        'p_article_id': articleId,
+        'p_kind': kind,
+      }).timeout(const Duration(seconds: 30));
+      return true;
+    } catch (e) {
+      debugPrint('[ArticleForm] ❌ Push error: $e');
+      return false;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // MÉDIAS
+  // ══════════════════════════════════════════════════════════════════════
 
   Future<void> _pickImage() async {
     try {
@@ -999,19 +1110,17 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     });
   }
 
-  // ─── PREVIEW AUDIO (CORRIGÉ : Utilise le provider global) ───
+  // ─── PREVIEW AUDIO (utilise le provider global) ───
   Future<void> _toggleAudioPreview() async {
     if (_audioUrl == null) return;
-    
+
     final playerNotifier = ref.read(podcastPlayerProvider.notifier);
     final playerState = ref.read(podcastPlayerProvider);
 
     try {
-      // Si c'est déjà le fichier en cours de lecture -> Play/Pause
       if (playerState.article?.audioUrl == _audioUrl) {
         await playerNotifier.toggle();
       } else {
-        // Sinon, on crée un faux article juste pour la preview
         final fakeArticle = NewsArticle.fromJson({
           'id': 'preview_${DateTime.now().millisecondsSinceEpoch}',
           'title': _titleCtrl.text.trim().isEmpty ? 'Aperçu Audio' : _titleCtrl.text.trim(),
@@ -1029,7 +1138,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
           'created_at': DateTime.now().toIso8601String(),
           'created_by': _supabase.auth.currentUser?.id ?? 'admin',
         });
-        
+
         await playerNotifier.playArticle(fakeArticle);
       }
     } catch (e) {
@@ -1037,9 +1146,21 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ENREGISTREMENT (+ PUSH)
+  // ══════════════════════════════════════════════════════════════════════
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_saving || _isUploadingVideo || _isUploadingImage || _isUploadingAudio) return;
+
+    // 1) Décision push (avant d'enregistrer)
+    final pushKind = _pushKindToSend();
+    var sendPush = false;
+    if (pushKind != null) {
+      final choice = await _askPush(pushKind);
+      if (choice == null) return; // annulé
+      sendPush = choice == 'push';
+    }
 
     setState(() => _saving = true);
 
@@ -1080,16 +1201,20 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
         'updated_at': DateTime.now().toIso8601String(),
       };
 
+      late final String articleId;
+
       if (_isEditing) {
+        articleId = widget.article!.id;
         await _supabase
             .from('news_articles')
             .update(payload)
-            .eq('id', widget.article!.id)
+            .eq('id', articleId)
             .timeout(const Duration(seconds: 30));
 
         await _cleanupReplacedMedia(finalImageUrl);
       } else {
-        payload['id'] = const Uuid().v4();
+        articleId = const Uuid().v4();
+        payload['id'] = articleId;
         payload['created_by'] = uid;
         payload['created_at'] = DateTime.now().toIso8601String();
         payload['views_count'] = 0;
@@ -1099,11 +1224,24 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
             .timeout(const Duration(seconds: 30));
       }
 
+      // 2) Push (uniquement si confirmé)
+      var pushOk = true;
+      if (sendPush && pushKind != null) {
+        pushOk = await _sendPush(articleId, pushKind);
+      }
+
       if (mounted) {
-        _showSnack(
-          _isEditing ? 'Article mis à jour ✅' : 'Article créé ✅',
-          ThixPolicy.success,
-        );
+        final base = _isEditing ? 'Article mis à jour ✅' : 'Article créé ✅';
+        if (!sendPush) {
+          _showSnack(base, ThixPolicy.success);
+        } else if (pushOk) {
+          _showSnack('$base — notification envoyée 🔔', ThixPolicy.success);
+        } else {
+          _showSnack(
+            '$base — mais la notification push n\'a pas pu être envoyée',
+            ThixPolicy.warning,
+          );
+        }
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -1282,29 +1420,148 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                   });
                 }),
             const SizedBox(height: 16),
-            Row(children: [
-              Expanded(
-                  child: _buildToggle(
-                      label: 'À la une',
-                      value: _isFeatured,
-                      onChanged: (v) => setState(() {
-                        _isFeatured = v;
-                        _hasUnsavedChanges = true;
-                      }))),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: _buildToggle(
-                      label: 'Flash info',
-                      value: _isBreaking,
-                      onChanged: (v) => setState(() {
-                        _isBreaking = v;
-                        _hasUnsavedChanges = true;
-                      }))),
-            ]),
+
+            // ✅ NOUVEAU : diffusion URGENT / À LA UNE (+ push)
+            _buildBroadcastSection(),
             const SizedBox(height: 16),
+
             _buildDateSection(),
             const SizedBox(height: 32),
           ]),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // SECTION DIFFUSION : URGENT / À LA UNE
+  // ══════════════════════════════════════════════════════════════════════
+  Widget _buildBroadcastSection() {
+    final hint = _pushHint;
+    final urgentColor = ThixPolicy.danger;
+    final featuredColor = ThixPolicy.primary;
+    final hintColor = _isBreaking ? urgentColor : featuredColor;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Diffusion',
+            style: ThixPolicy.labelStyle.copyWith(
+                color: Colors.white70, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildBroadcastCard(
+                icon: Icons.flash_on_rounded,
+                label: 'URGENT',
+                subtitle: 'Bandeau + alerte push',
+                color: urgentColor,
+                value: _isBreaking,
+                onChanged: (v) => setState(() {
+                  _isBreaking = v;
+                  _hasUnsavedChanges = true;
+                }),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildBroadcastCard(
+                icon: Icons.star_rounded,
+                label: 'À LA UNE',
+                subtitle: 'Hero + notification push',
+                color: featuredColor,
+                value: _isFeatured,
+                onChanged: (v) => setState(() {
+                  _isFeatured = v;
+                  _hasUnsavedChanges = true;
+                }),
+              ),
+            ),
+          ],
+        ),
+        if (hint != null)
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: hintColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+              border: Border.all(color: hintColor.withOpacity(0.35)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.notifications_active_rounded,
+                    size: 16, color: hintColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    hint,
+                    style: const TextStyle(
+                        color: Colors.white70, fontSize: 11.5, height: 1.35),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBroadcastCard({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color color,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: value ? color.withOpacity(0.2) : Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          border: Border.all(
+            color: value ? color : Colors.white.withOpacity(0.15),
+            width: value ? 1.6 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: value ? color : Colors.white38, size: 20),
+                const Spacer(),
+                Icon(
+                  value
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: value ? color : Colors.white38,
+                  size: 18,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: value ? Colors.white : Colors.white70,
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+          ],
         ),
       ),
     );
@@ -1514,9 +1771,9 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                             const Icon(Icons.check_circle_rounded,
                                 color: ThixPolicy.success),
                             const SizedBox(width: 12),
-                            Expanded(
+                            const Expanded(
                               child: Text('Vidéo prête à être publiée',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600)),
@@ -1622,9 +1879,9 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                             const Icon(Icons.check_circle_rounded,
                                 color: Color(0xFF6366F1)),
                             const SizedBox(width: 12),
-                            Expanded(
+                            const Expanded(
                               child: Text('Fichier audio prêt',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600)),
@@ -1633,7 +1890,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                               icon: const Icon(Icons.close_rounded,
                                   color: Colors.white54, size: 20),
                               onPressed: () {
-                                // Arrêter le lecteur si c'était ce fichier qui jouait
                                 if (isCurrentPreview) {
                                   ref.read(podcastPlayerProvider.notifier).stop();
                                 }
@@ -1766,43 +2022,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildToggle({
-    required String label,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: value
-              ? ThixPolicy.primary.withOpacity(0.2)
-              : Colors.white.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(
-            color:
-                value ? ThixPolicy.primary : Colors.white.withOpacity(0.15),
-          ),
-        ),
-        child: Row(children: [
-          Icon(
-              value
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              color: value ? ThixPolicy.primary : Colors.white38,
-              size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                      color: value ? Colors.white : Colors.white54,
-                      fontWeight: FontWeight.w700))),
-        ]),
-      ),
     );
   }
 }
