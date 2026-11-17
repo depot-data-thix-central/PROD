@@ -1,4 +1,4 @@
-// lib/presentation/thix_info/thix_info_home.dart
+ // lib/presentation/thix_info/thix_info_home.dart
 // THIX INFO — VRAIE PAGE D'INFORMATION (design capture, thème clair)
 // ✅ Branché sur la logique existante : newsProvider, downloadsProvider,
 //    podcastPlayerProvider, AdminRbacService, Supabase.
