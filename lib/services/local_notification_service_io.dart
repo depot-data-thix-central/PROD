@@ -1,6 +1,15 @@
 // lib/services/local_notification_service_io.dart
 //
-// Local Notification Service IO v3.4.1 (Production Enterprise + Wedding + THIX Info)
+// Local Notification Service IO v3.5 (Production Enterprise + Wedding + THIX Info)
+//
+// CHANGELOG v3.5 :
+//   ✅ CHAT façon WhatsApp : 1 notification par conversation (id stable),
+//      messages cumulés (MessagingStyle, historique via SharedPreferences),
+//      3 boutons : Répondre (saisie directe) • Marquer comme lu • Muet
+//   ✅ FIX : "Ouvrir" n'est plus ajouté au chat (Android n'affiche que 3 actions :
+//      le bouton Muet disparaissait)
+//   ✅ Nettoyage de l'historique quand l'utilisateur touche la notification / un bouton
+//   ✅ clearChat(conversationId) pour l'écran de chat
 //
 // CHANGELOG v3.4.1 :
 //   ✅ FIX v18.0.1 : `vibrationPattern: Int64List.fromList` retiré du contexte `const`
@@ -16,17 +25,19 @@
 // CHANGELOG v3.3 :
 //   ✅ Ajout de `showWeddingMessage` pour les messages de mariage avec actions.
 //   ✅ Ajout de `showWeddingAlert` pour les alertes de mariage (RSVP, menu, tâches).
-//   ✅ Ajout du channel "Wedding" pour séparer les notifications d'événements 
+//   ✅ Ajout du channel "Wedding" pour séparer les notifications d'événements
 //      des messages généraux.
 // ============================================================================
 
 import 'dart:async';
-import 'dart:typed_data'; // ✅ Ajouté pour Int64List
+import 'dart:convert';
+import 'dart:typed_data'; // Int64List
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -46,6 +57,11 @@ const String kActionMute = 'MUTE';
 
 // Catégorie iOS pour les actions de chat
 const String _kIosChatCategory = 'THIX_CHAT_ACTIONS';
+
+// Historique des messages d'une conversation (notification cumulée)
+const int _kChatHistoryMaxLines = 6;
+const Duration _kChatHistoryTtl = Duration(hours: 2);
+const String _kChatHistoryPrefix = 'thix_notif_chat_hist_v1:';
 
 // ============================================================================
 // BUFFER D'ACTIONS EN ATTENTE (cold-start)
@@ -114,6 +130,88 @@ class _Validators {
 }
 
 // ============================================================================
+// HISTORIQUE DE CONVERSATION (notification cumulée façon WhatsApp)
+// ============================================================================
+
+class _ChatLine {
+  _ChatLine({required this.sender, required this.text, required this.at});
+
+  final String sender;
+  final String text;
+  final DateTime at;
+
+  Map<String, dynamic> toJson() => {
+        's': sender,
+        't': text,
+        'ts': at.millisecondsSinceEpoch,
+      };
+
+  static _ChatLine? fromJson(dynamic j) {
+    if (j is! Map) return null;
+    final s = j['s'];
+    final t = j['t'];
+    final ts = j['ts'];
+    if (s is! String || t is! String || ts is! int) return null;
+    return _ChatLine(
+      sender: s,
+      text: t,
+      at: DateTime.fromMillisecondsSinceEpoch(ts),
+    );
+  }
+}
+
+class _ChatHistory {
+  _ChatHistory._();
+
+  /// Ajoute un message et renvoie l'historique récent (le plus ancien d'abord).
+  /// Fonctionne aussi dans l'isolate d'arrière-plan FCM.
+  static Future<List<_ChatLine>> append(String conversationId, _ChatLine line) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload(); // lecture fraîche (isolates multiples)
+      final key = '$_kChatHistoryPrefix$conversationId';
+      final cutoff = DateTime.now().subtract(_kChatHistoryTtl);
+
+      final list = <_ChatLine>[];
+      final raw = prefs.getString(key);
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is List) {
+            for (final e in decoded) {
+              final l = _ChatLine.fromJson(e);
+              if (l != null && l.at.isAfter(cutoff)) list.add(l);
+            }
+          }
+        } catch (_) {}
+      }
+
+      list.add(line);
+      final start = list.length > _kChatHistoryMaxLines
+          ? list.length - _kChatHistoryMaxLines
+          : 0;
+      final trimmed = list.sublist(start);
+
+      await prefs.setString(
+        key,
+        jsonEncode(trimmed.map((l) => l.toJson()).toList()),
+      );
+      return trimmed;
+    } catch (e) {
+      debugPrint('[ChatHistory] ⚠️ append: $e');
+      return [line];
+    }
+  }
+
+  static Future<void> clear(String conversationId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_kChatHistoryPrefix$conversationId');
+    } catch (_) {}
+  }
+}
+
+// ============================================================================
 // SERVICE
 // ============================================================================
 
@@ -131,7 +229,7 @@ class LocalNotificationService {
   static const String channelChat = 'thix_chat_v3';
   static const String channelCalls = 'thix_calls_v3';
   static const String channelWedding = 'thix_wedding_v3';
-  
+
   // 🆕 THIX Info
   static const String channelNewsBreaking = 'thix_news_breaking_v1'; // 🔴 Prioritaire
   static const String channelNews = 'thix_news_general_v1';         // 📰 Actualités
@@ -151,6 +249,65 @@ class LocalNotificationService {
       onNotificationTap;
 
   BuildContext? _context;
+
+  // ──────────────────────────────────────────────────────────────
+  // HELPERS CONVERSATION
+  // ──────────────────────────────────────────────────────────────
+
+  /// Hash stable (identique entre isolates et entre lancements).
+  static int _stableHash(String s) {
+    var h = 0x811C9DC5;
+    for (final c in s.codeUnits) {
+      h ^= c;
+      h = (h * 16777619) & 0x7fffffff;
+    }
+    return h;
+  }
+
+  /// Identifiant de notification d'une conversation : un nouveau message
+  /// remplace la notification précédente de la même discussion.
+  static int chatNotificationId(String conversationId) =>
+      _stableHash('chat:$conversationId') & _kMaxNotificationId;
+
+  static final RegExp _uuidRe = RegExp(
+    r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+  );
+
+  static bool _isSafeId(String id) =>
+      id.isNotEmpty && id.length <= 64 && RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(id);
+
+  /// Extrait l'id de conversation d'un payload : "chat:<id>" ou route "/chat…<uuid>".
+  static String? conversationIdFromPayload(String? payload) {
+    if (payload == null || payload.isEmpty) return null;
+    if (payload.startsWith('chat:')) {
+      final id = payload.substring(5).trim();
+      return _isSafeId(id) ? id : null;
+    }
+    if (payload.contains('/chat')) {
+      return _uuidRe.firstMatch(payload)?.group(0);
+    }
+    return null;
+  }
+
+  static Future<void> _clearHistoryForPayload(String? payload) async {
+    final convId = conversationIdFromPayload(payload);
+    if (convId == null) return;
+    await _ChatHistory.clear(convId);
+  }
+
+  /// À appeler quand l'utilisateur ouvre / lit une discussion dans l'app :
+  /// supprime la notification et l'historique cumulé de cette conversation.
+  Future<void> clearChat(String conversationId) async {
+    if (!_isSafeId(conversationId)) return;
+    await _ChatHistory.clear(conversationId);
+    try {
+      await _plugin.cancel(chatNotificationId(conversationId));
+    } catch (_) {}
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // INITIALISATION
+  // ──────────────────────────────────────────────────────────────
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -188,7 +345,7 @@ class LocalNotificationService {
               ),
               DarwinNotificationAction.plain(
                 kActionMarkAsRead,
-                'Marquer lu',
+                'Marquer comme lu',
                 options: <DarwinNotificationActionOption>{
                   DarwinNotificationActionOption.destructive,
                 },
@@ -226,7 +383,7 @@ class LocalNotificationService {
       }
 
       _initialized = true;
-      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.4.1)');
+      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.5)');
 
       _flushPendingAction();
     } on TimeoutException {
@@ -323,7 +480,6 @@ class LocalNotificationService {
       );
 
       // 🆕 Canal THIX Info Breaking (prioritaire — alertes urgentes)
-      // ✅ FIX : Suppression du `const` car Int64List.fromList n'est pas constant
       await android.createNotificationChannel(
         AndroidNotificationChannel(
           channelNewsBreaking,
@@ -335,7 +491,6 @@ class LocalNotificationService {
           enableLights: true,
           ledColor: const Color(0xFFDC2626), // Rouge
           showBadge: true,
-          // Si tu as un son dédié : RawResourceAndroidNotificationSound('alert_news')
           sound: const RawResourceAndroidNotificationSound('notification'),
           vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
         ),
@@ -367,6 +522,9 @@ class LocalNotificationService {
     debugPrint('[LocalNotif] 📨 Response: action=$actionId '
         'input="${input ?? '(null)'}" payload=$payload');
 
+    // La discussion est traitée : on repart d'un historique vide
+    unawaited(_clearHistoryForPayload(payload));
+
     onNotificationTap?.call(payload, actionId: actionId, input: input);
   }
 
@@ -379,6 +537,8 @@ class LocalNotificationService {
 
     debugPrint('[LocalNotif-BG] ⏳ Action=$actionId '
         'input="${input ?? '(null)'}" payload=$payload');
+
+    unawaited(_clearHistoryForPayload(payload));
 
     _PendingActionBuffer.store(payload, actionId: actionId, input: input);
   }
@@ -403,6 +563,10 @@ class LocalNotificationService {
       return false;
     }
   }
+
+  // ──────────────────────────────────────────────────────────────
+  // AFFICHAGE GÉNÉRIQUE
+  // ──────────────────────────────────────────────────────────────
 
   Future<bool> show({
     required int id,
@@ -431,49 +595,53 @@ class LocalNotificationService {
     final isCall = channel == channelCalls;
     final isChat = channel == channelChat;
     final isWedding = channel == channelWedding;
-    // 🆕 Détection des canaux THIX Info
     final isNewsBreaking = channel == channelNewsBreaking;
     final isNews = channel == channelNews;
 
     final List<AndroidNotificationAction> actions = [];
 
     if (!isCall) {
-      actions.add(
-        const AndroidNotificationAction(
-          kActionOpen,
-          'Ouvrir',
-          showsUserInterface: true,
-        ),
-      );
+      final wantsChatActions = isChat &&
+          (showReplyAction || showMarkAsReadAction || showMuteAction);
 
-      if (isChat && showReplyAction) {
+      if (wantsChatActions) {
+        // ✅ Android n'affiche que 3 actions : Répondre • Marquer comme lu • Muet
+        // (pas de "Ouvrir" : toucher la notification ouvre la discussion)
+        if (showReplyAction) {
+          actions.add(
+            const AndroidNotificationAction(
+              kActionReply,
+              'Répondre',
+              showsUserInterface: true,
+              inputs: <AndroidNotificationActionInput>[
+                AndroidNotificationActionInput(label: 'Tapez votre message…'),
+              ],
+            ),
+          );
+        }
+        if (showMarkAsReadAction) {
+          actions.add(
+            const AndroidNotificationAction(
+              kActionMarkAsRead,
+              'Marquer comme lu',
+              showsUserInterface: true,
+            ),
+          );
+        }
+        if (showMuteAction) {
+          actions.add(
+            const AndroidNotificationAction(
+              kActionMute,
+              'Muet',
+              showsUserInterface: true,
+            ),
+          );
+        }
+      } else {
         actions.add(
           const AndroidNotificationAction(
-            kActionReply,
-            'Répondre',
-            showsUserInterface: true,
-            inputs: <AndroidNotificationActionInput>[
-              AndroidNotificationActionInput(label: 'Tapez votre message…'),
-            ],
-          ),
-        );
-      }
-
-      if (isChat && showMarkAsReadAction) {
-        actions.add(
-          const AndroidNotificationAction(
-            kActionMarkAsRead,
-            'Marquer lu',
-            showsUserInterface: true,
-          ),
-        );
-      }
-
-      if (isChat && showMuteAction) {
-        actions.add(
-          const AndroidNotificationAction(
-            kActionMute,
-            'Muet',
+            kActionOpen,
+            'Ouvrir',
             showsUserInterface: true,
           ),
         );
@@ -496,15 +664,13 @@ class LocalNotificationService {
       sound = const RawResourceAndroidNotificationSound('ringtone');
       summaryText = 'Appel';
     } else if (isNewsBreaking) {
-      // 🆕 Breaking news : priorité max, full-screen, vibration forte
       channelName = '🔴 Alertes Info';
       channelDesc = 'Flash info urgent THIX Info';
       category = AndroidNotificationCategory.alarm;
-      fullScreenIntent = true; // Force l'affichage même écran verrouillé
+      fullScreenIntent = true;
       sound = const RawResourceAndroidNotificationSound('notification');
       summaryText = '🔴 Alerte Info';
     } else if (isNews) {
-      // 🆕 Actualité standard
       channelName = '📰 Actualités THIX Info';
       channelDesc = 'Articles à la une';
       category = AndroidNotificationCategory.social;
@@ -561,19 +727,15 @@ class LocalNotificationService {
       autoCancel: true,
       actions: actions.isEmpty ? null : actions,
       sound: sound,
-      // Pour breaking news : image de preview si fournie
       styleInformation: BigTextStyleInformation(
         sanitizedBody,
         contentTitle: sanitizedTitle,
         summaryText: summaryText,
       ),
-      // Couleur d'accent pour les breaking news
       color: isNewsBreaking ? const Color(0xFFDC2626) : null,
       colorized: isNewsBreaking,
     );
 
-    // ── Détails iOS ──
-    // Breaking news = critical si possible, sinon timeSensitive
     final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
@@ -586,7 +748,6 @@ class LocalNotificationService {
                   ? InterruptionLevel.timeSensitive
                   : InterruptionLevel.active),
       categoryIdentifier: isChat ? _kIosChatCategory : null,
-      // Son d'alerte pour breaking news (si configuré côté iOS)
       sound: isNewsBreaking ? 'alert_news.caf' : null,
     );
 
@@ -606,22 +767,161 @@ class LocalNotificationService {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // CHAT FAÇON WHATSAPP
+  // ──────────────────────────────────────────────────────────────
+
+  /// Notification de chat : 1 par conversation, messages cumulés,
+  /// boutons Répondre • Marquer comme lu • Muet.
+  /// Si l'id de conversation est introuvable → affichage classique.
   Future<bool> showChatMessage({
     required int id,
     required String title,
     required String body,
     String? payload,
-  }) {
-    return show(
-      id: id,
+    String? conversationId,
+  }) async {
+    final convId = (conversationId != null && _isSafeId(conversationId))
+        ? conversationId
+        : conversationIdFromPayload(payload);
+
+    if (convId == null) {
+      return show(
+        id: id,
+        title: title,
+        body: body,
+        payload: payload,
+        channelId: channelChat,
+        showReplyAction: true,
+        showMarkAsReadAction: true,
+        showMuteAction: true,
+      );
+    }
+
+    return _showChatConversation(
+      conversationId: convId,
       title: title,
       body: body,
-      payload: payload,
-      channelId: channelChat,
-      showReplyAction: true,
-      showMarkAsReadAction: true,
-      showMuteAction: true,
+      payload: payload ?? 'chat:$convId',
     );
+  }
+
+  Future<bool> _showChatConversation({
+    required String conversationId,
+    required String title,
+    required String body,
+    required String payload,
+  }) async {
+    final sanitizedTitle = _Validators.validateAndSanitizeTitle(title);
+    if (sanitizedTitle == null) return false;
+
+    final sanitizedBody = _Validators.validateAndSanitizeBody(body);
+    if (sanitizedBody == null) return false;
+
+    if (!_initialized) {
+      await initialize();
+      if (!_initialized) return false;
+    }
+
+    final now = DateTime.now();
+    final history = await _ChatHistory.append(
+      conversationId,
+      _ChatLine(sender: sanitizedTitle, text: sanitizedBody, at: now),
+    );
+
+    // ── Style "conversation" (messages cumulés) ──
+    final me = Person(name: 'Moi', key: 'thix_me');
+    final persons = <String, Person>{};
+    Person personFor(String name) => persons.putIfAbsent(
+          name,
+          () => Person(
+            name: name,
+            key: 'thix_u_${_stableHash(name)}',
+            important: true,
+          ),
+        );
+
+    final messages = history
+        .map((l) => Message(l.text, l.at, personFor(l.sender)))
+        .toList();
+    final isGroup = persons.length > 1;
+
+    final style = MessagingStyleInformation(
+      me,
+      conversationTitle: isGroup ? 'THIX Chat' : null,
+      groupConversation: isGroup,
+      messages: messages,
+    );
+
+    // ── 3 boutons : Répondre • Marquer comme lu • Muet ──
+    final actions = <AndroidNotificationAction>[
+      const AndroidNotificationAction(
+        kActionReply,
+        'Répondre',
+        showsUserInterface: true,
+        allowGeneratedReplies: true,
+        inputs: <AndroidNotificationActionInput>[
+          AndroidNotificationActionInput(label: 'Tapez votre message…'),
+        ],
+      ),
+      const AndroidNotificationAction(
+        kActionMarkAsRead,
+        'Marquer comme lu',
+        showsUserInterface: true,
+      ),
+      const AndroidNotificationAction(
+        kActionMute,
+        'Muet',
+        showsUserInterface: true,
+      ),
+    ];
+
+    final androidDetails = AndroidNotificationDetails(
+      channelChat,
+      'Messages THIX Chat',
+      channelDescription: 'Nouveaux messages',
+      importance: Importance.max,
+      priority: Priority.max,
+      icon: 'notification_icon',
+      category: AndroidNotificationCategory.message,
+      visibility: NotificationVisibility.public,
+      playSound: true,
+      enableVibration: true,
+      channelShowBadge: true,
+      autoCancel: true,
+      number: history.length,
+      when: now.millisecondsSinceEpoch,
+      showWhen: true,
+      ticker: '$sanitizedTitle : $sanitizedBody',
+      actions: actions,
+      sound: const RawResourceAndroidNotificationSound('notification'),
+      styleInformation: style,
+    );
+
+    final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      interruptionLevel: InterruptionLevel.active,
+      categoryIdentifier: _kIosChatCategory,
+      threadIdentifier: conversationId,
+    );
+
+    try {
+      await _plugin
+          .show(
+            chatNotificationId(conversationId),
+            sanitizedTitle,
+            sanitizedBody,
+            NotificationDetails(android: androidDetails, iOS: iosDetails),
+            payload: payload,
+          )
+          .timeout(_kNotificationTimeout);
+      return true;
+    } catch (e) {
+      debugPrint('[LocalNotif] ❌ showChatMessage failed: $e');
+      return false;
+    }
   }
 
   /// ✅ Afficher un message de mariage (avec options "Répondre")
@@ -715,11 +1015,7 @@ class LocalNotificationService {
       sound: const RawResourceAndroidNotificationSound('notification'),
       color: const Color(0xFFDC2626),
       colorized: true,
-      // ✅ FIX 1 : FilePathAndroidNotificationDetails -> FilePathAndroidBitmap
-      largeIcon: imageUrl != null
-          ? FilePathAndroidBitmap(imageUrl)
-          : null,
-      // ✅ FIX 2 : hideLargeIconOnExpandedState -> hideExpandedLargeIcon
+      largeIcon: imageUrl != null ? FilePathAndroidBitmap(imageUrl) : null,
       styleInformation: BigPictureStyleInformation(
         imageUrl != null
             ? FilePathAndroidBitmap(imageUrl)
@@ -727,7 +1023,7 @@ class LocalNotificationService {
         contentTitle: sanitizedTitle,
         summaryText: '🔴 Alerte Info',
         largeIcon: null,
-        hideExpandedLargeIcon: true, 
+        hideExpandedLargeIcon: true,
       ),
     );
 
@@ -737,9 +1033,8 @@ class LocalNotificationService {
       presentSound: true,
       interruptionLevel: InterruptionLevel.critical,
       sound: 'alert_news.caf',
-      attachments: imageUrl != null
-          ? [DarwinNotificationAttachment(imageUrl)]
-          : null,
+      attachments:
+          imageUrl != null ? [DarwinNotificationAttachment(imageUrl)] : null,
     );
 
     try {
