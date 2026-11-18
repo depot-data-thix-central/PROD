@@ -1,5 +1,6 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '12.0'
+# Plateforme globale : iOS 14.0 minimum OBLIGATOIRE
+# (google_maps_flutter → iOS 14, Firebase → iOS 13, Agora → iOS 12)
+platform :ios, '14.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -39,5 +40,11 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      # Aligne tous les pods sur iOS 14.0 (supprime les warnings de deployment target)
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+      # Bitcode abandonné depuis Xcode 14
+      config.build_settings['ENABLE_BITCODE'] = 'NO'
+    end
   end
 end
