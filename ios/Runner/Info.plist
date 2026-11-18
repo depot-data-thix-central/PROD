@@ -1,59 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🆔 IDENTITÉ DE L'APPLICATION                                -->
+	<!-- ════════════════════════════════════════════════════════════ -->
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
-
 	<key>CFBundleDisplayName</key>
-	<string>THIX ID</string>
-
+	<string>Thix Hub</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
-
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-
 	<key>CFBundleName</key>
-	<string>thix_id</string>
-
+	<string>thix_hub</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
-
 	<key>CFBundleSignature</key>
 	<string>????</string>
-
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
-
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
-	<!-- Launch -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🚀 LANCEMENT & UI                                           -->
+	<!-- ════════════════════════════════════════════════════════════ -->
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
-
-	<!-- Orientation iPhone -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-
-	<!-- Orientation iPad -->
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -61,32 +48,172 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
-
-	<!-- CAMERA -->
-	<key>NSCameraUsageDescription</key>
-	<string>THIX ID utilise la caméra pour scanner les QR codes d'identité et utiliser les fonctions vidéo.</string>
-
-	<!-- MICROPHONE -->
-	<key>NSMicrophoneUsageDescription</key>
-	<string>THIX ID utilise le microphone pour les appels, les vidéos et les fonctions audio d'urgence.</string>
-
-	<!-- PHOTOS -->
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>THIX ID utilise votre photothèque pour importer des photos et des vidéos.</string>
-
-	<!-- LOCATION -->
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>THIX ID utilise votre position pour fournir les services de localisation et d'assistance d'urgence.</string>
-
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>THIX ID peut utiliser votre position en arrière-plan pendant une situation d'urgence lorsque cette fonction est activée.</string>
-
-	<!-- Flutter / input -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- ⏱️ BACKGROUND MODES (Équivalent Foreground Services Android) -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+		<string>location</string>
+		<string>remote-notification</string>
+		<string>voip</string>
+	</array>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 📸 CAMÉRA                                                    -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSCameraUsageDescription</key>
+	<string>Thix Hub utilise la caméra pour scanner les QR codes d'identité et utiliser les fonctions vidéo.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🎤 MICROPHONE                                                -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Thix Hub utilise le microphone pour les appels, les vidéos et les fonctions audio d'urgence.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🖼️ PHOTOS (Lecture + Écriture)                               -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Thix Hub utilise votre photothèque pour importer des photos et des vidéos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Thix Hub souhaite enregistrer des photos et vidéos dans votre galerie.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🎵 BIBLIOTHÈQUE MUSICALE (just_audio / audio_service)       -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Thix Hub accède à votre bibliothèque musicale pour la lecture audio en arrière-plan.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 📍 LOCALISATION                                              -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Thix Hub utilise votre position pour fournir les services de localisation et d'assistance d'urgence.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Thix Hub peut utiliser votre position en arrière-plan pendant une situation d'urgence lorsque cette fonction est activée.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Thix Hub peut utiliser votre position en arrière-plan pour les services d'urgence et de sécurité.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 📡 NFC                                                       -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NFCReaderUsageDescription</key>
+	<string>Thix Hub utilise le NFC pour scanner les puces d'identité sécurisées et les tags.</string>
+	<key>com.apple.developer.nfc.readersession.formats</key>
+	<array>
+		<string>NDEF</string>
+		<string>TAG</string>
+	</array>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 👥 CONTACTS                                                  -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSContactsUsageDescription</key>
+	<string>Thix Hub accède à vos contacts pour faciliter les communications d'urgence et le partage d'identité.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🗣️ RECONNAISSANCE VOCALE                                     -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Thix Hub utilise la reconnaissance vocale pour la dictée et les commandes vocales.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🍎 SIRI & RACCOURCIS                                         -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSSiriUsageDescription</key>
+	<string>Thix Hub utilise Siri pour les commandes vocales rapides et les raccourcis.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 👤 BIOMÉTRIE (Face ID / Touch ID)                            -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Thix Hub utilise Face ID / Touch ID pour sécuriser l'accès à votre identité numérique.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 📶 BLUETOOTH                                                 -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Thix Hub utilise le Bluetooth pour se connecter aux écouteurs et appareils audio lors des appels.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Thix Hub utilise le Bluetooth pour se connecter aux périphériques externes.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 📞 APPELS (CallKit / VoIP)                                   -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSPhoneCallUsageDescription</key>
+	<string>Thix Hub utilise les appels pour les communications d'urgence et le service VoIP.</string>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🔗 DEEP LINKS (Scheme custom "thix")                         -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>app.thix.hub</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>thix</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🔍 QUERIES (url_launcher & co)                              -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>http</string>
+		<string>https</string>
+		<string>mailto</string>
+		<string>tel</string>
+		<string>sms</string>
+		<string>thix</string>
+	</array>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🌐 SÉCURITÉ RÉSEAU (ATS — équivalent usesCleartextTraffic=false) -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🔔 NOTIFICATIONS FIREBASE                                    -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🎨 IMPELLER (Renderer Flutter — équivalent EnableImpeller)  -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>FLTEnableImpeller</key>
+	<true/>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🔒 EXPORT COMPLIANCE (Évite blocage TestFlight/App Store)    -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<!-- 🆔 TRACKING / ATT (iOS 14+) — si analytics/pub utilisés     -->
+	<!-- ════════════════════════════════════════════════════════════ -->
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Thix Hub utilise le suivi pour améliorer votre expérience et personnaliser le contenu.</string>
 
 </dict>
 </plist>
