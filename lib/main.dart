@@ -1,3 +1,4 @@
+
 // lib/main.dart
 //
 // THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.13)
@@ -40,6 +41,7 @@ import 'package:go_router/go_router.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:thix_id/firebase_options.dart'; // ✅ AJOUTÉ : config Firebase iOS/Android
 import 'package:just_audio_background/just_audio_background.dart';
 
 import 'package:thix_id/auth/auth_controller.dart';
@@ -420,7 +422,10 @@ Future<void> main() async {
 
       if (!kIsWeb) {
         try {
-          await Firebase.initializeApp().timeout(_kInitTimeout);
+          // ✅ MODIFIÉ : options explicites pour iOS (firebase_options.dart)
+          await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform,
+          ).timeout(_kInitTimeout);
           FirebaseMessaging.onBackgroundMessage(
               firebaseMessagingBackgroundHandler);
           _log('✓ Firebase OK');
