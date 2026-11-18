@@ -16,6 +16,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:thix_id/firebase_options.dart'; // ✅ AJOUTÉ : config Firebase iOS/Android
 
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_callkit_incoming/entities/call_event.dart';
@@ -505,7 +506,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   while (attempts < _kMaxRetries) {
     try {
-      await Firebase.initializeApp().timeout(_kBackgroundInitTimeout);
+      // ✅ MODIFIÉ : options explicites pour iOS (firebase_options.dart)
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      ).timeout(_kBackgroundInitTimeout);
       break;
     } catch (e) {
       attempts++;
