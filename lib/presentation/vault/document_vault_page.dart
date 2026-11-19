@@ -1,1874 +1,605 @@
 // lib/presentation/vault/document_vault_page.dart
-import 'dart:async';
-import 'dart:typed_data';
-import 'dart:ui' show ImageFilter;
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:qr_flutter/qr_flutter.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart' show ReadContext, WatchContext;
 import 'package:thix_id/auth/auth_controller.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/document_service.dart';
 
-// =============================================================
-// PALETTE — BLEU INSTITUTIONNEL & BLANC PUR
-// =============================================================
-class _V {
-  static const bg = Color(0xFFFFFFFF);
-  static const card = Color(0xFFFFFFFF);
-  static const cardSoft = Color(0xFFF4F7FC);
-  static const border = Color(0xFFE3E8F0);
-  static const primary = Color(0xFF1E40AF); // bleu institutionnel
-  static const primarySoft = Color(0xFFE9EEFB);
-  static const gold = Color(0xFFB45309);
-  static const text = Color(0xFF0F172A);
-  static const textSec = Color(0xFF44546A);
-  static const textMut = Color(0xFF8A94A6);
-  static const ok = Color(0xFF047857);
-  static const warn = Color(0xFFB45309);
-  static const danger = Color(0xFFB91C1C);
-  static const dangerBright = Color(0xFFDC2626);
-  static const info = Color(0xFF0369A1);
-  static const violet = Color(0xFF6D28D9);
-}
+import 'vault_providers.dart';
+import 'vault_sheets.dart';
+import 'vault_state.dart';
+import 'vault_theme.dart';
 
-// =============================================================
-// HELPERS GLOBAUX
-// =============================================================
-String _fmtDT(DateTime d) =>
-    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} à ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-
-Widget _spinner() => const Center(
-      child: SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2, color: _V.primary)),
-    );
-
-bool _isLocked(Map<String, dynamic> s) {
-  final st = (s['status'] as String?) ?? 'pending';
-  final af = DateTime.tryParse((s['available_from'] ?? '').toString());
-  return af != null &&
-      af.isAfter(DateTime.now()) &&
-      st != 'opened' &&
-      st != 'destroyed' &&
-      st != 'expired';
-}
-
-Widget? _progressFor(AppLocalizations l10n, Map<String, dynamic> s) {
-  final now = DateTime.now();
-  final af = DateTime.tryParse((s['available_from'] ?? '').toString());
-  final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-  final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ?? now;
-  if (_isLocked(s) && af != null) {
-    return _Count(
-        start: cd, target: af, label: l10n.t('vault_unlock_in'), color: _V.primary);
-  }
-  if (ad != null) {
-    return _Count(
-        start: cd,
-        target: ad,
-        label: l10n.t('vault_destruct_in'),
-        color: _V.dangerBright);
-  }
-  return null;
-}
-
-InputDecoration _dec(String label) => InputDecoration(
-      labelText: label.isEmpty ? null : label,
-      labelStyle: const TextStyle(color: _V.textSec, fontSize: 11),
-      filled: true,
-      fillColor: Colors.white,
-      border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _V.border)),
-      enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _V.border)),
-      focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _V.primary, width: 1.4)),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-    );
-
-Widget _lightPicker(BuildContext c, Widget? ch) => Theme(
-      data: ThemeData.light().copyWith(
-          colorScheme:
-              const ColorScheme.light(primary: _V.primary, surface: Colors.white)),
-      child: ch!,
-    );
-
-Color _typeColor(String? mime, String? docType) {
-  final m = (mime ?? '').toLowerCase();
-  final t = (docType ?? '').toLowerCase();
-  if (m.contains('image')) return _V.violet;
-  if (m.contains('pdf')) return _V.danger;
-  if (t.contains('diplome') || t.contains('diplôme') || t.contains('attestation')) {
-    return _V.ok;
-  }
-  if (t == 'cin' || t == 'passeport' || t == 'permis') return _V.primary;
-  return _V.gold;
-}
-
-IconData _typeIcon(String? mime, String? docType) {
-  final m = (mime ?? '').toLowerCase();
-  if (m.contains('pdf')) return Icons.picture_as_pdf_rounded;
-  if (m.contains('image')) return Icons.image_rounded;
-  final t = (docType ?? '').toLowerCase();
-  if (t.contains('diplome') || t.contains('diplôme')) return Icons.school_rounded;
-  if (t == 'cin' || t == 'passeport' || t == 'permis') return Icons.badge_rounded;
-  return Icons.description_rounded;
-}
-
-bool _isImageMime(String? mime, String? fileName) {
-  final m = (mime ?? '').toLowerCase();
-  final n = (fileName ?? '').toLowerCase();
-  return m.startsWith('image/') ||
-      n.endsWith('.jpg') ||
-      n.endsWith('.jpeg') ||
-      n.endsWith('.png') ||
-      n.endsWith('.webp');
-}
-
-/// Ouvre une URL hors de l'application (PDF, Word, téléchargement…).
-Future<bool> _launchOut(String url) async {
-  try {
-    return await launchUrl(
-      Uri.parse(url),
-      mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
-      webOnlyWindowName: kIsWeb ? '_blank' : null,
-    );
-  } catch (_) {
-    return false;
-  }
-}
-
-// =============================================================
-// CACHE IMAGES MÉMOIRE (limité — évite la fuite mémoire)
-// =============================================================
-class _ImgCache {
-  _ImgCache._();
-  static final Map<String, Future<Uint8List>> _m = {};
-  static Future<Uint8List> fetch(String url) =>
-      _m.putIfAbsent(url, () async {
-        try {
-          final r = await http.get(Uri.parse(url));
-          if (r.statusCode != 200) throw Exception('http ${r.statusCode}');
-          if (_m.length > 150) _m.remove(_m.keys.first);
-          return r.bodyBytes;
-        } catch (_) {
-          _m.remove(url);
-          rethrow;
-        }
-      });
-}
-
-// =============================================================
-// FOND, VERRE, DIALOGUE, FEUILLE
-// =============================================================
-class _GlassBg extends StatelessWidget {
-  final Widget child;
-  const _GlassBg({required this.child});
-
-  Widget _blob(double s, Color c) => Container(
-        width: s,
-        height: s,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(colors: [c, c.withOpacity(0)]),
-        ),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.white, Color(0xFFF2F6FF), Colors.white],
-            ),
-          ),
-        ),
-        Positioned(
-            top: -90, right: -80, child: _blob(280, _V.primary.withOpacity(0.10))),
-        Positioned(
-            bottom: 140, left: -110, child: _blob(300, _V.gold.withOpacity(0.07))),
-        Positioned(
-            top: 320, right: -130, child: _blob(240, _V.violet.withOpacity(0.06))),
-        child,
-      ],
-    );
-  }
-}
-
-class _Glass extends StatelessWidget {
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-  final EdgeInsetsGeometry? margin;
-  final double radius;
-  final double opacity;
-  final double blur;
-  final Color? borderColor;
-  const _Glass({
-    required this.child,
-    this.padding = EdgeInsets.zero,
-    this.margin,
-    this.radius = 16,
-    this.opacity = 0.78,
-    this.blur = 14,
-    this.borderColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: margin,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
-          BoxShadow(
-              color: const Color(0xFF1E293B).withOpacity(0.06),
-              blurRadius: 14,
-              offset: const Offset(0, 5))
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(opacity),
-              borderRadius: BorderRadius.circular(radius),
-              border: Border.all(color: borderColor ?? _V.border),
-            ),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GlassDialog extends StatelessWidget {
-  final Widget child;
-  const _GlassDialog({required this.child});
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: _Glass(
-          radius: 22,
-          opacity: 0.95,
-          blur: 20,
-          borderColor: _V.border,
-          padding: const EdgeInsets.all(18),
-          child: child),
-    );
-  }
-}
-
-class _SheetShell extends StatelessWidget {
-  final Widget child;
-  final double maxFactor;
-  const _SheetShell({required this.child, this.maxFactor = 0.9});
-  @override
-  Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    return Padding(
-      padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: mq.size.height * maxFactor),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.96),
-                border: Border(top: BorderSide(color: _V.border)),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                          width: 38,
-                          height: 4,
-                          decoration: BoxDecoration(
-                              color: _V.border,
-                              borderRadius: BorderRadius.circular(2))),
-                      const SizedBox(height: 10),
-                      Flexible(child: child),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================
-// PAGE PRINCIPALE
-// =============================================================
-class DocumentVaultPage extends StatefulWidget {
+/// Point d'entrée inchangé : `DocumentVaultPage()`.
+/// Embarque son propre ProviderScope (état Riverpod isolé, libéré à la sortie).
+class DocumentVaultPage extends StatelessWidget {
   const DocumentVaultPage({super.key});
   @override
-  State<DocumentVaultPage> createState() => _DocumentVaultPageState();
+  Widget build(BuildContext context) => const ProviderScope(child: _VaultRoot());
 }
 
-class _DocumentVaultPageState extends State<DocumentVaultPage>
-    with SingleTickerProviderStateMixin {
-  final _docs = DocumentService();
-  late TabController _tabController;
-  final _searchCtrl = TextEditingController();
-  String? _folderFilter;
-  String _query = '';
+class _VaultRoot extends StatelessWidget {
+  const _VaultRoot();
+  @override
+  Widget build(BuildContext context) {
+    final me = context.watch<AuthController>().currentUser;
+    if (me == null) {
+      return const Scaffold(
+          backgroundColor: VT.bg,
+          body: Center(child: Text('Connectez-vous pour accéder au coffre.')));
+    }
+    final user = VaultUser(uid: me.id, thixId: me.thixId);
+    return VaultPinGate(user: user, child: _VaultScaffold(user: user));
+  }
+}
+
+class _VaultScaffold extends ConsumerStatefulWidget {
+  final VaultUser user;
+  const _VaultScaffold({required this.user});
+  @override
+  ConsumerState<_VaultScaffold> createState() => _VaultScaffoldState();
+}
+
+class _VaultScaffoldState extends ConsumerState<_VaultScaffold> {
+  int _tab = 0;
+  final _search = TextEditingController();
+
+  VaultUser get u => widget.user;
+  DocumentService get _docs => ref.read(documentServiceProvider);
+  VaultNotifier get _n => ref.read(vaultStateProvider(u).notifier);
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _tabController.addListener(() => setState(() {}));
     PaintingBinding.instance.imageCache
-      ..maximumSize = 500
-      ..maximumSizeBytes = 200 * 1024 * 1024;
+      ..maximumSize = 300
+      ..maximumSizeBytes = 120 * 1024 * 1024;
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _searchCtrl.dispose();
+    _search.dispose();
     super.dispose();
   }
 
-  void _snack(String msg, {bool error = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: const TextStyle(fontSize: 12, color: Colors.white)),
-      backgroundColor: error ? _V.dangerBright : _V.ok,
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 2),
-    ));
-  }
-
-  Future<void> _openUrl(String url) async {
-    final ok = await _launchOut(url);
-    if (!ok) {
-      _snack(AppLocalizations.of(context).t('vault_open_failed'), error: true);
-    }
-  }
-
-  /// Images => visionneuse DANS l'app ; PDF/Word/autres => app tierce.
-  Future<void> _openSmartUrl(String url, String mime, String name) async {
-    if (url.trim().isEmpty) {
-      _snack(AppLocalizations.of(context).t('vault_open_failed'), error: true);
+  void _back() {
+    final auth = context.read<AuthController>();
+    if (auth.isAuthenticated) {
+      final t = auth.currentUser?.accountType;
+      context.go(t == AccountType.enterprise
+          ? AppRoutes.enterpriseDashboard
+          : AppRoutes.userDashboard);
       return;
     }
-    if (_isImageMime(mime, name)) {
-      if (!mounted) return;
-      await Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => _ImageViewerPage(
-                url: url,
-                title: name,
-                onDownload: () => _openUrl(url),
-              )));
-    } else {
-      await _openUrl(url);
-    }
+    context.go(AppRoutes.home);
   }
 
-  Future<void> _openDoc(Map<String, dynamic> row) async {
+  Future<void> _add() async {
+    final picked = await FilePicker.platform.pickFiles(withData: true);
+    if (picked == null || picked.files.isEmpty || !mounted) return;
+    final file = picked.files.first;
+    final st = ref.read(vaultStateProvider(u));
+    final payload = await showUploadSheet(context,
+        fileName: file.name, folders: st.folders, preselectedFolderId: st.folderFilter);
+    if (payload == null || !mounted) return;
     try {
-      final url = await _docs.resolveRowDownloadUrl(row);
-      if (url.trim().isEmpty) throw Exception('empty');
-      if (!mounted) return;
-      await _openSmartUrl(
-          url,
-          (row['mime_type'] as String?) ?? '',
-          (row['file_name'] as String?) ?? (row['title'] as String?) ?? 'document');
+      final id = await _n.upload(
+          file: file,
+          docType: payload.docType,
+          title: payload.title,
+          expiresAt: payload.expiresAt,
+          folderId: payload.folderId);
+      vSnack(context, 'Document scellé et enregistré · $id');
     } catch (_) {
-      _snack(AppLocalizations.of(context).t('vault_download_failed'), error: true);
+      vSnack(context, 'Échec de l’enregistrement du fichier.', error: true);
     }
   }
 
-  String _fmtDate(dynamic v) {
-    final d = v is DateTime ? v : DateTime.tryParse((v ?? '').toString());
-    if (d == null) return '—';
-    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year.toString().substring(2)}';
+  void _openSend() {
+    final docs = ref.read(vaultStateProvider(u)).documents;
+    if (docs.isEmpty) {
+      vSnack(context, 'Ajoutez d’abord un document au coffre.', error: true);
+      return;
+    }
+    showSendSheet(context, u, docs);
   }
 
-  String _fmtSize(int b) => b < 1024 * 1024
-      ? '${(b / 1024).toStringAsFixed(0)} KB'
-      : '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
-
-  Future<void> _createFolder(String uid) async {
-    final l10n = AppLocalizations.of(context);
-    final ctrl = TextEditingController();
+  Future<void> _createFolder() async {
+    final c = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => _GlassDialog(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(l10n.t('vault_new_folder'),
-                style: const TextStyle(
-                    color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              style: const TextStyle(color: _V.text, fontSize: 13),
-              decoration: _dec(l10n.t('vault_folder_name')),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(l10n.t('common_cancel'),
-                        style: const TextStyle(color: _V.textSec, fontSize: 12)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                        backgroundColor: _V.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                    onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-                    child: Text(l10n.t('vault_create'),
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w800)),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: VT.bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text('Nouveau dossier',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        content: TextField(controller: c, autofocus: true, decoration: vInput('Nom du dossier')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: VT.ink),
+              onPressed: () => Navigator.pop(ctx, c.text.trim()),
+              child: const Text('Créer')),
+        ],
       ),
     );
+    c.dispose();
     if (name == null || name.isEmpty) return;
-    await _docs.createFolder(uid: uid, name: name);
-  }
-
-  Future<void> _pickAndUpload() async {
-    final l10n = AppLocalizations.of(context);
-    final me = context.read<AuthController>().currentUser;
-    if (me == null) return;
-    final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
-    if (picked == null || picked.files.isEmpty) return;
-    final file = picked.files.first;
-    if (!mounted) return;
-    final folders = await _docs.fetchFolders(me.id);
-    if (!mounted) return;
-    final res = await showModalBottomSheet<_UploadPayload>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _UploadSheet(
-        fileName: file.name,
-        folders: folders,
-        preselectedFolderId: _folderFilter,
-      ),
-    );
-    if (res == null) return;
     try {
-      final id = await _docs.uploadPickedFileSimple(
-        uid: me.id,
-        file: file,
-        docType: res.docType,
-        expiresAt: res.expiresAt,
-        title: res.title,
-        folderId: res.folderId,
-        isPublic: false,
-      );
-      _snack(l10n.t('vault_upload_ok', args: [id]));
-    } catch (e) {
-      _snack(l10n.t('vault_upload_failed'), error: true);
+      await _n.createFolder(name);
+    } catch (_) {
+      if (mounted) vSnack(context, 'Création impossible.', error: true);
     }
   }
 
-  Future<void> _openSendSheet({Map<String, dynamic>? singleDoc}) async {
-    final l10n = AppLocalizations.of(context);
-    final me = context.read<AuthController>().currentUser;
-    if (me == null) return;
-    final docs = singleDoc != null
-        ? [singleDoc]
-        : await _docs.fetchDocuments(me.id, limit: 50);
-    if (!mounted) return;
-    if (docs.isEmpty) {
-      _snack(l10n.t('vault_select_archive'), error: true);
-      return;
-    }
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => _SendSheet(
-        documents: docs,
-        docsService: _docs,
-        initialDocId: singleDoc?['id']?.toString(),
-        onDone: (ok) {
-          if (!mounted) return;
-          if (ok) Navigator.of(sheetCtx).pop();
-          _snack(l10n.t(ok ? 'vault_send_ok' : 'vault_send_failed'), error: !ok);
-        },
-      ),
-    );
-  }
-
-  Future<void> _verifyById() async {
-    final l10n = AppLocalizations.of(context);
-    final ctrl = TextEditingController();
-    final query = await showDialog<String>(
-      context: context,
-      builder: (ctx) => _GlassDialog(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(l10n.t('vault_verify_title'),
-                style: const TextStyle(
-                    color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 6),
-            Text(l10n.t('vault_verify_hint'),
-                style: const TextStyle(color: _V.textSec, fontSize: 11)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              style: const TextStyle(color: _V.text, fontSize: 13),
-              decoration: _dec('THIX-DOC-…'),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(l10n.t('common_cancel'),
-                        style: const TextStyle(color: _V.textSec, fontSize: 12)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                        backgroundColor: _V.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                    onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-                    child: Text(l10n.t('common_search'),
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w800)),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-    if (query == null || query.isEmpty) return;
-    final res = await _docs.searchPublicDocument(query);
-    if (!mounted) return;
-    if (res == null) {
-      _snack(l10n.t('vault_verify_none'), error: true);
-      return;
-    }
-    await showDialog(
-      context: context,
-      builder: (ctx) => _CertifiedDocDialog(
-        res: res,
-        docs: _docs,
-        me: context.read<AuthController>().currentUser,
-        onSaved: () => _snack(l10n.t('vault_saved_ok')),
-        onSaveFailed: () => _snack(l10n.t('vault_save_failed'), error: true),
-        onOpenSmart: (url, mime, name) => _openSmartUrl(url, mime, name),
-        onDownload: (url) => _openUrl(url),
-      ),
-    );
-  }
-
-  Future<void> _docMenu(Map<String, dynamic> row) async {
-    final l10n = AppLocalizations.of(context);
-    final me = context.read<AuthController>().currentUser;
-    final docId = (row['generated_doc_id'] as String?) ?? '';
-    final title = (row['title'] as String?) ?? '';
-    bool isPublic = (row['is_public'] as bool?) ?? false;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheet) => _SheetShell(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(title.isEmpty ? '—' : title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _V.text,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900)),
-                const SizedBox(height: 8),
-                _MenuTile(
-                    icon: Icons.open_in_new_rounded,
-                    label: l10n.t('vault_open_archive'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _openDoc(row);
-                    }),
-                _MenuTile(
-                    icon: Icons.qr_code_2_rounded,
-                    label: l10n.t('vault_menu_qr'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      showQrDialog(context,
-                          title: title, value: docId.isNotEmpty ? docId : title);
-                    }),
-                _MenuTile(
-                    icon: Icons.badge_outlined,
-                    label: l10n.t('vault_menu_id'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      showDocIdDialog(context,
-                          docId: docId.isNotEmpty ? docId : '—', title: title);
-                    }),
-                _MenuTile(
-                    icon: Icons.forward_rounded,
-                    label: l10n.t('vault_forward'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _openSendSheet(singleDoc: row);
-                    }),
-                const SizedBox(height: 4),
-                _Glass(
-                  radius: 12,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: SwitchListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    activeColor: _V.primary,
-                    title: Text(
-                        isPublic ? l10n.t('vault_public') : l10n.t('vault_private'),
-                        style: const TextStyle(
-                            color: _V.text,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800)),
-                    subtitle: Text(
-                        isPublic
-                            ? l10n.t('vault_public_sub')
-                            : l10n.t('vault_private_sub'),
-                        style: const TextStyle(color: _V.textMut, fontSize: 10)),
-                    value: isPublic,
-                    onChanged: me == null
-                        ? null
-                        : (v) async {
-                            setSheet(() => isPublic = v);
-                            await _docs.togglePublic(
-                                uid: me.id,
-                                documentId: row['id'].toString(),
-                                docId: docId,
-                                isPublic: v);
-                          },
-                  ),
-                ),
-                const SizedBox(height: 4),
-                _MenuTile(
-                    icon: Icons.delete_outline_rounded,
-                    label: l10n.t('common_delete'),
-                    color: _V.dangerBright,
-                    onTap: () async {
-                      if (me == null) return;
-                      try {
-                        await _docs.deleteDocument(
-                            uid: me.id,
-                            documentId: (row['id'] ?? '').toString(),
-                            storagePath: (row['storage_path'] as String?) ?? '',
-                            docId: docId);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        _snack(l10n.t('vault_deleted'));
-                      } catch (_) {
-                        _snack(l10n.t('vault_delete_failed'), error: true);
-                      }
-                    }),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
+  // ------------------------------------------------------------ Build
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final me = context.watch<AuthController>().currentUser;
+    final isAdmin =
+        ref.watch(vaultAdminProvider).maybeWhen(data: (v) => v, orElse: () => false);
+    final received = ref.watch(receivedSharesProvider(u));
+    final unread = received.where((s) => s['status'] == 'available').length;
+    final tabs = ['Coffre', 'Envois', unread > 0 ? 'Reçus · $unread' : 'Reçus', 'Audit', if (isAdmin) 'Admin'];
+    if (_tab >= tabs.length) _tab = 0;
+
     return Scaffold(
-      backgroundColor: _V.bg,
-      body: _GlassBg(
-        child: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: _Glass(
-                  radius: 16,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: Row(
-                    children: [
-                      _IconBtn(
-                          icon: Icons.arrow_back_ios_new_rounded,
-                          onTap: () {
-                            final auth = context.read<AuthController>();
-                            if (auth.isAuthenticated) {
-                              final t = auth.currentUser?.accountType;
-                              context.go(t == AccountType.enterprise
-                                  ? AppRoutes.enterpriseDashboard
-                                  : AppRoutes.userDashboard);
-                              return;
-                            }
-                            context.go(AppRoutes.home);
-                          }),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.lock_rounded, color: _V.primary, size: 16),
-                      const SizedBox(width: 6),
-                      Text(l10n.t('vault_title'),
-                          style: const TextStyle(
-                              color: _V.text,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5)),
-                      const Spacer(),
-                      Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                            color: _V.ok.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: _V.ok.withOpacity(0.35))),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.verified_user_rounded,
-                                color: _V.ok, size: 10),
-                            const SizedBox(width: 4),
-                            Text(l10n.t('vault_secure'),
-                                style: const TextStyle(
-                                    color: _V.ok,
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w900)),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      _IconBtn(icon: Icons.search_rounded, onTap: _verifyById),
-                    ],
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: _Glass(
-                  radius: 12,
-                  child: SizedBox(
-                    height: 38,
-                    child: TextField(
-                      controller: _searchCtrl,
-                      style: const TextStyle(color: _V.text, fontSize: 12),
-                      onChanged: (v) {
-                        setState(() => _query = v.trim().toLowerCase());
-                        if (_query.isNotEmpty && _tabController.index != 0) {
-                          _tabController.animateTo(0);
-                        }
-                      },
-                      decoration: InputDecoration(
-                        hintText: l10n.t('vault_search_hint'),
-                        hintStyle:
-                            const TextStyle(color: _V.textMut, fontSize: 11.5),
-                        prefixIcon: const Icon(Icons.search_rounded,
-                            size: 15, color: _V.textSec),
-                        suffixIcon: _query.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.close_rounded,
-                                    size: 13, color: _V.textSec),
-                                onPressed: () {
-                                  _searchCtrl.clear();
-                                  setState(() => _query = '');
-                                },
-                              )
-                            : null,
-                        border: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                child: _Glass(
-                  radius: 12,
-                  padding: const EdgeInsets.all(3),
-                  child: SizedBox(
-                    height: 32,
-                    child: TabBar(
-                      controller: _tabController,
-                      indicator: BoxDecoration(
-                          color: _V.primary,
-                          borderRadius: BorderRadius.circular(9)),
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: _V.textSec,
-                      labelStyle: const TextStyle(
-                          fontSize: 10.5, fontWeight: FontWeight.w900),
-                      unselectedLabelStyle: const TextStyle(
-                          fontSize: 10.5, fontWeight: FontWeight.w600),
-                      dividerColor: Colors.transparent,
-                      tabs: [
-                        Tab(text: l10n.t('vault_tab_vault')),
-                        Tab(text: l10n.t('vault_tab_send')),
-                        Tab(text: l10n.t('vault_tab_received')),
-                        Tab(text: l10n.t('vault_tab_audit')),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _VaultTab(
-                      me: me,
-                      docs: _docs,
-                      query: _query,
-                      folderFilter: _folderFilter,
-                      onFolder: (id) => setState(() => _folderFilter = id),
-                      onCreateFolder: _createFolder,
-                      onOpen: _openDoc,
-                      onMenu: _docMenu,
-                      fmtDate: _fmtDate,
-                      fmtSize: _fmtSize,
-                    ),
-                    _SendTab(
-                      me: me,
-                      docs: _docs,
-                      onSend: () => _openSendSheet(),
-                      onOpenDoc: _openDoc,
-                      onForward: (d) => _openSendSheet(singleDoc: d),
-                      fmtDate: _fmtDate,
-                    ),
-                    _InboxTab(
-                      me: me,
-                      docs: _docs,
-                      onOpen: _openDoc,
-                      fmtDate: _fmtDate,
-                    ),
-                    _AuditTab(me: me, docs: _docs, fmtDate: _fmtDate),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      floatingActionButton: _tabController.index == 0
-          ? FloatingActionButton.small(
-              backgroundColor: _V.primary,
-              foregroundColor: Colors.white,
-              onPressed: _pickAndUpload,
-              child: const Icon(Icons.add_moderator_rounded, size: 18),
+      backgroundColor: VT.bg,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _tab == 0
+          ? FloatingActionButton(
+              backgroundColor: VT.ink,
+              elevation: 4,
+              shape: const CircleBorder(),
+              onPressed: _add,
+              child: const Icon(Icons.add_rounded, color: VT.mint, size: 28),
             )
           : null,
-    );
-  }
-}
-
-// =============================================================
-// WIDGETS COMPACTS
-// =============================================================
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _IconBtn({required this.icon, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: _V.border)),
-        child: Icon(icon, size: 14, color: _V.primary),
-      ),
-    );
-  }
-}
-
-class _MenuTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? color;
-  const _MenuTile(
-      {required this.icon, required this.label, required this.onTap, this.color});
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: color ?? _V.primary),
-            const SizedBox(width: 10),
-            Text(label,
-                style: TextStyle(
-                    color: color ?? _V.text,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Image en cache mémoire (évite les appels réseau répétés).
-class _CachedImg extends StatelessWidget {
-  final String url;
-  final double? size;
-  final BorderRadius? radius;
-  final Widget fallback;
-  const _CachedImg(
-      {required this.url, this.size, this.radius, required this.fallback});
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<Uint8List>(
-      future: _ImgCache.fetch(url),
-      builder: (context, snap) {
-        if (!snap.hasData) return fallback;
-        return ClipRRect(
-          borderRadius: radius ?? BorderRadius.zero,
-          child: Image.memory(
-            snap.data!,
-            width: size ?? double.infinity,
-            height: size ?? double.infinity,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => fallback,
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Compte à rebours avec barre de progression
-class _Count extends StatefulWidget {
-  final DateTime start;
-  final DateTime target;
-  final String label;
-  final Color color;
-  const _Count(
-      {required this.start,
-      required this.target,
-      required this.label,
-      this.color = _V.dangerBright});
-  @override
-  State<_Count> createState() => _CountState();
-}
-
-class _CountState extends State<_Count> {
-  Timer? _t;
-  @override
-  void initState() {
-    super.initState();
-    _t = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _t?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rem = widget.target.difference(DateTime.now());
-    final total = widget.target.difference(widget.start).inMilliseconds;
-    final elapsed = DateTime.now().difference(widget.start).inMilliseconds;
-    final p = total <= 0 ? 1.0 : (elapsed / total).clamp(0.0, 1.0);
-    String f(Duration d) {
-      if (d.isNegative) return '00:00:00';
-      return '${d.inHours.toString().padLeft(2, '0')}:${(d.inMinutes % 60).toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(widget.label,
-                style: TextStyle(
-                    fontSize: 9.5,
-                    color: widget.color.withOpacity(0.9),
-                    fontWeight: FontWeight.w800)),
-            Text(f(rem),
-                style: TextStyle(
-                    fontSize: 10.5,
-                    color: widget.color,
-                    fontWeight: FontWeight.w900)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: p,
-            minHeight: 5,
-            backgroundColor: widget.color.withOpacity(0.15),
-            valueColor: AlwaysStoppedAnimation(widget.color),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Carte "liste" (audit uniquement désormais)
-class _DocItem extends StatelessWidget {
-  final IconData icon;
-  final Color accent;
-  final String title;
-  final String subtitle;
-  final String? trailing;
-  final bool hasPassword;
-  final VoidCallback? onTap;
-  final Widget? progress;
-  final Color? borderColor;
-  const _DocItem({
-    required this.icon,
-    this.accent = _V.primary,
-    required this.title,
-    required this.subtitle,
-    this.trailing,
-    this.hasPassword = false,
-    this.onTap,
-    this.progress,
-    this.borderColor,
-  });
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: _Glass(
-          radius: 16,
-          padding: const EdgeInsets.all(10),
-          borderColor: borderColor,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: accent.withOpacity(0.12)),
-                        alignment: Alignment.center,
-                        child: Icon(icon, color: accent, size: 19),
-                      ),
-                      if (hasPassword)
-                        Positioned(
-                          right: -4,
-                          bottom: -4,
-                          child: Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                                color: _V.text,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 1.5)),
-                            child: const Icon(Icons.lock_rounded,
-                                size: 8, color: Colors.white),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: _V.text,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 2),
-                        Text(subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: _V.textSec,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                  if (trailing != null) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: accent.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(8)),
-                      child: Text(trailing!,
-                          style: TextStyle(
-                              color: accent,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900)),
-                    ),
-                  ],
-                ],
-              ),
-              if (progress != null) ...[
-                const SizedBox(height: 10),
-                progress!,
+      body: SafeArea(
+        child: Column(children: [
+          _header(),
+          const SizedBox(height: 8),
+          _tabBar(tabs),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
+              children: [
+                if (_tab == 0) _hero(),
+                ..._content(isAdmin),
               ],
-            ],
+            ),
           ),
-        ),
+        ]),
       ),
     );
   }
-}
 
-// =============================================================
-// VISIONNEUSE IMAGE IN-APP (zoom / pinch)
-// =============================================================
-class _ImageViewerPage extends StatefulWidget {
-  final String url;
-  final String title;
-  final VoidCallback onDownload;
-  const _ImageViewerPage(
-      {required this.url, required this.title, required this.onDownload});
-  @override
-  State<_ImageViewerPage> createState() => _ImageViewerPageState();
-}
+  Widget _header() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: Row(children: [
+          _RoundBtn(icon: Icons.arrow_back_ios_new_rounded, onTap: _back),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Coffre-fort',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: VT.ink)),
+              Row(children: [
+                Icon(Icons.verified_user_rounded, size: 12, color: VT.ok),
+                SizedBox(width: 4),
+                Text('Scellé · signé · audité',
+                    style: TextStyle(fontSize: 10.5, color: VT.sub, fontWeight: FontWeight.w600)),
+              ]),
+            ]),
+          ),
+          _RoundBtn(icon: Icons.verified_outlined, onTap: () => showVerifySheet(context, u)),
+          const SizedBox(width: 8),
+          _RoundBtn(icon: Icons.shield_outlined, onTap: () => showSecuritySheet(context, u)),
+        ]),
+      );
 
-class _ImageViewerPageState extends State<_ImageViewerPage> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: _V.primary, size: 20),
-        title: Text(widget.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                color: _V.text, fontSize: 14, fontWeight: FontWeight.w900)),
-        actions: [
-          IconButton(
-              icon: const Icon(Icons.download_rounded, size: 18),
-              onPressed: widget.onDownload),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: Container(
-        color: _V.cardSoft,
-        child: FutureBuilder<Uint8List>(
-          future: _ImgCache.fetch(widget.url),
-          builder: (c, sn) {
-            if (sn.connectionState == ConnectionState.waiting) return _spinner();
-            if (!sn.hasData) {
-              return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.broken_image_rounded,
-                        size: 40, color: _V.textMut),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                          backgroundColor: _V.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12))),
-                      onPressed: () async {
-                        final ok = await _launchOut(widget.url);
-                        if (!ok && mounted) setState(() {});
-                      },
-                      icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                      label: const Text('Ouvrir avec une autre application',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w800)),
-                    ),
-                  ],
-                ),
-              );
-            }
-            return InteractiveViewer(
-              minScale: 1,
-              maxScale: 6,
-              child: Center(
-                child: Image.memory(sn.data!, fit: BoxFit.contain, gaplessPlayback: true),
+  Widget _tabBar(List<String> tabs) => SizedBox(
+        height: 42,
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          scrollDirection: Axis.horizontal,
+          itemCount: tabs.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, i) {
+            final sel = i == _tab;
+            return GestureDetector(
+              onTap: () => setState(() => _tab = i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                    color: sel ? VT.ink : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: sel ? VT.ink : VT.line)),
+                child: Text(tabs[i],
+                    style: TextStyle(
+                        color: sel ? Colors.white : VT.sub,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12.5)),
               ),
             );
           },
         ),
-      ),
-    );
-  }
-}
+      );
 
-// =============================================================
-// DIALOGUES UTILITAIRES
-// =============================================================
-void showQrDialog(BuildContext context,
-    {required String title, required String value}) {
-  showDialog(
-    context: context,
-    builder: (ctx) => _GlassDialog(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 14),
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _V.border)),
-              child: QrImageView(
-                data: value,
-                version: QrVersions.auto,
-                size: 160,
-                backgroundColor: Colors.white,
+  Widget _hero() {
+    final s = ref.watch(vaultStatsProvider(u));
+    final ratio = s.total == 0 ? 0.0 : s.sealed / s.total;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [VT.forest, VT.forest2]),
+          ),
+          child: Stack(children: [
+            Positioned(
+                right: -40,
+                top: -40,
+                child: Container(
+                    width: 140,
+                    height: 140,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle, color: VT.mint.withOpacity(0.10)))),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                    color: VT.mint.withOpacity(0.16), borderRadius: BorderRadius.circular(8)),
+                child: const Text('PROTECTION ACTIVE',
+                    style: TextStyle(
+                        color: VT.mint, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 0.6)),
               ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SelectableText(value,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: _V.textSec, fontSize: 10, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 36,
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: _V.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12))),
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppLocalizations.of(context).t('common_close'),
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-void showDocIdDialog(BuildContext context,
-    {required String docId, required String title}) {
-  showDialog(
-    context: context,
-    builder: (ctx) => _GlassDialog(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title,
-              style: const TextStyle(
-                  color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                color: _V.primarySoft,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _V.primary.withOpacity(0.25))),
-            child: SelectableText(docId,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: _V.primary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1)),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 32,
-            child: TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppLocalizations.of(context).t('common_close'),
-                  style: const TextStyle(color: _V.textSec, fontSize: 11)),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-/// Demande de mot de passe (partage chiffré)
-Future<bool> askVaultPassword(
-    BuildContext context, DocumentService docs, String stored) async {
-  final l10n = AppLocalizations.of(context);
-  final ctrl = TextEditingController();
-  String? err;
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setDlg) => _GlassDialog(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(children: [
-              const Icon(Icons.lock_rounded, color: _V.primary, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: Text(l10n.t('vault_password_required'),
-                      style: const TextStyle(
-                          color: _V.text,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800))),
-            ]),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              obscureText: true,
-              style: const TextStyle(color: _V.text, fontSize: 13),
-              decoration: _dec(l10n.t('vault_password')),
-            ),
-            if (err != null)
-              Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(err!,
-                      style: const TextStyle(
-                          color: _V.dangerBright, fontSize: 10.5))),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: Text(l10n.t('common_cancel'),
-                        style: const TextStyle(color: _V.textSec, fontSize: 12)),
-                  ),
-                ),
+              const SizedBox(height: 12),
+              Text('${s.total} document${s.total > 1 ? 's' : ''} sécurisé${s.total > 1 ? 's' : ''}',
+                  style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text('${s.signed} signé${s.signed > 1 ? 's' : ''} · ${s.publicCount} public${s.publicCount > 1 ? 's' : ''} · ${fmtSize(s.bytes)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11.5)),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 6,
+                    backgroundColor: Colors.white.withOpacity(0.15),
+                    valueColor: const AlwaysStoppedAnimation(VT.mint)),
+              ),
+              const SizedBox(height: 5),
+              Text('${(ratio * 100).round()} % scellés SHA-256',
+                  style: const TextStyle(color: Colors.white60, fontSize: 10.5)),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(child: VButton('Ajouter', icon: Icons.add_rounded, kind: VKind.mint, height: 42, onTap: _add)),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                        backgroundColor: _V.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                    onPressed: () async {
-                      final valid = await docs.verifyPassword(
-                          password: ctrl.text, hash: stored);
-                      if (valid) {
-                        if (ctx.mounted) Navigator.pop(ctx, true);
-                      } else {
-                        setDlg(() => err = l10n.t('vault_wrong_password'));
-                      }
-                    },
-                    child: Text(l10n.t('vault_decrypt_open'),
-                        style: const TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.w800)),
+                    child: Material(
+                  color: Colors.white.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(15),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(15),
+                    onTap: _openSend,
+                    child: const SizedBox(
+                      height: 42,
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.send_rounded, size: 16, color: Colors.white),
+                        SizedBox(width: 8),
+                        Text('Envoyer',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
+                      ]),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                )),
+              ]),
+            ]),
+          ]),
         ),
       ),
-    ),
-  );
-  return ok == true;
-}
-
-// =============================================================
-// ONGLET COFFRE (grille de cartes)
-// =============================================================
-class _VaultTab extends StatelessWidget {
-  final AppUser? me;
-  final DocumentService docs;
-  final String query;
-  final String? folderFilter;
-  final void Function(String?) onFolder;
-  final Future<void> Function(String) onCreateFolder;
-  final Future<void> Function(Map<String, dynamic>) onOpen;
-  final Future<void> Function(Map<String, dynamic>) onMenu;
-  final String Function(dynamic) fmtDate;
-  final String Function(int) fmtSize;
-  const _VaultTab({
-    required this.me,
-    required this.docs,
-    required this.query,
-    required this.folderFilter,
-    required this.onFolder,
-    required this.onCreateFolder,
-    required this.onOpen,
-    required this.onMenu,
-    required this.fmtDate,
-    required this.fmtSize,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    if (me == null) {
-      return Center(
-          child: Text(l10n.t('vault_connect'),
-              style: const TextStyle(color: _V.textSec, fontSize: 12)));
-    }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
-      children: [
-        SizedBox(
-          height: 34,
-          child: StreamBuilder<List<Map<String, dynamic>>>(
-            stream: docs.streamFolders(me!.id),
-            builder: (context, snap) {
-              final folders = snap.data ?? const [];
-              return ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  _FolderChip(
-                      icon: Icons.grid_view_rounded,
-                      label: l10n.t('vault_all'),
-                      selected: folderFilter == null,
-                      onTap: () => onFolder(null)),
-                  ...folders.map((f) => _FolderChip(
-                      icon: Icons.folder_rounded,
-                      label: (f['name'] as String?) ?? '—',
-                      selected: folderFilter == f['id'],
-                      onTap: () => onFolder(f['id'] as String))),
-                  _FolderChip(
-                      icon: Icons.create_new_folder_rounded,
-                      label: l10n.t('vault_new_folder'),
-                      selected: false,
-                      onTap: () => onCreateFolder(me!.id)),
-                ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: docs.streamDocuments(me!.id),
-          builder: (context, snap) {
-            var list = snap.data ?? const <Map<String, dynamic>>[];
-            if (folderFilter != null) {
-              list = list.where((d) => d['folder_id'] == folderFilter).toList();
-            }
-            if (query.isNotEmpty) {
-              list = list.where((d) {
-                final hay =
-                    '${d['title'] ?? ''} ${d['generated_doc_id'] ?? ''} ${d['doc_type'] ?? ''} ${d['file_name'] ?? ''}'
-                        .toLowerCase();
-                return hay.contains(query);
-              }).toList();
-            }
-            if (snap.connectionState == ConnectionState.waiting) {
-              return Padding(padding: const EdgeInsets.all(30), child: _spinner());
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (query.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                        l10n.t('vault_results', args: ['${list.length}']),
-                        style: const TextStyle(
-                            color: _V.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800)),
-                  ),
-                if (list.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 50),
-                    child: Column(
-                      children: [
-                        const Icon(Icons.shield_outlined,
-                            size: 40, color: _V.textMut),
-                        const SizedBox(height: 10),
-                        Text(l10n.t('vault_empty'),
-                            style: const TextStyle(
-                                color: _V.textSec,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 4),
-                        Text(l10n.t('vault_empty_hint'),
-                            style:
-                                const TextStyle(color: _V.textMut, fontSize: 10.5)),
-                      ],
-                    ),
-                  )
-                else
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: list.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
-                      childAspectRatio: 0.82,
-                    ),
-                    itemBuilder: (context, i) {
-                      final d = list[i];
-                      return _DocSquareCard(
-                        key: ValueKey(d['id']?.toString() ?? '$i'),
-                        data: d,
-                        docs: docs,
-                        onOpen: () => onOpen(d),
-                        onMenu: () => onMenu(d),
-                        fmtDate: fmtDate,
-                        fmtSize: fmtSize,
-                      );
-                    },
-                  ),
-              ],
-            );
-          },
-        ),
-      ],
     );
+  }
+
+  List<Widget> _content(bool isAdmin) {
+    switch (_tab) {
+      case 0:
+        return _vaultTab();
+      case 1:
+        return _sentTab();
+      case 2:
+        return _receivedTab();
+      case 3:
+        return _auditTab();
+      default:
+        return isAdmin ? [const _AdminPanel()] : [];
+    }
+  }
+
+  // ------------------------------------------------------------ Coffre
+  List<Widget> _vaultTab() {
+    final st = ref.watch(vaultStateProvider(u));
+    final docs = ref.watch(filteredDocsProvider(u));
+    final expiring = ref.watch(expiringDocsProvider(u));
+    final svc = _docs;
+    return [
+      if (expiring.isNotEmpty) _ExpiryBanner(docs: expiring),
+      SizedBox(
+        height: 38,
+        child: ListView(scrollDirection: Axis.horizontal, children: [
+          _Chip(
+              icon: Icons.grid_view_rounded,
+              label: 'Tous',
+              selected: st.folderFilter == null,
+              onTap: () => _n.setFolderFilter(null)),
+          ...st.folders.map((f) => _Chip(
+              icon: Icons.folder_rounded,
+              label: (f['name'] as String?) ?? '—',
+              selected: st.folderFilter == f['id'].toString(),
+              onTap: () => _n.setFolderFilter(f['id'].toString()))),
+          _Chip(
+              icon: Icons.create_new_folder_rounded,
+              label: 'Nouveau dossier',
+              selected: false,
+              onTap: _createFolder),
+        ]),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: _search,
+        onChanged: _n.setSearch,
+        decoration: vInput('', hint: 'Rechercher titre, ID, type…', icon: Icons.search_rounded)
+            .copyWith(
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          _search.clear();
+                          _n.setSearch('');
+                          setState(() {});
+                        })),
+      ),
+      const SizedBox(height: 12),
+      if (!st.loaded)
+        vSpinner()
+      else if (docs.isEmpty)
+        const _Empty(icon: Icons.shield_outlined, title: 'Coffre vide', hint: 'Touchez + pour ajouter votre premier document.')
+      else
+        ...docs.map((d) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _DocRow(
+                  row: d, docs: svc, onTap: () => showDocSheet(context, u, d)),
+            )),
+    ];
+  }
+
+  // ------------------------------------------------------------ Envois
+  List<Widget> _sentTab() {
+    final shares = ref.watch(sentSharesProvider(u));
+    return [
+      VCard(
+        color: VT.forestSoft,
+        borderColor: Colors.transparent,
+        child: Row(children: [
+          const Icon(Icons.shield_rounded, color: VT.forest, size: 22),
+          const SizedBox(width: 10),
+          const Expanded(
+              child: Text('Envoyez avec mot de passe, date programmée, autodestruction et révocation.',
+                  style: TextStyle(fontSize: 11.5, color: VT.forest, height: 1.35, fontWeight: FontWeight.w600))),
+          const SizedBox(width: 8),
+          VButton('Nouveau', expand: false, height: 38, onTap: _openSend),
+        ]),
+      ),
+      const SizedBox(height: 12),
+      if (shares.isEmpty)
+        const _Empty(icon: Icons.send_rounded, title: 'Aucun envoi', hint: 'Vos envois actifs apparaîtront ici.')
+      else
+        ...shares.map((s) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _ShareRow(
+                share: s,
+                docs: _docs,
+                sent: true,
+                onTap: () => showShareSheet(context, u, s, sent: true)))),
+    ];
+  }
+
+  // ------------------------------------------------------------ Reçus
+  List<Widget> _receivedTab() {
+    final shares = ref.watch(receivedSharesProvider(u));
+    if (shares.isEmpty) {
+      return const [_Empty(icon: Icons.inbox_rounded, title: 'Aucun document reçu', hint: 'Les documents partagés avec votre THIX ID arriveront ici.')];
+    }
+    return shares
+        .map((s) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _ShareRow(
+                share: s,
+                docs: _docs,
+                sent: false,
+                onTap: () => showShareSheet(context, u, s, sent: false))))
+        .toList();
+  }
+
+  // ------------------------------------------------------------ Audit
+  List<Widget> _auditTab() {
+    final log = ref.watch(vaultStateProvider(u).select((s) => s.auditLog));
+    if (log.isEmpty) {
+      return const [_Empty(icon: Icons.history_rounded, title: 'Journal vide', hint: 'Chaque action est enregistrée de façon immuable.')];
+    }
+    return log.map((t) => _AuditRow(t: t)).toList();
   }
 }
 
-class _FolderChip extends StatelessWidget {
+// ================================================================= Widgets page
+class _RoundBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _RoundBtn({required this.icon, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.white,
+        shape: const CircleBorder(side: BorderSide(color: VT.line)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(width: 42, height: 42, child: Icon(icon, size: 18, color: VT.ink)),
+        ),
+      );
+}
+
+class _Chip extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _FolderChip(
-      {required this.icon,
-      required this.label,
-      required this.selected,
-      required this.onTap});
+  const _Chip({required this.icon, required this.label, required this.selected, required this.onTap});
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(right: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-        decoration: BoxDecoration(
-            color: selected ? _V.primary : Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: selected ? _V.primary : _V.border)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: selected ? Colors.white : _V.primary),
-            const SizedBox(width: 5),
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+              color: selected ? VT.forest : Colors.white,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: selected ? VT.forest : VT.line)),
+          child: Row(children: [
+            Icon(icon, size: 14, color: selected ? VT.mint : VT.forest),
+            const SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
-                    color: selected ? Colors.white : _V.text,
-                    fontSize: 10.5,
+                    color: selected ? Colors.white : VT.ink,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w800)),
-          ],
+          ]),
         ),
+      );
+}
+
+class _Empty extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String hint;
+  const _Empty({required this.icon, required this.title, required this.hint});
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 54),
+        child: Column(children: [
+          Icon(icon, size: 42, color: VT.mute),
+          const SizedBox(height: 10),
+          Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: VT.sub)),
+          const SizedBox(height: 4),
+          Text(hint, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11.5, color: VT.mute)),
+        ]),
+      );
+}
+
+class _ExpiryBanner extends StatelessWidget {
+  final List<JsonMap> docs;
+  const _ExpiryBanner({required this.docs});
+  @override
+  Widget build(BuildContext context) {
+    final first = docs.take(2).map((d) {
+      final e = DateTime.parse(d['expires_at'].toString());
+      final days = e.difference(DateTime.now()).inDays;
+      return '${(d['title'] as String?) ?? '—'} (${days < 0 ? 'expiré' : 'J-$days'})';
+    }).join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: VCard(
+        color: const Color(0xFFFFF4DF),
+        borderColor: VT.amber.withOpacity(0.35),
+        child: Row(children: [
+          const Icon(Icons.notification_important_rounded, color: VT.amber, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${docs.length} document${docs.length > 1 ? 's' : ''} à renouveler',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: VT.ink)),
+              const SizedBox(height: 2),
+              Text(first,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: VT.sub)),
+            ]),
+          ),
+        ]),
       ),
     );
   }
 }
 
-class _DocSquareCard extends StatefulWidget {
-  final Map<String, dynamic> data;
+class _DocRow extends StatelessWidget {
+  final JsonMap row;
   final DocumentService docs;
-  final VoidCallback onOpen;
-  final VoidCallback onMenu;
-  final String Function(dynamic) fmtDate;
-  final String Function(int) fmtSize;
-  const _DocSquareCard({
-    super.key,
-    required this.data,
-    required this.docs,
-    required this.onOpen,
-    required this.onMenu,
-    required this.fmtDate,
-    required this.fmtSize,
-  });
-  @override
-  State<_DocSquareCard> createState() => _DocSquareCardState();
-}
-
-class _DocSquareCardState extends State<_DocSquareCard> {
-  Future<String>? _url;
-
-  void _prepare() {
-    final d = widget.data;
-    _url = null;
-    if (_isImageMime(d['mime_type'] as String?, d['file_name'] as String?)) {
-      _url = widget.docs.resolveRowDownloadUrl(d);
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _prepare();
-  }
-
-  @override
-  void didUpdateWidget(covariant _DocSquareCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.data['id'] != widget.data['id']) _prepare();
-  }
-
+  final VoidCallback onTap;
+  const _DocRow({required this.row, required this.docs, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    final d = widget.data;
-    final mime = (d['mime_type'] as String?) ?? '';
-    final docType = d['doc_type'] as String?;
-    final color = _typeColor(mime, docType);
-    final icon = _typeIcon(mime, docType);
-    final isPublic = (d['is_public'] as bool?) ?? false;
-    final docId = (d['generated_doc_id'] as String?) ?? '';
-    final title = (d['title'] as String?) ?? (docId.isNotEmpty ? docId : '—');
-    final sub =
-        '${widget.fmtDate(d['created_at'])} • ${widget.fmtSize((d['size_bytes'] as num?)?.toInt() ?? 0)}';
-    final fallback = Container(
-        color: color.withOpacity(0.08),
-        alignment: Alignment.center,
-        child: Icon(icon, color: color, size: 34));
-    return GestureDetector(
-      onTap: widget.onOpen,
-      onLongPress: widget.onMenu,
-      child: _Glass(
-        radius: 18,
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(13),
-                      child: _url == null
-                          ? fallback
-                          : FutureBuilder<String>(
-                              future: _url,
-                              builder: (c, sn) => sn.hasData
-                                  ? _CachedImg(url: sn.data!, fallback: fallback)
-                                  : fallback),
-                    ),
-                  ),
-                  if (isPublic)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                            color: _V.gold,
-                            borderRadius: BorderRadius.circular(6)),
-                        child: const Text('PUBLIC',
-                            style: TextStyle(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white)),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
+    final docId = (row['generated_doc_id'] as String?) ?? '';
+    final title = (row['title'] as String?) ?? (docId.isNotEmpty ? docId : '—');
+    return VCard(
+      onTap: onTap,
+      onLongPress: onTap,
+      padding: const EdgeInsets.all(12),
+      child: Row(children: [
+        VThumb(row: row, docs: docs),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: _V.text, fontSize: 12, fontWeight: FontWeight.w900)),
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: VT.ink)),
             const SizedBox(height: 2),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(sub,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: _V.textSec,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600)),
-                ),
-                GestureDetector(
-                  onTap: widget.onMenu,
-                  child: const Icon(Icons.more_horiz_rounded,
-                      size: 16, color: _V.textSec),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              height: 28,
-              decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _V.border)),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: const BorderRadius.horizontal(
-                          left: Radius.circular(10)),
-                      onTap: () => showQrDialog(context,
-                          title: title, value: docId.isNotEmpty ? docId : title),
-                      child: const Center(
-                          child: Icon(Icons.qr_code_2_rounded,
-                              size: 15, color: _V.primary)),
-                    ),
-                  ),
-                  Container(width: 1, height: 14, color: _V.border),
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: const BorderRadius.horizontal(
-                          right: Radius.circular(10)),
-                      onTap: () => showDocIdDialog(context,
-                          docId: docId.isNotEmpty ? docId : '—', title: title),
-                      child: const Center(
-                          child:
-                              Icon(Icons.badge_outlined, size: 15, color: _V.primary)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            Text('${fmtDate(row['created_at'])} · ${fmtSize((row['size_bytes'] as num?)?.toInt() ?? 0)}',
+                style: const TextStyle(fontSize: 10.5, color: VT.sub, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 7),
+            Wrap(spacing: 4, runSpacing: 4, children: docTags(row)),
+          ]),
         ),
-      ),
+        const Icon(Icons.chevron_right_rounded, color: VT.mute),
+      ]),
     );
   }
 }
 
-// =============================================================
-// CARTE PARTAGE (style Coffre) — ENVOIS & REÇUS
-// =============================================================
-class _ShareCard extends StatefulWidget {
-  final Map<String, dynamic> share;
+class _ShareRow extends StatefulWidget {
+  final JsonMap share;
   final DocumentService docs;
   final bool sent;
-  final String fallbackTitle;
-  final String subtitle;
-  final String chipLabel;
-  final Color chipColor;
-  final bool hasPassword;
-  final Widget? progress;
   final VoidCallback onTap;
-  final VoidCallback onOpenDoc;
-  final VoidCallback onSecondary;
-  final IconData secondaryIcon;
-  const _ShareCard({
-    required this.share,
-    required this.docs,
-    required this.sent,
-    required this.fallbackTitle,
-    required this.subtitle,
-    required this.chipLabel,
-    required this.chipColor,
-    required this.hasPassword,
-    required this.onTap,
-    required this.onOpenDoc,
-    required this.onSecondary,
-    required this.secondaryIcon,
-    this.progress,
-  });
+  const _ShareRow({required this.share, required this.docs, required this.sent, required this.onTap});
   @override
-  State<_ShareCard> createState() => _ShareCardState();
+  State<_ShareRow> createState() => _ShareRowState();
 }
 
-class _ShareCardState extends State<_ShareCard> {
-  Future<Map<String, dynamic>?>? _docF;
-  Future<String>? _urlF;
-
+class _ShareRowState extends State<_ShareRow> {
+  late Future<JsonMap?> _doc;
   @override
   void initState() {
     super.initState();
-    _docF = _load();
+    _doc = _load();
   }
 
-  Future<Map<String, dynamic>?> _load() async {
+  Future<JsonMap?> _load() async {
     final id = widget.share['document_id']?.toString();
     if (id == null || id.isEmpty) return null;
     try {
-      final d = await widget.docs.fetchDocumentById(id);
-      if (d != null && _isImageMime(d['mime_type'] as String?, d['file_name'] as String?)) {
-        _urlF = widget.docs.resolveRowDownloadUrl(d);
-      }
-      return d;
+      return await widget.docs.fetchDocumentById(id);
     } catch (_) {
       return null;
     }
@@ -1876,1986 +607,226 @@ class _ShareCardState extends State<_ShareCard> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: _Glass(
-        radius: 18,
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(13),
-                      child: FutureBuilder<Map<String, dynamic>?>(
-                        future: _docF,
-                        builder: (c, sn) {
-                          final d = sn.data;
-                          if (d == null) {
-                            return Container(
-                              color: _V.primarySoft,
-                              alignment: Alignment.center,
-                              child: Icon(
-                                  widget.sent
-                                      ? Icons.send_rounded
-                                      : Icons.inbox_rounded,
-                                  color: _V.primary,
-                                  size: 32),
-                            );
-                          }
-                          final mime = (d['mime_type'] as String?) ?? '';
-                          final dt = d['doc_type'] as String?;
-                          final color = _typeColor(mime, dt);
-                          final fallback = Container(
-                              color: color.withOpacity(0.08),
-                              alignment: Alignment.center,
-                              child: Icon(_typeIcon(mime, dt),
-                                  color: color, size: 32));
-                          if (_urlF == null) return fallback;
-                          return FutureBuilder<String>(
-                              future: _urlF,
-                              builder: (c2, sn2) => sn2.hasData
-                                  ? _CachedImg(url: sn2.data!, fallback: fallback)
-                                  : fallback);
-                        },
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 6,
-                    left: 6,
-                    child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                          color: widget.chipColor,
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Text(widget.chipLabel,
-                          style: const TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white)),
-                    ),
-                  ),
-                  if (widget.hasPassword)
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                            color: _V.text,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5)),
-                        child: const Icon(Icons.lock_rounded,
-                            size: 9, color: Colors.white),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            FutureBuilder<Map<String, dynamic>?>(
-              future: _docF,
-              builder: (c, sn) {
-                final t = (sn.data?['title'] as String?) ?? widget.fallbackTitle;
-                return Text(t,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _V.text, fontSize: 12, fontWeight: FontWeight.w900));
-              },
-            ),
-            const SizedBox(height: 2),
-            Text(widget.subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: _V.textSec, fontSize: 9.5, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Container(
-              height: 28,
-              decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _V.border)),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      borderRadius:
-                          const BorderRadius.horizontal(left: Radius.circular(10)),
-                      onTap: widget.onOpenDoc,
-                      child: const Center(
-                          child: Icon(Icons.remove_red_eye_rounded,
-                              size: 15, color: _V.primary)),
-                    ),
-                  ),
-                  Container(width: 1, height: 14, color: _V.border),
-                  Expanded(
-                    child: InkWell(
-                      borderRadius:
-                          const BorderRadius.horizontal(right: Radius.circular(10)),
-                      onTap: widget.onSecondary,
-                      child: Center(
-                          child: Icon(widget.secondaryIcon,
-                              size: 15, color: _V.primary)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (widget.progress != null) ...[
-              const SizedBox(height: 8),
-              widget.progress!,
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================
-// ONGLET ENVOIS
-// =============================================================
-class _SendTab extends StatefulWidget {
-  final AppUser? me;
-  final DocumentService docs;
-  final VoidCallback onSend;
-  final Future<void> Function(Map<String, dynamic>) onOpenDoc;
-  final void Function(Map<String, dynamic>) onForward;
-  final String Function(dynamic) fmtDate;
-  const _SendTab({
-    required this.me,
-    required this.docs,
-    required this.onSend,
-    required this.onOpenDoc,
-    required this.onForward,
-    required this.fmtDate,
-  });
-  @override
-  State<_SendTab> createState() => _SendTabState();
-}
-
-class _SendTabState extends State<_SendTab> {
-  final Set<String> _destroyed = {};
-
-  String _stLabel(AppLocalizations l10n, String st, bool locked) {
-    if (locked) return l10n.t('vault_st_pending');
-    switch (st) {
-      case 'opened':
-        return l10n.t('vault_st_opened');
-      case 'expired':
-        return l10n.t('vault_st_expired');
-      case 'destroyed':
-        return l10n.t('vault_st_destroyed');
-      default:
-        return l10n.t('vault_st_sent');
-    }
-  }
-
-  Future<void> _openShareDoc(Map<String, dynamic> s) async {
-    final id = s['document_id']?.toString();
-    if (id == null || id.isEmpty) return;
-    try {
-      final d = await widget.docs.fetchDocumentById(id);
-      if (!mounted || d == null) return;
-      await widget.onOpenDoc(d);
-    } catch (_) {}
-  }
-
-  Future<void> _forwardShare(Map<String, dynamic> s) async {
-    final id = s['document_id']?.toString();
-    if (id == null || id.isEmpty) return;
-    try {
-      final d = await widget.docs.fetchDocumentById(id);
-      if (!mounted || d == null) return;
-      widget.onForward(d);
-    } catch (_) {}
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    if (widget.me == null) {
-      return Center(
-          child: Text(l10n.t('vault_connect'),
-              style: const TextStyle(color: _V.textSec, fontSize: 12)));
-    }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
-      children: [
-        _Glass(
-          radius: 18,
-          padding: const EdgeInsets.all(12),
-          borderColor: _V.primary.withOpacity(0.35),
-          child: Row(
-            children: [
-              Container(
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                      color: _V.primarySoft,
-                      borderRadius: BorderRadius.circular(12)),
-                  child:
-                      const Icon(Icons.shield_rounded, color: _V.primary, size: 18)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(l10n.t('vault_send_subtitle'),
-                    style: const TextStyle(
-                        color: _V.textSec,
-                        fontSize: 10.5,
-                        height: 1.35,
-                        fontWeight: FontWeight.w600)),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                    backgroundColor: _V.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9)),
-                onPressed: widget.onSend,
-                child: Text(l10n.t('vault_new_send'),
-                    style: const TextStyle(
-                        fontSize: 10.5, fontWeight: FontWeight.w900)),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        StreamBuilder<List<Map<String, dynamic>>>(
-          stream: widget.docs.streamSentShares(widget.me!.id),
-          builder: (context, snap) {
-            final shares = snap.data ?? const [];
-            final now = DateTime.now();
-            final toDestroy = <String>[];
-            final visible = shares.where((s) {
-              final st = (s['status'] as String?) ?? 'pending';
-              final ad =
-                  DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-              if (st == 'destroyed' || st == 'expired') return false;
-              if (ad != null && ad.isBefore(now)) {
-                final id = s['id']?.toString();
-                if (id != null && _destroyed.add(id)) toDestroy.add(id);
-                return false;
-              }
-              return true;
-            }).toList();
-            // BUGFIX : ne jamais muter le service pendant le build.
-            if (toDestroy.isNotEmpty) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                for (final id in toDestroy) {
-                  widget.docs.markShareDestroyed(id);
-                }
-              });
-            }
-            if (visible.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Center(
-                    child: Text(l10n.t('vault_no_sent'),
-                        style: const TextStyle(
-                            color: _V.textMut, fontSize: 11.5))),
-              );
-            }
-            return GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: visible.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 0.74,
-              ),
-              itemBuilder: (context, i) {
-                final s = visible[i];
-                final st = (s['status'] as String?) ?? 'pending';
-                final locked = _isLocked(s);
-                final hasPw =
-                    (s['password_hash'] as String?)?.isNotEmpty == true;
-                final c = st == 'opened' ? _V.ok : (locked ? _V.warn : _V.primary);
-                final recip = (s['recipient_thix_id'] as String?) ?? '—';
-                return _ShareCard(
-                  share: s,
-                  docs: widget.docs,
-                  sent: true,
-                  fallbackTitle: (s['subject'] as String?)?.isNotEmpty == true
-                      ? s['subject'] as String
-                      : recip,
-                  subtitle: 'À $recip • ${widget.fmtDate(s['created_at'])}',
-                  chipLabel: _stLabel(l10n, st, locked),
-                  chipColor: c,
-                  hasPassword: hasPw,
-                  progress: _progressFor(l10n, s),
-                  onTap: () => _openShareDoc(s),
-                  onOpenDoc: () => _openShareDoc(s),
-                  onSecondary: () => _forwardShare(s),
-                  secondaryIcon: Icons.forward_rounded,
-                );
-              },
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-// =============================================================
-// ONGLET REÇUS
-// =============================================================
-class _InboxTab extends StatefulWidget {
-  final AppUser? me;
-  final DocumentService docs;
-  final Future<void> Function(Map<String, dynamic>) onOpen;
-  final String Function(dynamic) fmtDate;
-  const _InboxTab({
-    required this.me,
-    required this.docs,
-    required this.onOpen,
-    required this.fmtDate,
-  });
-  @override
-  State<_InboxTab> createState() => _InboxTabState();
-}
-
-class _InboxTabState extends State<_InboxTab> {
-  final Set<String> _destroyed = {};
-
-  void _snack(String m, {bool error = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(m, style: const TextStyle(fontSize: 11, color: Colors.white)),
-        backgroundColor: error ? _V.dangerBright : _V.ok,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2)));
-  }
-
-  bool _guardLocked(Map<String, dynamic> s) {
-    if (_isLocked(s)) {
-      final af =
-          DateTime.tryParse((s['available_from'] ?? '').toString());
-      _snack(
-          af != null
-              ? 'Document verrouillé jusqu\'au ${_fmtDT(af)}.'
-              : 'Document verrouillé.',
-          error: true);
-      return true;
-    }
-    return false;
-  }
-
-  void _showDetail(Map<String, dynamic> s) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _InboxDetailSheet(
-        share: s,
-        docs: widget.docs,
-        me: widget.me,
-        fmtDate: widget.fmtDate,
-        onOpenDoc: widget.onOpen,
-      ),
-    );
-  }
-
-  Future<void> _quickOpen(Map<String, dynamic> s) async {
-    if (_guardLocked(s)) return;
-    final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
-    if (hasPw) {
-      final ok = await askVaultPassword(
-          context, widget.docs, s['password_hash'] as String);
-      if (!ok) return;
-    }
-    final id = s['document_id']?.toString();
-    if (id == null || id.isEmpty) return;
-    try {
-      final d = await widget.docs.fetchDocumentById(id);
-      if (!mounted || d == null) return;
-      await widget.docs.markShareOpened(s['id'].toString(),
-          uid: d['user_id']?.toString(),
-          docId: d['generated_doc_id']?.toString());
-      if (!mounted) return;
-      await widget.onOpen(d);
-    } catch (_) {
-      _snack(AppLocalizations.of(context).t('vault_open_failed'), error: true);
-    }
-  }
-
-  Future<void> _quickDownload(Map<String, dynamic> s) async {
-    if (_guardLocked(s)) return;
-    final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
-    if (hasPw) {
-      final ok = await askVaultPassword(
-          context, widget.docs, s['password_hash'] as String);
-      if (!ok) return;
-    }
-    final id = s['document_id']?.toString();
-    if (id == null || id.isEmpty) return;
-    try {
-      final d = await widget.docs.fetchDocumentById(id);
-      if (d == null) throw Exception('nodoc');
-      final url = await widget.docs.resolveRowDownloadUrl(d);
-      final ok = await _launchOut(url);
-      if (!ok) throw Exception('launch');
-    } catch (_) {
-      _snack(AppLocalizations.of(context).t('vault_download_failed'), error: true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    if (widget.me == null) {
-      return Center(
-          child: Text(l10n.t('vault_connect'),
-              style: const TextStyle(color: _V.textSec, fontSize: 12)));
-    }
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream:
-          widget.docs.streamReceivedShares(widget.me!.id, widget.me!.thixId),
-      builder: (context, snap) {
-        final shares = snap.data ?? const [];
-        if (snap.connectionState == ConnectionState.waiting) {
-          return _spinner();
-        }
-        final now = DateTime.now();
-        final toDestroy = <String>[];
-        final visible = shares.where((s) {
-          final st = (s['status'] as String?) ?? 'pending';
-          final ad =
-              DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-          if (st == 'destroyed' || st == 'expired') return false;
-          if (ad != null && ad.isBefore(now)) {
-            final id = s['id']?.toString();
-            if (id != null && _destroyed.add(id)) toDestroy.add(id);
-            return false;
-          }
-          return true;
-        }).toList();
-        if (toDestroy.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            for (final id in toDestroy) {
-              widget.docs.markShareDestroyed(id);
-            }
-          });
-        }
-        if (visible.isEmpty) {
-          return Center(
-              child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.inbox_rounded, size: 40, color: _V.textMut),
-              const SizedBox(height: 10),
-              Text(l10n.t('vault_received_empty'),
-                  style: const TextStyle(
-                      color: _V.textSec,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700)),
-            ],
-          ));
-        }
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
-          children: [
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: visible.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 0.74,
-              ),
-              itemBuilder: (context, i) {
-                final s = visible[i];
-                final st = (s['status'] as String?) ?? 'pending';
-                final hasPw =
-                    (s['password_hash'] as String?)?.isNotEmpty == true;
-                final shots = (s['screenshot_count'] as num?)?.toInt() ?? 0;
-                final locked = _isLocked(s);
-                final senderThix = s['sender_thix_id'] as String?;
-                final senderId = (s['sender_id'] as String?) ?? '';
-                final sender = senderThix ??
-                    (senderId.length >= 8 ? senderId.substring(0, 8) : '—');
-                final accent =
-                    locked ? _V.warn : (st == 'opened' ? _V.ok : _V.primary);
-                return _ShareCard(
-                  share: s,
-                  docs: widget.docs,
-                  sent: false,
-                  fallbackTitle: (s['subject'] as String?)?.isNotEmpty == true
-                      ? s['subject'] as String
-                      : l10n.t('vault_attachment'),
-                  subtitle:
-                      '${l10n.t('vault_from')} $sender • ${widget.fmtDate(s['created_at'])}${shots > 0 ? ' • 📸 $shots' : ''}',
-                  chipLabel: locked
-                      ? l10n.t('vault_st_pending')
-                      : (st == 'opened'
-                          ? l10n.t('vault_st_opened')
-                          : l10n.t('vault_st_available')),
-                  chipColor: accent,
-                  hasPassword: hasPw,
-                  progress: _progressFor(l10n, s),
-                  onTap: () => _showDetail(s),
-                  onOpenDoc: () => _quickOpen(s),
-                  onSecondary: () => _quickDownload(s),
-                  secondaryIcon: Icons.download_rounded,
-                );
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// =============================================================
-// SHEET DÉTAIL REÇU
-// =============================================================
-class _InboxDetailSheet extends StatefulWidget {
-  final Map<String, dynamic> share;
-  final DocumentService docs;
-  final AppUser? me;
-  final String Function(dynamic) fmtDate;
-  final Future<void> Function(Map<String, dynamic>) onOpenDoc;
-  const _InboxDetailSheet({
-    required this.share,
-    required this.docs,
-    required this.me,
-    required this.fmtDate,
-    required this.onOpenDoc,
-  });
-  @override
-  State<_InboxDetailSheet> createState() => _InboxDetailSheetState();
-}
-
-class _InboxDetailSheetState extends State<_InboxDetailSheet> {
-  Map<String, dynamic>? _doc;
-  Map<String, dynamic>? _sender;
-  Future<String>? _thumbF;
-  bool _loading = true;
-  bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final docId = widget.share['document_id']?.toString();
-    final senderId = widget.share['sender_id']?.toString();
-    try {
-      final res = await Future.wait<dynamic>([
-        docId != null
-            ? widget.docs.fetchDocumentById(docId)
-            : Future.value(null),
-        senderId != null
-            ? Supabase.instance.client
-                .from('profiles')
-                .select('full_name, thix_id, avatar_url')
-                .eq('id', senderId)
-                .maybeSingle()
-            : Future.value(null),
-      ]);
-      if (!mounted) return;
-      final doc = (res[0] as Map?)?.cast<String, dynamic>();
-      // BUGFIX : future mémorisé (pas recréé à chaque build).
-      if (doc != null &&
-          _isImageMime(doc['mime_type'] as String?, doc['file_name'] as String?)) {
-        _thumbF = widget.docs.resolveRowDownloadUrl(doc);
-      }
-      setState(() {
-        _doc = doc;
-        _sender = (res[1] as Map?)?.cast<String, dynamic>();
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  void _snack(String m, {bool error = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(m, style: const TextStyle(fontSize: 11, color: Colors.white)),
-        backgroundColor: error ? _V.dangerBright : _V.ok,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2)));
-  }
-
-  bool _guardLocked() {
-    if (_isLocked(widget.share)) {
-      final af = DateTime.tryParse(
-          (widget.share['available_from'] ?? '').toString());
-      _snack(
-          af != null
-              ? 'Document verrouillé jusqu\'au ${_fmtDT(af)}.'
-              : 'Document verrouillé.',
-          error: true);
-      return true;
-    }
-    return false;
-  }
-
-  Future<void> _open() async {
-    if (_doc == null || _guardLocked()) return;
-    final hasPw =
-        (widget.share['password_hash'] as String?)?.isNotEmpty == true;
-    if (hasPw) {
-      final ok = await askVaultPassword(
-          context, widget.docs, widget.share['password_hash'] as String);
-      if (!ok) return;
-    }
-    await widget.docs.markShareOpened(widget.share['id'].toString(),
-        uid: _doc!['user_id']?.toString(),
-        docId: _doc!['generated_doc_id']?.toString());
-    if (mounted) Navigator.pop(context);
-    await widget.onOpenDoc(_doc!);
-  }
-
-  Future<void> _saveToVault() async {
-    final l10n = AppLocalizations.of(context);
-    if (_doc == null || widget.me == null || _guardLocked()) return;
-    setState(() => _busy = true);
-    try {
-      final url = await widget.docs.resolveRowDownloadUrl(_doc!);
-      final resp = await http.get(Uri.parse(url));
-      final name = (_doc!['file_name'] as String?) ??
-          (_doc!['title'] as String?) ??
-          'document';
-      final file = PlatformFile(
-          name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
-      await widget.docs.uploadPickedFileSimple(
-        uid: widget.me!.id,
-        file: file,
-        docType: (_doc!['doc_type'] as String?) ?? 'Autre',
-        title: _doc!['title'] as String?,
-        isPublic: false,
-      );
-      _snack(l10n.t('vault_saved_ok'));
-    } catch (_) {
-      _snack(l10n.t('vault_save_failed'), error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _forward() async {
-    if (_doc == null || widget.me == null || _guardLocked()) return;
-    final l10n = AppLocalizations.of(context);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => _SendSheet(
-        documents: [_doc!],
-        docsService: widget.docs,
-        initialDocId: _doc!['id'].toString(),
-        onDone: (ok) {
-          if (ok && sheetCtx.mounted) Navigator.of(sheetCtx).pop();
-          _snack(l10n.t(ok ? 'vault_send_ok' : 'vault_send_failed'), error: !ok);
-        },
-      ),
-    );
-  }
-
-  Future<void> _download() async {
-    if (_doc == null || _guardLocked()) return;
-    try {
-      final url = await widget.docs.resolveRowDownloadUrl(_doc!);
-      final ok = await _launchOut(url);
-      if (!ok) throw Exception('launch');
-    } catch (_) {
-      _snack(AppLocalizations.of(context).t('vault_download_failed'),
-          error: true);
-    }
-  }
-
-  Widget _chip(String t, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-            color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
-        child: Text(t,
-            style:
-                TextStyle(color: c, fontSize: 8.5, fontWeight: FontWeight.w900)),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final s = widget.share;
     final st = (s['status'] as String?) ?? 'pending';
+    final locked = isShareLocked(s);
     final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
-    final shots = (s['screenshot_count'] as num?)?.toInt() ?? 0;
-    final af = DateTime.tryParse((s['available_from'] ?? '').toString());
-    final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-    final cd =
-        DateTime.tryParse((s['created_at'] ?? '').toString()) ?? DateTime.now();
-    final locked = _isLocked(s);
-    final name =
-        (_sender?['full_name'] as String?) ?? l10n.t('vault_anonymous');
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final mime = (_doc?['mime_type'] as String?) ?? '';
-    final docType = _doc?['doc_type'] as String?;
-    final isImage = _isImageMime(mime, _doc?['file_name'] as String?);
-    final dColor = _typeColor(mime, docType);
-    final dIcon = _typeIcon(mime, docType);
     final sid = (s['sender_id'] as String?) ?? '';
-    return _SheetShell(
-      maxFactor: 0.92,
-      child: _loading
-          ? SizedBox(height: 120, child: _spinner())
-          : SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                            color: _V.primarySoft, shape: BoxShape.circle),
-                        child: Center(
-                            child: Text(initial,
-                                style: const TextStyle(
-                                    color: _V.primary,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w900))),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(name,
-                                style: const TextStyle(
-                                    color: _V.text,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w800)),
-                            Text(
-                                (_sender?['thix_id'] as String?) ??
-                                    '${l10n.t('vault_from')} ${sid.length >= 8 ? sid.substring(0, 8) : '—'}',
-                                style: const TextStyle(
-                                    color: _V.textMut, fontSize: 9.5)),
-                          ],
-                        ),
-                      ),
-                      Text(widget.fmtDate(s['created_at']),
-                          style: const TextStyle(
-                              color: _V.textMut, fontSize: 9)),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: const Icon(Icons.close_rounded,
-                              size: 16, color: _V.textSec)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                      (s['subject'] as String?)?.isNotEmpty == true
-                          ? s['subject'] as String
-                          : l10n.t('vault_attachment'),
-                      style: const TextStyle(
-                          color: _V.text,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900)),
+    final who = widget.sent
+        ? 'À ${(s['recipient_thix_id'] as String?) ?? '—'}'
+        : 'De ${(s['sender_thix_id'] as String?) ?? (sid.length >= 8 ? sid.substring(0, 8) : '—')}';
+    final tagText = locked ? 'VERROUILLÉ' : (st == 'opened' ? 'OUVERT' : (widget.sent ? 'ENVOYÉ' : 'DISPONIBLE'));
+    final tagColor = locked ? VT.amber : (st == 'opened' ? VT.ok : VT.blue);
+    final cd = shareCountdown(s);
+    return FutureBuilder<JsonMap?>(
+      future: _doc,
+      builder: (c, sn) {
+        final d = sn.data;
+        final title = (d?['title'] as String?) ??
+            ((s['subject'] as String?)?.isNotEmpty == true ? s['subject'] as String : 'Pièce jointe');
+        return VCard(
+          onTap: widget.onTap,
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              d == null
+                  ? Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                          color: VT.forestSoft, borderRadius: BorderRadius.circular(15)),
+                      child: Icon(widget.sent ? Icons.send_rounded : Icons.inbox_rounded,
+                          color: VT.forest, size: 22))
+                  : VThumb(row: d, docs: widget.docs, size: 48, radius: 15),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 2),
+                  Text('$who · ${fmtDate(s['created_at'])}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10.5, color: VT.sub)),
                   const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      _chip(
-                          locked
-                              ? l10n.t('vault_st_pending')
-                              : (st == 'opened'
-                                  ? l10n.t('vault_st_opened')
-                                  : l10n.t('vault_st_available')),
-                          locked
-                              ? _V.warn
-                              : (st == 'opened' ? _V.ok : _V.primary)),
-                      if (hasPw) _chip(l10n.t('vault_password'), _V.gold),
-                      if (shots > 0) _chip('📸 $shots', _V.warn),
-                      if (locked && af != null) _chip(_fmtDT(af), _V.primary),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _Glass(
-                    radius: 12,
-                    padding: const EdgeInsets.all(10),
-                    child: SelectableText(
-                        (s['body'] as String?)?.isNotEmpty == true
-                            ? s['body'] as String
-                            : l10n.t('vault_no_message'),
-                        style: const TextStyle(
-                            color: _V.textSec, fontSize: 11.5, height: 1.5)),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_doc != null)
-                    GestureDetector(
-                      onTap: _open,
-                      child: _Glass(
-                        radius: 14,
-                        padding: const EdgeInsets.all(9),
-                        borderColor: _V.primary.withOpacity(0.35),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              clipBehavior: Clip.antiAlias,
-                              decoration: BoxDecoration(
-                                  color: dColor.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(11)),
-                              child: isImage && !locked && _thumbF != null
-                                  ? FutureBuilder<String>(
-                                      future: _thumbF,
-                                      builder: (c, sn) => sn.hasData
-                                          ? _CachedImg(
-                                              url: sn.data!,
-                                              size: 44,
-                                              radius: BorderRadius.circular(11),
-                                              fallback: Icon(dIcon,
-                                                  color: dColor, size: 18))
-                                          : Icon(dIcon,
-                                              color: dColor, size: 18))
-                                  : Icon(locked ? Icons.lock_rounded : dIcon,
-                                      color: dColor, size: 18),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text((_doc!['title'] as String?) ?? '—',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-
-style: const TextStyle(
-                                          color: _V.text,
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w800)),
-                                  Text(
-                                      '${_doc!['doc_type'] ?? '—'} • ${(_doc!['generated_doc_id'] as String?) ?? ''}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          color: _V.textMut, fontSize: 9)),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.chevron_right_rounded,
-                                size: 15, color: _V.primary),
-                          ],
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  if (locked && af != null) ...[
-                    _Count(
-                        start: cd,
-                        target: af,
-                        label: l10n.t('vault_unlock_in'),
-                        color: _V.primary),
-                    const SizedBox(height: 10),
-                  ],
-                  if (ad != null) ...[
-                    _Count(
-                        start: cd,
-                        target: ad,
-                        label: l10n.t('vault_destruct_in'),
-                        color: _V.dangerBright),
-                    const SizedBox(height: 10),
-                  ],
-                  Row(
-                    children: [
-                      Expanded(
-                          child: _ActBtn(
-                              icon: Icons.open_in_new_rounded,
-                              label: l10n.t('vault_open'),
-                              color: _V.primary,
-                              busy: _busy,
-                              onTap: _open)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: _ActBtn(
-                              icon: Icons.download_rounded,
-                              label: l10n.t('vault_download'),
-                              color: _V.info,
-                              busy: _busy,
-                              onTap: _download)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                          child: _ActBtn(
-                              icon: Icons.save_rounded,
-                              label: l10n.t('vault_save_vault'),
-                              color: _V.ok,
-                              busy: _busy,
-                              onTap: _saveToVault)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: _ActBtn(
-                              icon: Icons.forward_rounded,
-                              label: l10n.t('vault_forward'),
-                              color: _V.warn,
-                              busy: _busy,
-                              onTap: _forward)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                ],
+                  Wrap(spacing: 4, runSpacing: 4, children: [
+                    VTag(tagText, tagColor),
+                    if (hasPw) const VTag('MOT DE PASSE', VT.ink, icon: Icons.key_rounded),
+                  ]),
+                ]),
               ),
-            ),
-    );
-  }
-}
-
-class _ActBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final bool busy;
-  final VoidCallback onTap;
-  const _ActBtn({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.busy,
-    required this.onTap,
-  });
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-            backgroundColor: Colors.white,
-            side: BorderSide(color: color.withOpacity(0.5)),
-            foregroundColor: color,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
-            padding: const EdgeInsets.symmetric(horizontal: 8)),
-        onPressed: busy ? null : onTap,
-        icon: Icon(icon, size: 13),
-        label: Text(label,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)),
-      ),
-    );
-  }
-}
-
-// =============================================================
-// ONGLET AUDIT
-// =============================================================
-class _AuditTab extends StatelessWidget {
-  final AppUser? me;
-  final DocumentService docs;
-  final String Function(dynamic) fmtDate;
-  const _AuditTab({required this.me, required this.docs, required this.fmtDate});
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    if (me == null) {
-      return Center(
-          child: Text(l10n.t('vault_connect'),
-              style: const TextStyle(color: _V.textSec, fontSize: 12)));
-    }
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: docs.streamTransactions(me!.id),
-      builder: (context, snap) {
-        final tx = snap.data ?? const [];
-        if (snap.connectionState == ConnectionState.waiting) {
-          return _spinner();
-        }
-        if (tx.isEmpty) {
-          return Center(
-              child: Text(l10n.t('vault_audit_empty'),
-                  style: const TextStyle(color: _V.textMut, fontSize: 11.5)));
-        }
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
-          children: tx.map((t) {
-            final a = (t['action'] as String?) ?? '';
-            IconData ic;
-            Color c;
-            String lb;
-            switch (a) {
-              case 'upload':
-                ic = Icons.cloud_upload_rounded;
-                c = _V.info;
-                lb = l10n.t('vault_act_upload');
-                break;
-              case 'send':
-                ic = Icons.send_rounded;
-                c = _V.primary;
-                lb = l10n.t('vault_act_send');
-                break;
-              case 'open':
-                ic = Icons.visibility_rounded;
-                c = _V.ok;
-                lb = l10n.t('vault_act_open');
-                break;
-              case 'delete':
-                ic = Icons.delete_outline_rounded;
-                c = _V.dangerBright;
-                lb = l10n.t('vault_act_delete');
-                break;
-              case 'screenshot':
-                ic = Icons.camera_alt_rounded;
-                c = _V.warn;
-                lb = l10n.t('vault_act_screenshot');
-                break;
-              case 'public_toggle':
-                ic = Icons.public_rounded;
-                c = _V.gold;
-                lb = l10n.t('vault_act_public');
-                break;
-              case 'folder_create':
-                ic = Icons.create_new_folder_rounded;
-                c = _V.info;
-                lb = l10n.t('vault_act_folder');
-                break;
-              default:
-                ic = Icons.history_rounded;
-                c = _V.textSec;
-                lb = a;
-            }
-            return _DocItem(
-              icon: ic,
-              accent: c,
-              title: lb,
-              subtitle: (t['detail'] as String?) ?? (t['doc_id'] as String?) ?? '',
-              trailing: fmtDate(t['created_at']),
-            );
-          }).toList(),
+              const Icon(Icons.chevron_right_rounded, color: VT.mute),
+            ]),
+            if (cd != null) ...[const SizedBox(height: 10), cd],
+          ]),
         );
       },
     );
   }
 }
 
-// =============================================================
-// DIALOG DOCUMENT CERTIFIÉ (public : ouverture + téléchargement)
-// =============================================================
-class _CertifiedDocDialog extends StatefulWidget {
-  final Map<String, dynamic> res;
-  final DocumentService docs;
-  final AppUser? me;
-  final VoidCallback onSaved;
-  final VoidCallback onSaveFailed;
-  final Future<void> Function(String url, String mime, String name) onOpenSmart;
-  final Future<void> Function(String) onDownload;
-  const _CertifiedDocDialog({
-    required this.res,
-    required this.docs,
-    required this.me,
-    required this.onSaved,
-    required this.onSaveFailed,
-    required this.onOpenSmart,
-    required this.onDownload,
-  });
+class _AuditRow extends StatelessWidget {
+  final JsonMap t;
+  const _AuditRow({required this.t});
   @override
-  State<_CertifiedDocDialog> createState() => _CertifiedDocDialogState();
+  Widget build(BuildContext context) {
+    final a = (t['action'] as String?) ?? '';
+    const map = <String, List<Object>>{
+      'upload': [Icons.cloud_upload_rounded, VT.blue, 'Dépôt'],
+      'send': [Icons.send_rounded, VT.forest, 'Envoi'],
+      'open': [Icons.visibility_rounded, VT.ok, 'Ouverture'],
+      'delete': [Icons.delete_outline_rounded, VT.red, 'Suppression'],
+      'screenshot': [Icons.camera_alt_rounded, VT.amber, 'Capture détectée'],
+      'public_toggle': [Icons.public_rounded, VT.amber, 'Visibilité modifiée'],
+      'folder_create': [Icons.create_new_folder_rounded, VT.blue, 'Dossier créé'],
+      'sign': [Icons.verified_rounded, VT.ok, 'Signature'],
+    };
+    final m = map[a];
+    final icon = (m?[0] as IconData?) ?? Icons.history_rounded;
+    final color = (m?[1] as Color?) ?? VT.sub;
+    final label = (m?[2] as String?) ?? a;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: VCard(
+        radius: 18,
+        padding: const EdgeInsets.all(11),
+        child: Row(children: [
+          Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+              child: Icon(icon, color: color, size: 18)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800)),
+              if (((t['detail'] as String?) ?? (t['doc_id'] as String?) ?? '').isNotEmpty)
+                Text((t['detail'] as String?) ?? (t['doc_id'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10.5, color: VT.sub)),
+            ]),
+          ),
+          Text(fmtDate(t['created_at']), style: const TextStyle(fontSize: 10, color: VT.mute)),
+        ]),
+      ),
+    );
+  }
 }
 
-class _CertifiedDocDialogState extends State<_CertifiedDocDialog> {
-  late Future<String> _urlF;
-  bool _busy = false;
+// ================================================================= Admin
+class _AdminPanel extends ConsumerStatefulWidget {
+  const _AdminPanel();
+  @override
+  ConsumerState<_AdminPanel> createState() => _AdminPanelState();
+}
+
+class _AdminPanelState extends ConsumerState<_AdminPanel> {
+  late Future<List<dynamic>> _f;
 
   @override
   void initState() {
     super.initState();
-    _urlF = _resolve();
+    _f = _load();
   }
 
-  /// BUGFIX : résolution robuste de l'URL (multi-clés + replis) pour que
-  /// les documents PUBLICS puissent toujours être ouverts / téléchargés.
-  Future<String> _resolve() async {
-    final r = widget.res;
-    final path = (r['storage_path'] as String?) ??
-        (r['file_path'] as String?) ??
-        (r['path'] as String?) ??
-        '';
-    if (path.isNotEmpty) {
-      try {
-        final u = await widget.docs.createDownloadUrl(storagePath: path);
-        if (u.trim().isNotEmpty) return u;
-      } catch (_) {}
-    }
-    try {
-      final u = await widget.docs.resolveRowDownloadUrl(r);
-      if (u.trim().isNotEmpty) return u;
-    } catch (_) {}
-    return (r['public_url'] as String?) ??
-        (r['url'] as String?) ??
-        (r['file_url'] as String?) ??
-        '';
+  Future<List<dynamic>> _load() {
+    final sec = ref.read(vaultSecurityProvider);
+    return Future.wait<dynamic>([sec.adminStats(), sec.adminReports()]);
   }
 
-  Future<void> _saveToVault() async {
-    if (widget.me == null) return;
-    setState(() => _busy = true);
+  Future<void> _resolve(String id, bool confirm) async {
     try {
-      final url = await _urlF;
-      if (url.isEmpty) throw Exception('nourl');
-      final resp = await http.get(Uri.parse(url));
-      final name = (widget.res['file_name'] as String?) ??
-          (widget.res['title'] as String?) ??
-          'doc';
-      final file = PlatformFile(
-          name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
-      await widget.docs.uploadPickedFileSimple(
-        uid: widget.me!.id,
-        file: file,
-        docType: (widget.res['doc_type'] as String?) ?? 'Autre',
-        title: widget.res['title'] as String?,
-        isPublic: false,
-      );
-      widget.onSaved();
+      await ref.read(vaultSecurityProvider).resolveReport(id, confirm: confirm);
+      if (mounted) setState(() => _f = _load());
     } catch (_) {
-      widget.onSaveFailed();
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      vSnack(context, 'Action refusée.', error: true);
     }
   }
 
-  String _dateOf(dynamic v) {
-    final d = DateTime.tryParse((v ?? '').toString());
-    if (d == null) return '—';
-    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final res = widget.res;
-    final mime = res['mime_type'] as String?;
-    final dType = res['doc_type'] as String?;
-    final color = _typeColor(mime, dType);
-    final img = _isImageMime(mime, res['file_name'] as String?);
-    final fallbackIcon = Icon(_typeIcon(mime, dType), color: color, size: 30);
-    final fName =
-        (res['file_name'] as String?) ?? (res['title'] as String?) ?? 'doc';
-    return _GlassDialog(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text((res['owner_name'] as String?) ?? l10n.t('vault_from'),
-                          style: const TextStyle(
-                              color: _V.text,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w800)),
-                      Text((res['owner_thix_id'] as String?) ?? '—',
-                          style: const TextStyle(
-                              color: _V.textMut, fontSize: 9.5)),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: _V.ok.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(6)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.verified_rounded, size: 9, color: _V.ok),
-                      const SizedBox(width: 3),
-                      Text(l10n.t('vault_certified'),
-                          style: const TextStyle(
-                              color: _V.ok,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              height: img ? 200 : 90,
-              decoration: BoxDecoration(
-                  color: color.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color.withOpacity(0.35))),
-              clipBehavior: Clip.antiAlias,
-              child: img
-                  ? FutureBuilder<String>(
-                      future: _urlF,
-                      builder: (context, snap) => snap.hasData &&
-                              snap.data!.isNotEmpty
-                          ? _CachedImg(
-                              url: snap.data!,
-                              fallback: Center(child: fallbackIcon))
-                          : (snap.connectionState == ConnectionState.waiting
-                              ? _spinner()
-                              : Center(child: fallbackIcon)))
-                  : Center(child: fallbackIcon),
-            ),
-            const SizedBox(height: 12),
-            Text((res['title'] as String?) ?? '—',
-                style: const TextStyle(
-                    color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 3),
-            Text('${res['doc_type'] ?? '—'} • ${res['generated_doc_id'] ?? '—'}',
-                style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (res['size_bytes'] != null) ...[
-                  Text(
-                      '${l10n.t('vault_size')}: ${(((res['size_bytes'] as num).toInt()) / 1024).toStringAsFixed(0)} KB',
-                      style:
-                          const TextStyle(color: _V.textSec, fontSize: 9.5)),
-                  const SizedBox(width: 10),
-                ],
-                Text('${l10n.t('vault_date')}: ${_dateOf(res['created_at'])}',
-                    style:
-                        const TextStyle(color: _V.textSec, fontSize: 9.5)),
-              ],
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 36,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                    backgroundColor: _V.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-                onPressed: _busy
-                    ? null
-                    : () async {
-                        setState(() => _busy = true);
-                        final url = await _urlF;
-                        if (!mounted) return;
-                        setState(() => _busy = false);
-                        if (url.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(l10n.t('vault_open_failed'),
-                                  style: const TextStyle(
-                                      fontSize: 11, color: Colors.white)),
-                              backgroundColor: _V.dangerBright));
-                          return;
-                        }
-                        Navigator.pop(context);
-                        await widget.onOpenSmart(url, mime ?? '', fName);
-                      },
-                icon: _busy
-                    ? const SizedBox(
-                        width: 13,
-                        height: 13,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.open_in_new_rounded, size: 14),
-                label: Text(l10n.t('vault_open_file'),
-                    style: const TextStyle(
-                        fontSize: 11.5, fontWeight: FontWeight.w900)),
-              ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 34,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: BorderSide(color: _V.info.withOpacity(0.5)),
-                    foregroundColor: _V.info,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-                onPressed: _busy
-                    ? null
-                    : () async {
-                        final url = await _urlF;
-                        if (url.isEmpty) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(l10n.t('vault_download_failed'),
-                                  style: const TextStyle(
-                                      fontSize: 11, color: Colors.white)),
-                              backgroundColor: _V.dangerBright));
-                          return;
-                        }
-                        await widget.onDownload(url);
-                      },
-                icon: const Icon(Icons.download_rounded, size: 13),
-                label: Text(l10n.t('vault_download'),
-                    style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w800)),
-              ),
-            ),
-            if (widget.me != null) ...[
-              const SizedBox(height: 6),
-              SizedBox(
-                height: 34,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      side: BorderSide(color: _V.ok.withOpacity(0.5)),
-                      foregroundColor: _V.ok,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12))),
-                  onPressed: _busy ? null : _saveToVault,
-                  icon: const Icon(Icons.save_rounded, size: 13),
-                  label: Text(l10n.t('vault_save_vault'),
-                      style: const TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.w800)),
-                ),
-              ),
-            ],
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 32,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(l10n.t('common_close'),
-                    style: const TextStyle(color: _V.textSec, fontSize: 11)),
-              ),
-            ),
-          ],
+  Widget _stat(String label, dynamic v, Color c) => SizedBox(
+        width: (MediaQuery.of(context).size.width - 32 - 10) / 2,
+        child: VCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${v ?? 0}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: c)),
+            const SizedBox(height: 2),
+            Text(label, style: const TextStyle(fontSize: 11, color: VT.sub, fontWeight: FontWeight.w700)),
+          ]),
         ),
-      ),
-    );
-  }
-}
-
-// =============================================================
-// SHEET UPLOAD
-// =============================================================
-class _UploadPayload {
-  final String docType;
-  final String? title;
-  final DateTime? expiresAt;
-  final String? folderId;
-  const _UploadPayload(
-      {required this.docType, this.title, this.expiresAt, this.folderId});
-}
-
-class _UploadSheet extends StatefulWidget {
-  final String fileName;
-  final List<Map<String, dynamic>> folders;
-  final String? preselectedFolderId;
-  const _UploadSheet({
-    required this.fileName,
-    required this.folders,
-    this.preselectedFolderId,
-  });
-  @override
-  State<_UploadSheet> createState() => _UploadSheetState();
-}
-
-class _UploadSheetState extends State<_UploadSheet> {
-  String _type = 'Autre';
-  DateTime? _expiresAt;
-  String? _folderId;
-  final _titleC = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    // BUGFIX : évite le crash DropdownButtonFormField si le dossier
-    // présélectionné n'existe plus.
-    _folderId = widget.preselectedFolderId;
-    if (_folderId != null &&
-        !widget.folders.any((f) => f['id'].toString() == _folderId)) {
-      _folderId = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _titleC.dispose();
-    super.dispose();
-  }
-
-  bool get _needsExpiry =>
-      _type == 'CIN' || _type == 'Passeport' || _type == 'Permis';
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return _SheetShell(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                    child: Text(l10n.t('vault_new_archive'),
-                        style: const TextStyle(
-                            color: _V.text,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900))),
-                GestureDetector(
-                    onTap: () => context.pop(),
-                    child: const Icon(Icons.close_rounded,
-                        size: 16, color: _V.textSec)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(widget.fileName,
-                style: const TextStyle(
-                    color: _V.primary,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700)),
-            Text(l10n.t('vault_auto_id'),
-                style: const TextStyle(color: _V.textMut, fontSize: 9)),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              value: _folderId,
-              dropdownColor: Colors.white,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_dest_folder')),
-              items: [
-                DropdownMenuItem<String?>(
-                    value: null, child: Text(l10n.t('vault_root'))),
-                ...widget.folders.map((f) => DropdownMenuItem<String?>(
-                    value: f['id'] as String,
-                    child: Text((f['name'] as String?) ?? '—'))),
-              ],
-              onChanged: (v) => setState(() => _folderId = v),
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              value: _type,
-              dropdownColor: Colors.white,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_class')),
-              items: [
-                DropdownMenuItem(
-                    value: 'CIN', child: Text(l10n.t('vault_class_cin'))),
-                DropdownMenuItem(
-                    value: 'Passeport',
-                    child: Text(l10n.t('vault_class_passport'))),
-                DropdownMenuItem(
-                    value: 'Permis', child: Text(l10n.t('vault_class_license'))),
-                DropdownMenuItem(
-                    value: 'Diplôme', child: Text(l10n.t('vault_class_diploma'))),
-                DropdownMenuItem(
-                    value: 'PreuveAdresse',
-                    child: Text(l10n.t('vault_class_address'))),
-                DropdownMenuItem(
-                    value: 'Autre', child: Text(l10n.t('vault_class_other'))),
-              ],
-              onChanged: (v) => setState(() {
-                _type = v ?? 'Autre';
-                if (!_needsExpiry) _expiresAt = null;
-              }),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _titleC,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_label_opt')),
-            ),
-            if (_needsExpiry) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: const BorderSide(color: _V.border),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 11)),
-                onPressed: () async {
-                  final now = DateTime.now();
-                  final p = await showDatePicker(
-                    context: context,
-                    initialDate: _expiresAt ?? now,
-                    firstDate: now.subtract(const Duration(days: 365 * 20)),
-                    lastDate: now.add(const Duration(days: 365 * 50)),
-                    builder: _lightPicker,
-                  );
-                  if (p != null) {
-                    setState(
-                        () => _expiresAt = DateTime(p.year, p.month, p.day));
-                  }
-                },
-                icon: const Icon(Icons.event_available_rounded,
-                    size: 14, color: _V.primary),
-                label: Text(
-                    _expiresAt == null
-                        ? l10n.t('vault_pick_date')
-                        : '${l10n.t('vault_expiry')} : ${_expiresAt!.day.toString().padLeft(2, '0')}/${_expiresAt!.month.toString().padLeft(2, '0')}/${_expiresAt!.year}',
-                    style: const TextStyle(
-                        color: _V.text,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
-              ),
-            ],
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 40,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                    backgroundColor: _V.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-                onPressed: () {
-                  if (_needsExpiry && _expiresAt == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(l10n.t('vault_expiry_required'),
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.white)),
-                        backgroundColor: _V.dangerBright));
-                    return;
-                  }
-                  context.pop(_UploadPayload(
-                    docType: _type,
-                    title: _titleC.text.trim().isEmpty
-                        ? null
-                        : _titleC.text.trim(),
-                    expiresAt: _expiresAt,
-                    folderId: _folderId,
-                  ));
-                },
-                icon: const Icon(Icons.cloud_upload_rounded, size: 15),
-                label: Text(l10n.t('vault_finalize'),
-                    style: const TextStyle(
-                        fontSize: 11.5, fontWeight: FontWeight.w900)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =============================================================
-// SHEET ENVOI (avec date de disponibilité)
-// =============================================================
-class _SendSheet extends StatefulWidget {
-  final List<Map<String, dynamic>> documents;
-  final DocumentService docsService;
-  final String? initialDocId;
-  final void Function(bool ok) onDone;
-  const _SendSheet({
-    required this.documents,
-    required this.docsService,
-    required this.onDone,
-    this.initialDocId,
-  });
-  @override
-  State<_SendSheet> createState() => _SendSheetState();
-}
-
-class _SendSheetState extends State<_SendSheet> {
-  String? _docId;
-  final _recipC = TextEditingController();
-  final _subjectC = TextEditingController();
-  final _bodyC = TextEditingController();
-  final _pwC = TextEditingController();
-  final _durC = TextEditingController(text: '10');
-  String _unit = 'minutes';
-  bool _autoDestruct = false;
-  DateTime? _availableFrom;
-  bool _sending = false;
-  Timer? _deb;
-  String? _verified;
-  bool _verifying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // BUGFIX : valeur du dropdown toujours valide.
-    _docId = widget.initialDocId;
-    if (_docId != null &&
-        !widget.documents.any((d) => d['id'].toString() == _docId)) {
-      _docId = null;
-    }
-    if (_docId == null && widget.documents.length == 1) {
-      _docId = widget.documents.first['id'].toString();
-    }
-  }
-
-  @override
-  void dispose() {
-    _recipC.dispose();
-    _subjectC.dispose();
-    _bodyC.dispose();
-    _pwC.dispose();
-    _durC.dispose();
-    _deb?.cancel();
-    super.dispose();
-  }
-
-  void _err(String m) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(m, style: const TextStyle(fontSize: 11, color: Colors.white)),
-        backgroundColor: _V.dangerBright));
-  }
-
-  void _onRecip(String v) {
-    _deb?.cancel();
-    _deb = Timer(const Duration(milliseconds: 500), () async {
-      final ids = v
-          .split(RegExp(r'[,;\s]+'))
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty);
-      if (ids.isEmpty) {
-        setState(() => _verified = null);
-        return;
-      }
-      setState(() => _verifying = true);
-      final p = await widget.docsService.verifyThixId(ids.last);
-      if (!mounted) return;
-      setState(() {
-        _verifying = false;
-        _verified = p == null ? 'KO' : (p['full_name'] as String? ?? 'OK');
-      });
-    });
-  }
-
-  Duration? _dur() {
-    if (!_autoDestruct) return null;
-    final v = int.tryParse(_durC.text.trim());
-    if (v == null || v <= 0) return null;
-    switch (_unit) {
-      case 's':
-        return Duration(seconds: v);
-      case 'h':
-        return Duration(hours: v);
-      case 'd':
-        return Duration(days: v);
-      default:
-        return Duration(minutes: v);
-    }
-  }
-
-  Future<void> _pickAvailable() async {
-    final now = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: _availableFrom ?? now,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365 * 2)),
-      builder: _lightPicker,
-    );
-    if (d == null || !mounted) return;
-    final t = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(
-          _availableFrom ?? now.add(const Duration(hours: 1))),
-      builder: _lightPicker,
-    );
-    if (t == null || !mounted) return;
-    final dt = DateTime(d.year, d.month, d.day, t.hour, t.minute);
-    if (!dt.isAfter(DateTime.now())) {
-      _err('Choisissez une date et une heure futures.');
-      return;
-    }
-    setState(() => _availableFrom = dt);
-  }
-
-  Future<void> _submit() async {
-    final l10n = AppLocalizations.of(context);
-    if (_docId == null) {
-      _err(l10n.t('vault_select_archive'));
-      return;
-    }
-    final recips = _recipC.text
-        .split(RegExp(r'[,;\s]+'))
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (recips.isEmpty) {
-      _err(l10n.t('vault_need_recipient'));
-      return;
-    }
-    // BUGFIX : firstWhere sécurisé (orElse) — plus de crash.
-    final sel = widget.documents.firstWhere(
-        (d) => d['id'].toString() == _docId,
-        orElse: () => const <String, dynamic>{});
-    if (sel.isEmpty) {
-      _err(l10n.t('vault_select_archive'));
-      return;
-    }
-    setState(() => _sending = true);
-    try {
-      final me = context.read<AuthController>().currentUser;
-      await widget.docsService.shareDocument(
-        senderId: me!.id,
-        documentId: _docId!,
-        docId: (sel['generated_doc_id'] as String?) ??
-            (sel['doc_id'] as String?),
-        recipientThixIds: recips,
-        subject: _subjectC.text.trim().isEmpty ? null : _subjectC.text.trim(),
-        body: _bodyC.text.trim().isEmpty ? null : _bodyC.text.trim(),
-        password: _pwC.text.trim().isEmpty ? null : _pwC.text.trim(),
-        availableFrom: _availableFrom,
-        autoDestructIn: _dur(),
       );
-      widget.onDone(true);
-    } catch (_) {
-      if (mounted) setState(() => _sending = false);
-      widget.onDone(false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return _SheetShell(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                    child: Text(l10n.t('vault_send_title'),
-                        style: const TextStyle(
-                            color: _V.text,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900))),
-                GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Icon(Icons.close_rounded,
-                        size: 16, color: _V.textSec)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _docId,
-              dropdownColor: Colors.white,
-              isExpanded: true,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_choose_archive')),
-              items: widget.documents.map((d) {
-                final id = d['id'].toString();
-                final t = (d['title'] as String?) ?? '—';
-                return DropdownMenuItem(
-                    value: id,
-                    child: Text(t,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11.5)));
-              }).toList(),
-              onChanged: (v) => setState(() => _docId = v),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _recipC,
-              onChanged: _onRecip,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_recipient')),
-            ),
-            if (_verifying)
-              Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(l10n.t('vault_verifying'),
-                      style:
-                          const TextStyle(color: _V.textMut, fontSize: 9.5)))
-            else if (_verified != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Row(
-                  children: [
-                    Icon(
-                        _verified == 'KO'
-                            ? Icons.error_rounded
-                            : Icons.check_circle_rounded,
-                        size: 12,
-                        color: _verified == 'KO' ? _V.dangerBright : _V.ok),
-                    const SizedBox(width: 5),
-                    Text(
-                        _verified == 'KO'
-                            ? l10n.t('vault_not_found')
-                            : _verified!,
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: _verified == 'KO'
-                                ? _V.dangerBright
-                                : _V.ok)),
-                  ],
+    return FutureBuilder<List<dynamic>>(
+      future: _f,
+      builder: (c, sn) {
+        if (sn.connectionState == ConnectionState.waiting) return vSpinner();
+        if (sn.hasError || !sn.hasData) {
+          return const _Empty(icon: Icons.lock_rounded, title: 'Accès refusé', hint: 'Droits administrateur requis.');
+        }
+        final stats = sn.data![0] as JsonMap;
+        final reports = (sn.data![1] as List).cast<JsonMap>();
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Wrap(spacing: 10, runSpacing: 10, children: [
+            _stat('Documents', stats['total_docs'], VT.ink),
+            _stat('Signés', stats['signed_docs'], VT.ok),
+            _stat('Signalés', stats['flagged_docs'], VT.red),
+            _stat('Signalements ouverts', stats['open_reports'], VT.amber),
+            _stat('Partages (24 h)', stats['shares_24h'], VT.blue),
+          ]),
+          const SizedBox(height: 16),
+          const Text('Signalements de contrefaçon',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 10),
+          if (reports.isEmpty)
+            const _Empty(icon: Icons.flag_outlined, title: 'Aucun signalement', hint: 'Tout est calme.')
+          else
+            ...reports.map((r) {
+              final open = r['status'] == 'open';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: VCard(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Row(children: [
+                      Expanded(
+                          child: Text((r['generated_doc_id'] as String?) ?? '—',
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900))),
+                      VTag(
+                          open ? 'OUVERT' : (r['status'] == 'confirmed' ? 'CONFIRMÉ' : 'REJETÉ'),
+                          open ? VT.amber : (r['status'] == 'confirmed' ? VT.red : VT.mute)),
+                    ]),
+                    const SizedBox(height: 6),
+                    Text((r['reason'] as String?) ?? '',
+                        style: const TextStyle(fontSize: 12, color: VT.sub, height: 1.35)),
+                    const SizedBox(height: 4),
+                    Text(fmtDT(DateTime.tryParse((r['created_at'] ?? '').toString()) ?? DateTime.now()),
+                        style: const TextStyle(fontSize: 10, color: VT.mute)),
+                    if (open) ...[
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(
+                            child: VButton('Confirmer',
+                                icon: Icons.gpp_bad_rounded,
+                                kind: VKind.danger,
+                                height: 40,
+                                onTap: () => _resolve(r['id'].toString(), true))),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: VButton('Rejeter',
+                                kind: VKind.soft,
+                                height: 40,
+                                onTap: () => _resolve(r['id'].toString(), false))),
+                      ]),
+                    ],
+                  ]),
                 ),
-              ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _subjectC,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_subject')),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _bodyC,
-              maxLines: 3,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_message')),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _pwC,
-              obscureText: true,
-              style: const TextStyle(color: _V.text, fontSize: 12),
-              decoration: _dec(l10n.t('vault_password_opt')),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                        backgroundColor: _availableFrom == null
-                            ? Colors.white
-                            : _V.primarySoft,
-                        side: BorderSide(
-                            color: _availableFrom == null
-                                ? _V.border
-                                : _V.primary.withOpacity(0.5)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 12)),
-                    onPressed: _pickAvailable,
-                    icon: Icon(Icons.schedule_rounded,
-                        size: 15,
-                        color:
-                            _availableFrom == null ? _V.textSec : _V.primary),
-                    label: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                          _availableFrom == null
-                              ? 'Disponibilité immédiate (programmer une date)'
-                              : 'Disponible le ${_fmtDT(_availableFrom!)}',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: _availableFrom == null
-                                  ? _V.textSec
-                                  : _V.primary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800)),
-                    ),
-                  ),
-                ),
-                if (_availableFrom != null) ...[
-                  const SizedBox(width: 6),
-                  _IconBtn(
-                      icon: Icons.close_rounded,
-                      onTap: () => setState(() => _availableFrom = null)),
-                ],
-              ],
-            ),
-            const SizedBox(height: 6),
-            _Glass(
-              radius: 12,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: SwitchListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                activeColor: _V.dangerBright,
-                title: Text(l10n.t('vault_autodestruct'),
-                    style: const TextStyle(
-                        color: _V.text,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800)),
-                subtitle: Text(l10n.t('vault_autodestruct_sub'),
-                    style:
-                        const TextStyle(color: _V.textMut, fontSize: 9.5)),
-                value: _autoDestruct,
-                onChanged: (v) => setState(() => _autoDestruct = v),
-              ),
-            ),
-            if (_autoDestruct) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                      flex: 2,
-                      child: TextField(
-                          controller: _durC,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(color: _V.text, fontSize: 12),
-                          decoration: _dec(l10n.t('vault_delay')))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 3,
-                    child: DropdownButtonFormField<String>(
-                      value: _unit,
-                      dropdownColor: Colors.white,
-                      style: const TextStyle(color: _V.text, fontSize: 12),
-                      decoration: _dec(''),
-                      items: [
-                        DropdownMenuItem(
-                            value: 's', child: Text(l10n.t('vault_seconds'))),
-                        DropdownMenuItem(
-                            value: 'minutes',
-                            child: Text(l10n.t('vault_minutes'))),
-                        DropdownMenuItem(
-                            value: 'h', child: Text(l10n.t('vault_hours'))),
-                        DropdownMenuItem(
-                            value: 'd', child: Text(l10n.t('vault_days'))),
-                      ],
-                      onChanged: (v) => setState(() => _unit = v ?? 'minutes'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 40,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                    backgroundColor: _V.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-                onPressed: _sending ? null : _submit,
-                icon: _sending
-                    ? const SizedBox(
-                        width: 13,
-                        height: 13,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Icon(
-                        _availableFrom == null
-                            ? Icons.send_rounded
-                            : Icons.schedule_send_rounded,
-                        size: 14),
-                label: Text(
-                    _sending
-                        ? l10n.t('vault_sending')
-                        : l10n.t('vault_send_btn'),
-                    style: const TextStyle(
-                        fontSize: 11.5, fontWeight: FontWeight.w900)),
-              ),
-            ),
-          ],
-        ),
-      ),
+              );
+            }),
+        ]);
+      },
     );
   }
 }
