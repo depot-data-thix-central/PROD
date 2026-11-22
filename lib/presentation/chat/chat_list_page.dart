@@ -1,10 +1,11 @@
 // lib/presentation/chat/chat_list_page.dart
 //
-// ChatListPage — v5.3 (enterprise)
+// ChatListPage — v5.4 (enterprise)
 // ✅ BLEU au lieu de VERT (couleurs professionnelles)
-// ✅ Cartes demandes de connexion compactes (180px)
+// ✅ Cartes demandes de connexion compactes, masquées si vide
 // ✅ Status style WhatsApp
 // ✅ Online contacts repositionnés
+// ✅ v5.4 : ligne « Archivées (n) » visible, badge ESCALADE sur les conversations
 //
 
 import 'dart:async';
@@ -930,7 +931,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
     }
     final type = '${m.mediaType ?? ''}';
     final unread = conv.unreadCount > 0;
-        if (type == 'system_screenshot') {
+    if (type == 'system_screenshot') {
       return ChatListPreview(
         _s(ctx, 'chatlist_screenshot', fb: 'Capture d’écran effectuée'),
         icon: Icons.screenshot_rounded,
@@ -1526,17 +1527,17 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
   }
 
   // ==========================================================================
-  // 🤝 SECTION DEMANDES DE CONNEXION (COMPACTE)
+  // 🤝 SECTION DEMANDES DE CONNEXION (COMPACTE — masquée si aucune demande)
   // ==========================================================================
   Widget _buildConnectionRequests() {
     final requests = ref.watch(_connRequestsProvider);
-    final loading = ref.watch(_connRequestsLoadingProvider);
 
-    if (!loading && requests.isEmpty) return const SizedBox.shrink();
+    // ✅ Plus d'espace vide : rien n'est affiché sans demande
+    if (requests.isEmpty) return const SizedBox.shrink();
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(Ct.s5, Ct.s2, Ct.s5, Ct.s3),
+        padding: const EdgeInsets.fromLTRB(Ct.s5, Ct.s2, Ct.s5, Ct.s2),
         child: Row(children: [
           Container(
             padding: const EdgeInsets.all(Ct.s2 - 1),
@@ -1588,31 +1589,98 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
         ]),
       ),
       SizedBox(
-        height: 120, // Réduit de 148 à 120
-        child: loading
-            ? const Center(
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Ct.accent),
-                ),
-              )
-            : ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: Ct.s5),
-                itemCount: requests.length,
-                separatorBuilder: (_, __) => const SizedBox(width: Ct.s3),
-                itemBuilder: (c, i) =>
-                    _ConnectionRequestCard(
-                      request: requests[i],
-                      onAccept: () => _respondToRequest(requests[i], true),
-                      onDecline: () => _respondToRequest(requests[i], false),
-                    ),
-              ),
+        height: 100,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: Ct.s5),
+          itemCount: requests.length,
+          separatorBuilder: (_, __) => const SizedBox(width: Ct.s3),
+          itemBuilder: (c, i) => _ConnectionRequestCard(
+            request: requests[i],
+            onAccept: () => _respondToRequest(requests[i], true),
+            onDecline: () => _respondToRequest(requests[i], false),
+          ),
+        ),
       ),
       const SizedBox(height: Ct.s2),
     ]);
+  }
+
+  // ==========================================================================
+  // 📁 LIGNE « ARCHIVÉES » (visible en haut de la liste)
+  // ==========================================================================
+  Widget _buildArchivedEntry({required int count, required bool inArchive}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Ct.s5, Ct.s2, Ct.s5, Ct.s2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(Ct.rMd),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            if (_onlyEscalations) setState(() => _onlyEscalations = false);
+            ref
+                .read(chatListProvider.notifier)
+                .setFilter(inArchive ? ChatFilter.all : ChatFilter.archived);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: Ct.s4, vertical: Ct.s3),
+            decoration: BoxDecoration(
+              color: Ct.card(context),
+              borderRadius: BorderRadius.circular(Ct.rMd),
+              border: Border.all(color: Ct.border(context)),
+            ),
+            child: Row(children: [
+              Icon(
+                inArchive
+                    ? Icons.arrow_back_rounded
+                    : Icons.archive_outlined,
+                size: 20,
+                color: Ct.accentDp,
+              ),
+              const SizedBox(width: Ct.s3),
+              Expanded(
+                child: Text(
+                  inArchive
+                      ? _s(context, 'chatlist_back_to_chats',
+                          fb: 'Retour aux discussions')
+                      : _s(context, 'chatlist_archived_row',
+                          fb: 'Archivées'),
+                  style: ThixPolicy.titleStyle.copyWith(
+                    fontWeight: ThixPolicy.bold,
+                    fontSize: 14,
+                    color: Ct.textMain(context),
+                  ),
+                ),
+              ),
+              if (!inArchive && count > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: Ct.s2 + 2, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Ct.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(Ct.rPill),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: ThixPolicy.microStyle.copyWith(
+                      fontWeight: ThixPolicy.bold,
+                      color: Ct.accentDp,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              if (!inArchive) ...[
+                const SizedBox(width: Ct.s2),
+                Icon(Icons.chevron_right_rounded,
+                    size: 20, color: Ct.textSecondary(context)),
+              ],
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 
   // ==========================================================================
@@ -1689,6 +1757,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
         state.totalUnread > 0 ||
         missedCalls > 0 ||
         newConnections > 0;
+
+    final searching = _searchCtrl.text.trim().isNotEmpty;
+    final inArchive = state.filterIndex == ChatFilter.archived;
+    final showArchivedEntry = !searching &&
+        !_onlyEscalations &&
+        (inArchive ||
+            (state.filterIndex == ChatFilter.all && state.archivedCount > 0));
 
     return PopScope(
       canPop: false,
@@ -1930,20 +2005,26 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
                             ),
                           ),
                         ),
-                      // ── 🤝 Demandes de connexion ──
+                      // ── 🤝 Demandes de connexion (masqué si vide) ──
                       SliverToBoxAdapter(child: _buildConnectionRequests()),
                       if (state.pendingEscalations > 0)
                         SliverToBoxAdapter(
                             child: _buildEscalationBanner(
                                 state.pendingEscalations)),
                       SliverToBoxAdapter(
-                          child:
-                              _buildFilters(state.filterIndex, state.totalUnread)),
+                          child: _buildFilters(state.filterIndex,
+                              state.totalUnread, state.archivedCount)),
                       if (state.totalUnread > 0 &&
                           state.filterIndex == 0 &&
                           !_onlyEscalations)
                         SliverToBoxAdapter(
                             child: _buildUnreadStrip(state.totalUnread)),
+                      // ── 📁 Ligne Archivées ──
+                      if (showArchivedEntry)
+                        SliverToBoxAdapter(
+                            child: _buildArchivedEntry(
+                                count: state.archivedCount,
+                                inArchive: inArchive)),
                       const SliverToBoxAdapter(child: SizedBox(height: Ct.s2)),
                       SliverPadding(
                         padding: const EdgeInsets.only(top: 4),
@@ -2152,7 +2233,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
     );
   }
 
-  Widget _buildFilters(int selected, int totalUnread) {
+  Widget _buildFilters(int selected, int totalUnread, int archivedCount) {
+    final archivedLabel = archivedCount > 0
+        ? '${_s(context, 'chatlist_filter_archived')} ($archivedCount)'
+        : _s(context, 'chatlist_filter_archived');
     final labels = [
       _s(context, 'chatlist_filter_all'),
       totalUnread > 0
@@ -2161,7 +2245,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
       _s(context, 'chatlist_filter_teams'),
       _s(context, 'chatlist_filter_personal'),
       _s(context, 'chatlist_filter_pinned'),
-      _s(context, 'chatlist_filter_archived'),
+      archivedLabel,
     ];
 
     return SizedBox(
@@ -2277,6 +2361,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
                 '${_s(context, 'chatlist_contact_thix')} (ID: $shortId)';
           }
 
+          final escPending = _isEscalationPending(conv);
+
           final tile = RepaintBoundary(
             child: ConversationTile(
               conv: conv,
@@ -2285,7 +2371,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
               isOnline: isOnline,
               unread: unread,
               isSelected: isSelected,
-              escalationPending: _isEscalationPending(conv),
+              escalationPending: escPending,
               currentUserId: currentUserId,
               otherUserId: otherUserId,
               lastMessage: last,
@@ -2308,6 +2394,20 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
               onContextMenu: () => _showContextMenu(conv),
             ),
           );
+
+          // ✅ Badge ESCALADE superposé sur l'avatar
+          final Widget tileWithBadge = conv.isEscalation
+              ? Stack(children: [
+                  tile,
+                  Positioned(
+                    left: 60,
+                    top: 10,
+                    child: IgnorePointer(
+                      child: _EscalationBadge(pending: escPending),
+                    ),
+                  ),
+                ])
+              : tile;
 
           return Dismissible(
             key: ValueKey('tile_${conv.id}'),
@@ -2347,7 +2447,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
               color: Ct.warning.withValues(alpha: 0.12),
               child: const Icon(Icons.archive_outlined, color: Ct.warning),
             ),
-            child: tile,
+            child: tileWithBadge,
           );
         },
         childCount: list.length,
@@ -2376,6 +2476,31 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
       }
     }
     return DateFormat('dd/MM/yy').format(localDate);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// BADGE ESCALADE (sur l'avatar d'une conversation escaladée)
+// ════════════════════════════════════════════════════════════════════════════
+class _EscalationBadge extends StatelessWidget {
+  final bool pending;
+  const _EscalationBadge({required this.pending});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = pending ? Ct.danger : Ct.warning;
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Ct.card(context), width: 2),
+        boxShadow: Ct.shadow(color, a: 0.35, blur: 6, y: 2),
+      ),
+      child: const Icon(Icons.swap_vert_rounded,
+          size: 12, color: Colors.white),
+    );
   }
 }
 
@@ -2473,7 +2598,7 @@ class _ConnectionRequestCard extends StatelessWidget {
     final avatar = ChatListValidators.sanitizeUrl(sender?.avatarUrl);
 
     return Container(
-      width: 180, // Réduit de 228 à 180
+      width: 180,
       padding: const EdgeInsets.all(Ct.s3),
       decoration: BoxDecoration(
         color: Ct.card(context),
@@ -2492,7 +2617,7 @@ class _ConnectionRequestCard extends StatelessWidget {
                 border: Border.all(color: Ct.accent.withValues(alpha: 0.35), width: 1.5),
               ),
               child: CircleAvatar(
-                radius: 18, // Plus petit
+                radius: 16,
                 backgroundColor: Ct.surface(context),
                 backgroundImage: avatar != null
                     ? CachedNetworkImageProvider(avatar)
@@ -2502,7 +2627,7 @@ class _ConnectionRequestCard extends StatelessWidget {
                         ChatListValidators.safeInitial(name),
                         style: ThixPolicy.titleStyle.copyWith(
                           color: Ct.accentDp,
-                          fontSize: 14,
+                          fontSize: 13,
                         ),
                       )
                     : null,
@@ -2529,7 +2654,7 @@ class _ConnectionRequestCard extends StatelessWidget {
               child: GestureDetector(
                 onTap: onDecline,
                 child: Container(
-                  height: 28, // Plus petit
+                  height: 28,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Ct.surface(context),
