@@ -1,6 +1,6 @@
 // lib/presentation/chat/chat_screen.dart
 // ============================================================================
-// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v3.1
+// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v3.2
 // ----------------------------------------------------------------------------
 //  ✅ Fichier principal allégé : widgets dans /chat/widgets
 //     - chat_input_bar.dart      (saisie, audio, fichiers, stickers)
@@ -13,6 +13,11 @@
 //  ✅ v3.1 : DÉSACTIVATION DES APPELS PAR CONVERSATION (table chat_call_blocks)
 //     - le bouton d'appel disparaît chez les DEUX participants
 //     - seul celui qui a désactivé en premier peut réactiver
+//  ✅ v3.2 : SYNCHRO TEMPS RÉEL FIABLE
+//     - écoute de chatListProvider : si le dernier message de la conversation
+//       est inconnu ici → resynchronisation immédiate
+//     - filet de sécurité toutes les 5 s + à la reprise de l'app
+//     - pastille « Escaladé » dans l'en-tête
 // ============================================================================
 import 'dart:async';
 import 'dart:io';
@@ -78,6 +83,7 @@ const int _kExpirySweepSeconds = 1;
 const int _kDraftSaveDebounceMs = 500;
 const int _kScreenshotThrottleSeconds = 8;
 const int _kCallBlockPollSeconds = 15;
+const int _kSyncPollSeconds = 5;
 const double _kSwipeTrigger = 60;
 const double _kSwipeMax = 84;
 const String _kDraftPrefix = 'thix_chat_draft_v1_';
@@ -156,6 +162,7 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
   static const pageSize = _kPageSize;
   bool hasMore = true;
   bool loadingMore = false;
+  bool _syncing = false;
 
   ChatMsgNotifier(this.svc, this.convId) : super([]) {
     loadInitial();
@@ -193,6 +200,44 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
         }
       }
       state = [];
+    }
+  }
+
+  /// ✅ Resynchronisation légère : récupère la 1ʳᵉ page et n'applique que
+  /// les messages nouveaux ou modifiés (lu / distribué / supprimé / contenu).
+  /// Retourne la liste des messages réellement nouveaux.
+  Future<List<ChatMessage>> refreshLatest() async {
+    if (!mounted || _syncing) return const <ChatMessage>[];
+    _syncing = true;
+    try {
+      final fetched = await svc.getMessages(convId, limit: pageSize, offset: 0).timeout(_kRequestTimeout);
+      if (!mounted) return const <ChatMessage>[];
+      final byId = <String, ChatMessage>{for (final m in state) m.id: m};
+      final toApply = <ChatMessage>[];
+      final added = <ChatMessage>[];
+      for (final m in fetched) {
+        if (m.isExpired) continue;
+        final old = byId[m.id];
+        if (old == null) {
+          if (!m.isDeleted && !m.isDeletedForAll) {
+            toApply.add(m);
+            added.add(m);
+          }
+        } else if (old.isRead != m.isRead ||
+            old.isDelivered != m.isDelivered ||
+            old.isDeleted != m.isDeleted ||
+            old.isDeletedForAll != m.isDeletedForAll ||
+            old.content != m.content) {
+          toApply.add(m);
+        }
+      }
+      if (toApply.isNotEmpty) upsertRealtime(toApply);
+      return added;
+    } catch (e) {
+      chatLog('[ChatMsg] ⚠️ refreshLatest: $e');
+      return const <ChatMessage>[];
+    } finally {
+      _syncing = false;
     }
   }
 
@@ -470,6 +515,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Timer? _searchDebounce;
   Timer? _expiryTimer;
   Timer? _draftTimer;
+  Timer? _syncTimer;
   DateTime? _lastConnCheck;
   DateTime? _lastLoadMore;
   bool _isAgent = false;
@@ -593,6 +639,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ref.read(chatMessagesProvider(widget.conversationId).notifier).purgeExpired();
     });
 
+    // ✅ Filet de sécurité : resynchronisation périodique des messages
+    _syncTimer = Timer.periodic(const Duration(seconds: _kSyncPollSeconds), (_) => _syncLatest());
+
     _scrollController.addListener(_onScroll);
   }
 
@@ -618,6 +667,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _searchDebounce?.cancel();
     _expiryTimer?.cancel();
     _draftTimer?.cancel();
+    _syncTimer?.cancel();
     _messageSub?.cancel();
     _presenceSub?.cancel();
     _callBlockSub?.cancel();
@@ -627,6 +677,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
     _reminderTimers.clear();
     super.dispose();
+  }
+
+  // ==========================================================================
+  // ✅ SYNCHRO DES MESSAGES (rattrape les évènements temps réel manqués)
+  // ==========================================================================
+  Future<void> _syncLatest() async {
+    if (!mounted) return;
+    try {
+      final me = _chatService.currentUserId;
+      final notifier = ref.read(chatMessagesProvider(widget.conversationId).notifier);
+      final added = await notifier.refreshLatest();
+      if (!mounted || added.isEmpty) return;
+
+      final fromOthers = added.where((m) => m.senderId != me).toList();
+      if (fromOthers.isEmpty) return;
+
+      if (_showScrollDown) {
+        setState(() => _newWhileScrolled += fromOthers.length);
+      }
+      final idsToDeliver = fromOthers.where((m) => !m.isDelivered).map((m) => m.id).toList();
+      if (idsToDeliver.isNotEmpty) {
+        unawaited(_fireAndForget(() => _chatService.markMessagesDelivered(idsToDeliver)));
+      }
+      _scheduleRemindersFor(added);
+      _scheduleMarkAsRead();
+    } catch (e) {
+      chatLog('[Chat] ⚠️ syncLatest: $e');
+    }
   }
 
   // ==========================================================================
@@ -949,6 +1027,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         _checkConnectionSecurity();
         _refreshCallBlock();
         ref.read(chatMessagesProvider(widget.conversationId).notifier).purgeExpired();
+        unawaited(_syncLatest());
         final o = _otherId;
         if (o.isNotEmpty) ref.invalidate(userProfileProvider(o));
         break;
@@ -1618,8 +1697,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
   }
 
-  // ▲▲▲ FIN DE LA PARTIE 1/2 — ne ferme PAS la classe _ChatScreenState ▲▲▲
-    // ==========================================================================
+  // ==========================================================================
   // PIN / STAR
   // ==========================================================================
   Future<void> _togglePin(ChatMessage msg) async {
@@ -2279,6 +2357,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final l10n = AppLocalizations.of(context);
     final messages = ref.watch(chatMessagesProvider(widget.conversationId));
     final msgNotifier = ref.read(chatMessagesProvider(widget.conversationId).notifier);
+
+    // ✅ Si la liste des discussions voit un message que cet écran ne connaît pas
+    // encore → resynchronisation immédiate (corrige « visible dans la liste mais
+    // pas dans le chat »).
+    ref.listen<ChatListState>(chatListProvider, (prev, next) {
+      if (!mounted) return;
+      ChatConversation? c;
+      for (final x in next.all) {
+        if (x.id == widget.conversationId) {
+          c = x;
+          break;
+        }
+      }
+      final lastId = c?.lastMessage?.id;
+      if (lastId == null || lastId.isEmpty) return;
+      final known = ref.read(chatMessagesProvider(widget.conversationId)).any((m) => m.id == lastId);
+      if (!known) unawaited(_syncLatest());
+    });
+
     final visible = messages.where((m) => !m.isExpired).toList();
     final displayItems = _buildChatDisplayItems(visible);
     _displayIds = displayItems.map((e) => e.messages.first.id).toList();
@@ -2950,6 +3047,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   CertificationNameBadge(tier: tier, status: status, showLabel: false, iconSize: 15, padding: const EdgeInsets.only(left: 4))
                 else if (isLegacyVerified)
                   const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 15)),
+                // ✅ Pastille ESCALADÉ
+                if (widget.conversation.isEscalation)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.danger.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: ThixPolicy.danger.withOpacity(0.35)),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.swap_vert_rounded, size: 11, color: ThixPolicy.danger),
+                        const SizedBox(width: 2),
+                        Text(_tr(l10n, 'chat_escalated_badge', 'Escaladé'),
+                            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: ThixPolicy.danger)),
+                      ]),
+                    ),
+                  ),
               ]);
             }),
             if (!widget.conversation.isGroup && _otherParticipant != null)
@@ -3326,4 +3442,3 @@ class _ThixChatBackgroundPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-  
