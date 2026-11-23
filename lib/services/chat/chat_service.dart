@@ -8,6 +8,8 @@
 //    viewOnce, mentions, reminders, threads, transcription, annotations
 // ✅ P2 : typing broadcast, getUserRole, markMessagesDelivered
 // ✅ FIX URLs médias : URLs signées longue durée (7j) pour buckets privés
+// ✅ AUDIT 12 FIX : paragraphes, typing, présence, realtime, delete-for-me,
+//    reactions, search, sécurité
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -45,6 +47,20 @@ const Duration _kStorageTimeout = Duration(seconds: 60);
 const Duration _kMessageSyncInterval = Duration(seconds: 20);
 const Duration _kPresenceDebounce = Duration(seconds: 1);
 
+// ✅ #5 : online périmé si last_seen_at > 120 s (≈ 2× heartbeat + marge)
+const Duration _kPresenceStaleAfter = Duration(seconds: 120);
+// ✅ #4 : expiration typing + cleanup idle des channels send-only
+const Duration _kTypingExpiry = Duration(seconds: 6);
+const Duration _kTypingIdleCleanup = Duration(seconds: 30);
+// ✅ #8 : catchup keyset paginé + backoff
+const int _kCatchupPageSize = 100;
+const int _kCatchupMaxMessages = 500;
+const int _kBackoffMaxSeconds = 60;
+// ✅ #9 : ids masqués "pour moi"
+const int _kMaxHiddenIds = 1000;
+// ✅ #12 : mentions
+const int _kMaxMentions = 20;
+
 const Set<String> _kAllowedBuckets = {
   'audio_uploads',
   'chat-media',
@@ -76,6 +92,17 @@ const Set<String> _kAllowedMediaTypes = {
 class _ChatValidators {
   _ChatValidators._();
 
+  // ✅ #1 : garde \t (0x09) et \n (0x0A) — NE mange PLUS les paragraphes
+  static final RegExp _ctrlKeepNl = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');
+  // ✅ #2 : un tag ne traverse plus les lignes
+  static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>\n]*>');
+  static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
+  static final RegExp _handler = RegExp(r'on\w+\s*=', caseSensitive: false);
+  static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
+  static final RegExp _trailSpaces = RegExp(r'[ \t]+(?=\n)');
+  static final RegExp _manyNl = RegExp(r'\n{4,}');
+  static final RegExp _ws = RegExp(r'\s+');
+
   static bool isValidUuid(String? id) {
     if (id == null) return false;
     final trimmed = id.trim();
@@ -86,20 +113,46 @@ class _ChatValidators {
     ).hasMatch(trimmed);
   }
 
-  static String sanitizeContent(String? input, {int maxLength = _kMaxMessageLength}) {
+  /// ✅ #1/#2 : préserve les paragraphes par défaut.
+  /// [keepLineBreaks] = false pour noms / previews / recherches (mono-ligne).
+  static String sanitizeContent(
+    String? input, {
+    int maxLength = _kMaxMessageLength,
+    bool keepLineBreaks = true,
+  }) {
     if (input == null) return '';
-    var s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
-        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .trim();
-    return s.length > maxLength ? s.substring(0, maxLength) : s;
+    // Normalise TOUTES les fins de ligne (Windows \r\n, vieux Mac \r)
+    var s = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    s = s
+        .replaceAll(_tags, '')
+        .replaceAll(_jsScheme, '')
+        .replaceAll(_handler, '')
+        .replaceAll(_ctrlKeepNl, '')
+        .replaceAll(_bidi, '');
+    if (keepLineBreaks) {
+      // Anti-abus : espaces en fin de ligne + max 2 lignes vides d'affilée
+      s = s.replaceAll(_trailSpaces, '').replaceAll(_manyNl, '\n\n\n');
+    } else {
+      s = s.replaceAll(_ws, ' ');
+    }
+    s = s.trim();
+    // ✅ #2 : troncature sans casser un emoji (paire de surrogates)
+    if (s.length > maxLength) {
+      var end = maxLength;
+      final unit = s.codeUnitAt(end - 1);
+      if (unit >= 0xD800 && unit <= 0xDBFF) end--;
+      s = s.substring(0, end);
+    }
+    return s;
   }
 
   static String sanitizeName(String? input, {int maxLength = _kMaxProfileNameLength}) {
-    return sanitizeContent(input, maxLength: maxLength);
+    return sanitizeContent(input, maxLength: maxLength, keepLineBreaks: false);
   }
+
+  /// ✅ #11 : échappe les wildcards LIKE/ILIKE
+  static String escapeLike(String s) =>
+      s.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
 
   static bool isValidMediaType(String? type) {
     if (type == null || type.isEmpty) return false;
@@ -117,9 +170,10 @@ class _ChatValidators {
     return clean.isNotEmpty && clean.length <= 10;
   }
 
+  /// Preview mono-ligne (liste de conversations)
   static String truncatePreview(String? text, {int maxLength = _kMaxPreviewLength}) {
     if (text == null) return '';
-    final trimmed = text.trim();
+    final trimmed = text.replaceAll(_ws, ' ').trim();
     if (trimmed.isEmpty) return '';
     if (trimmed.length <= maxLength) return trimmed;
     final truncated = trimmed.substring(0, maxLength);
@@ -180,8 +234,12 @@ class ChatService {
   final _ProfileCache _profileCache = _ProfileCache();
   bool _isDisposed = false;
 
-  // ✅ P2: Channels pour typing broadcast
+  // ✅ #3/#4 : UN SEUL channel typing par conversation (send + listen partagés)
   final Map<String, RealtimeChannel> _typingChannels = <String, RealtimeChannel>{};
+  final Map<String, Completer<void>> _typingReady = <String, Completer<void>>{};
+  final Map<String, void Function(String senderId, bool isTyping)> _typingListeners = {};
+  final Map<String, Timer> _typingExpiry = <String, Timer>{}; // clé: convId:senderId
+  final Map<String, Timer> _typingIdleCleanup = <String, Timer>{};
 
   ChatService(this._supabase) {
     debugPrint('[ChatService] 🚀 Initialized');
@@ -293,23 +351,36 @@ class ChatService {
     final profile = map['profiles'] is Map ? Map<String, dynamic>.from(map['profiles'] as Map) : null;
     map['sender_name'] = _resolveDisplayName(profile);
     map['sender_avatar'] = profile?['avatar_url'];
+    // ✅ #1 : lecture préserve les paragraphes
     map['content'] = _ChatValidators.sanitizeContent(map['content'] as String?);
     return ChatMessage.fromJson(map);
+  }
+
+  /// ✅ #9 : ids des messages masqués "pour moi" par l'utilisateur courant
+  Future<Set<String>> _hiddenMessageIds() async {
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) return {};
+    try {
+      final rows = await _supabase
+          .from('deleted_messages')
+          .select('message_id')
+          .eq('user_id', uid)
+          .limit(_kMaxHiddenIds)
+          .timeout(_kDbTimeout);
+      return (rows as List).map((r) => r['message_id'].toString()).toSet();
+    } catch (_) {
+      return {}; // table absente → compat ascendante
+    }
   }
 
   // ============================================================
   // 🎯 HELPER : résout une URL média (signée ou publique selon bucket)
   // ============================================================
-
-  /// Retourne l'URL finale d'un fichier dans un bucket.
-  /// - Buckets publics (`avatars`) → `getPublicUrl`
-  /// - Buckets privés (`chat-media`, `audio_uploads`, …) → URL signée 7 jours
   Future<String?> _resolveMediaUrl(String bucket, String path) async {
     try {
       if (_kPublicBuckets.contains(bucket)) {
         return _supabase.storage.from(bucket).getPublicUrl(path);
       }
-      // URL signée longue durée (7 jours) — fonctionne même si bucket privé
       final signed = await _supabase.storage
           .from(bucket)
           .createSignedUrl(path, _kSignedUrlSeconds)
@@ -317,7 +388,6 @@ class ChatService {
       return signed;
     } catch (e) {
       debugPrint('[ChatService] ⚠️ resolveMediaUrl($bucket/$path): $e');
-      // Fallback : tente quand même le public URL
       try {
         return _supabase.storage.from(bucket).getPublicUrl(path);
       } catch (_) {
@@ -362,7 +432,7 @@ class ChatService {
             'user_id': uid,
             'status': status,
             'custom_status': customStatus != null
-                ? _ChatValidators.sanitizeContent(customStatus, maxLength: 200)
+                ? _ChatValidators.sanitizeContent(customStatus, maxLength: 200, keepLineBreaks: false)
                 : null,
             'last_seen_at': now,
             'updated_at': now,
@@ -371,6 +441,19 @@ class ChatService {
     } catch (e) {
       debugPrint('[ChatService] ⚠️ updatePresence: ${kDebugMode ? e : e.toString().split('\n').first}');
     }
+  }
+
+  /// ✅ #5 : online périmé (crash / app tuée) → offline
+  Map<String, dynamic> _normalizePresenceRow(Map<String, dynamic> row) {
+    final map = Map<String, dynamic>.from(row);
+    if (map['status']?.toString() == 'online') {
+      final lastSeen = DateTime.tryParse(map['last_seen_at']?.toString() ?? '');
+      if (lastSeen == null ||
+          DateTime.now().toUtc().difference(lastSeen.toUtc()) > _kPresenceStaleAfter) {
+        map['status'] = 'offline';
+      }
+    }
+    return map;
   }
 
   Future<List<UserStatus>> getUsersPresence(List<String> userIds) async {
@@ -386,7 +469,8 @@ class ChatService {
             .select('*, profiles!user_id(display_name, full_name, avatar_url)')
             .inFilter('user_id', chunk)
             .timeout(_kDbTimeout);
-        allResults.addAll((response as List).map((e) => UserStatus.fromJson(e)));
+        allResults.addAll((response as List)
+            .map((e) => UserStatus.fromJson(_normalizePresenceRow(Map<String, dynamic>.from(e as Map)))));
       }
       return allResults;
     } catch (e) {
@@ -467,7 +551,8 @@ class ChatService {
         conversationId: map['id']?.toString() ?? '',
         senderId: map['last_message_sender_id']?.toString() ?? '',
         senderName: '',
-        content: _ChatValidators.sanitizeContent(preview),
+        // ✅ preview mono-ligne
+        content: _ChatValidators.truncatePreview(preview),
         createdAt: map['last_message_at'] != null
             ? DateTime.parse(map['last_message_at'].toString())
             : DateTime.now().toUtc(),
@@ -490,8 +575,7 @@ class ChatService {
               .where(_ChatValidators.isValidUuid)
               .toList() ??
           [],
-      otherParticipantName: _ChatValidators.sanitizeName(map['other_display_name'] as String?) ??
-          'Utilisateur inconnu',
+      otherParticipantName: _ChatValidators.sanitizeName(map['other_display_name'] as String?),
       otherParticipantAvatar: map['other_avatar_url'] as String?,
       lastMessage: lastMessage,
       unreadCount: (map['unread_count'] as num?)?.toInt() ?? 0,
@@ -928,38 +1012,14 @@ class ChatService {
           .range(safeOffset, safeOffset + safeLimit - 1)
           .timeout(_kDbTimeout);
 
+      // ✅ #9 : exclut les messages masqués "pour moi"
+      final hidden = await _hiddenMessageIds();
       return (response as List)
           .map((e) => _messageFromRow(Map<String, dynamic>.from(e as Map)))
+          .where((m) => !hidden.contains(m.id))
           .toList();
     } catch (e) {
       debugPrint('[ChatService] ⚠️ getMessages: ${kDebugMode ? e : e.toString().split('\n').first}');
-      return [];
-    }
-  }
-
-  Future<List<ChatMessage>> _getMessagesSince(
-    String conversationId,
-    DateTime since,
-  ) async {
-    try {
-      final response = await _supabase
-          .from('messages')
-          .select('''
-            *,
-            profiles!sender_id (display_name, full_name, avatar_url)
-          ''')
-          .eq('conversation_id', conversationId)
-          .eq('is_deleted_for_all', false)
-          .gt('created_at', since.toUtc().toIso8601String())
-          .order('created_at', ascending: true)
-          .limit(50)
-          .timeout(_kDbTimeout);
-
-      return (response as List)
-          .map((e) => _messageFromRow(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ getMessagesSince: ${kDebugMode ? e : e.toString().split('\n').first}');
       return [];
     }
   }
@@ -1001,9 +1061,22 @@ class ChatService {
 
     await _assertParticipant(conversationId);
 
+    // ✅ #1 : le contenu stocké en DB garde ses paragraphes
     final sanitizedContent = _ChatValidators.sanitizeContent(content);
     if (sanitizedContent.isEmpty && mediaUrl == null) {
       throw ArgumentError('Message vide');
+    }
+
+    // ✅ #12 : mentions validées + restreintes aux participants
+    var mentions = mentionedUserIds.where(_ChatValidators.isValidUuid).toSet().take(_kMaxMentions).toList();
+    if (mentions.isNotEmpty) {
+      final parts = await _supabase
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .timeout(_kDbTimeout);
+      final partIds = (parts as List).map((r) => r['user_id'].toString()).toSet();
+      mentions = mentions.where(partIds.contains).toList();
     }
 
     final now = DateTime.now().toUtc();
@@ -1015,17 +1088,19 @@ class ChatService {
       'conversation_id': conversationId,
       'sender_id': uid,
       'content': sanitizedContent,
-      'created_at': now.toIso8601String(),
+      // ✅ #8 : created_at OMIT → default DB now() (ordre + catchup fiables)
       'media_url': mediaUrl,
       'media_type': mediaType,
-      'media_name': mediaName != null ? _ChatValidators.sanitizeContent(mediaName, maxLength: 255) : null,
+      'media_name': mediaName != null
+          ? _ChatValidators.sanitizeContent(mediaName, maxLength: 255, keepLineBreaks: false)
+          : null,
       'media_size': mediaSize,
       'reply_to_id': replyToId,
       'is_ephemeral': isEphemeral,
       'ephemeral_duration': ephemeralDuration,
       'delete_at': deleteAt?.toIso8601String(),
       'is_view_once': isViewOnce,
-      'mentioned_user_ids': mentionedUserIds.isEmpty ? null : mentionedUserIds,
+      'mentioned_user_ids': mentions.isEmpty ? null : mentions,
       'is_forwarded': isForwarded,
       'forwarded_from_conversation_id': forwardedFromConversationId,
       'forwarded_from_sender_name': forwardedFromSenderName,
@@ -1076,7 +1151,13 @@ class ChatService {
         debugPrint('[ChatService] ✓ Message edited: ${_ChatValidators.obfuscate(messageId)}');
         return ChatMessage.fromJson(Map<String, dynamic>.from(response));
       }
-      await _supabase
+
+      // ✅ #12 : fallback AVEC fenêtre 15 min + vérification 0 ligne
+      final cutoff = DateTime.now()
+          .toUtc()
+          .subtract(const Duration(minutes: _kEditWindowMinutes))
+          .toIso8601String();
+      final updated = await _supabase
           .from('messages')
           .update({
             'content': sanitized,
@@ -1085,7 +1166,13 @@ class ChatService {
           })
           .eq('id', messageId)
           .eq('sender_id', uid)
+          .gt('created_at', cutoff)
+          .select('id')
           .timeout(_kDbTimeout);
+
+      if ((updated as List).isEmpty) {
+        throw StateError('Fenêtre d’édition expirée ou message introuvable');
+      }
 
       debugPrint('[ChatService] ✓ Message edited (fallback): ${_ChatValidators.obfuscate(messageId)}');
       return null;
@@ -1123,27 +1210,34 @@ class ChatService {
     }
   }
 
-  /// Supprimer pour soi uniquement
+  /// ✅ #9 : Supprimer POUR MOI uniquement (par utilisateur, tout participant)
   Future<void> deleteMessage(String messageId) async {
     if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(currentUserId)) {
-      throw StateError('Non authentifié');
-    }
-    if (!_ChatValidators.isValidUuid(messageId)) {
-      throw ArgumentError('messageId invalide');
-    }
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) throw StateError('Non authentifié');
+    if (!_ChatValidators.isValidUuid(messageId)) throw ArgumentError('messageId invalide');
 
     try {
-      await _supabase
+      final row = await _supabase
           .from('messages')
-          .update({
-            'is_deleted': true,
-            'updated_at': DateTime.now().toUtc().toIso8601String(),
-          })
+          .select('conversation_id')
           .eq('id', messageId)
-          .eq('sender_id', currentUserId)
+          .maybeSingle()
           .timeout(_kDbTimeout);
-      debugPrint('[ChatService] ✓ Message deleted: ${_ChatValidators.obfuscate(messageId)}');
+      final convId = row?['conversation_id']?.toString();
+      if (convId == null) throw StateError('Message introuvable');
+      await _assertParticipant(convId);
+
+      await _supabase
+          .from('deleted_messages')
+          .upsert({
+            'message_id': messageId,
+            'user_id': uid,
+            'deleted_at': DateTime.now().toUtc().toIso8601String(),
+          }, onConflict: 'message_id,user_id')
+          .timeout(_kDbTimeout);
+
+      debugPrint('[ChatService] ✓ Message hidden for me: ${_ChatValidators.obfuscate(messageId)}');
     } catch (e) {
       debugPrint('[ChatService] ❌ deleteMessage: ${kDebugMode ? e : e.toString().split('\n').first}');
       rethrow;
@@ -1173,12 +1267,17 @@ class ChatService {
     if (originalRows == null) throw StateError('Message original introuvable');
 
     final original = ChatMessage.fromJson(Map<String, dynamic>.from(originalRows));
+    // ✅ #12 : seul un participant de la source peut transférer
+    await _assertParticipant(original.conversationId);
+    if (original.isDeletedForAll) throw StateError('Message supprimé');
+
     final forwardedMessages = <ChatMessage>[];
 
     for (final targetConvId in targetConversationIds) {
       if (!_ChatValidators.isValidUuid(targetConvId)) continue;
 
       try {
+        // sendMessage assert déjà participant de la cible
         final msg = await sendMessage(
           conversationId: targetConvId,
           content: original.content,
@@ -1206,8 +1305,12 @@ class ChatService {
     final uid = currentUserId;
     if (!_ChatValidators.isValidUuid(uid)) return;
     if (!_ChatValidators.isValidUuid(messageId)) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
 
     try {
+      // ✅ #12 : participant + le message doit appartenir à la conversation
+      await _assertParticipant(conversationId);
+
       final pinnedCount = await _supabase
           .from('messages')
           .select('id')
@@ -1223,6 +1326,7 @@ class ChatService {
           .from('messages')
           .update({'is_pinned': true})
           .eq('id', messageId)
+          .eq('conversation_id', conversationId)
           .timeout(_kDbTimeout);
 
       debugPrint('[ChatService] ✓ Message pinned: ${_ChatValidators.obfuscate(messageId)}');
@@ -1238,6 +1342,16 @@ class ChatService {
     if (!_ChatValidators.isValidUuid(messageId)) return;
 
     try {
+      // ✅ #12 : assert participant avant unpin
+      final row = await _supabase
+          .from('messages')
+          .select('conversation_id')
+          .eq('id', messageId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      final convId = row?['conversation_id']?.toString();
+      if (convId != null) await _assertParticipant(convId);
+
       await _supabase
           .from('messages')
           .update({'is_pinned': false})
@@ -1343,7 +1457,7 @@ class ChatService {
   }) async {
     if (_isDisposed) return [];
     if (!_ChatValidators.isValidUuid(conversationId)) return [];
-    final sanitizedQuery = _ChatValidators.sanitizeContent(query, maxLength: 200);
+    final sanitizedQuery = _ChatValidators.sanitizeContent(query, maxLength: 200, keepLineBreaks: false);
     if (sanitizedQuery.isEmpty) return [];
 
     try {
@@ -1352,7 +1466,8 @@ class ChatService {
           .select('*, profiles!sender_id(display_name, full_name, avatar_url)')
           .eq('conversation_id', conversationId)
           .eq('is_deleted_for_all', false)
-          .ilike('content', '%$sanitizedQuery%')
+          // ✅ #11 : wildcards échappés
+          .ilike('content', '%${_ChatValidators.escapeLike(sanitizedQuery)}%')
           .order('created_at', ascending: false)
           .limit(limit)
           .timeout(_kDbTimeout);
@@ -1429,6 +1544,7 @@ class ChatService {
     }
   }
 
+  /// ✅ #10 : changer d'emoji = update (plus delete imposé)
   Future<void> toggleReaction(String messageId, String reaction) async {
     if (_isDisposed) return;
     final uid = currentUserId;
@@ -1439,19 +1555,29 @@ class ChatService {
     try {
       final existing = await _supabase
           .from('message_reactions')
-          .select('id')
+          .select('id, reaction')
           .eq('message_id', messageId)
           .eq('user_id', uid)
           .maybeSingle()
           .timeout(_kDbTimeout);
 
       if (existing != null) {
-        await _supabase
-            .from('message_reactions')
-            .delete()
-            .eq('message_id', messageId)
-            .eq('user_id', uid)
-            .timeout(_kDbTimeout);
+        if (existing['reaction'] == reaction) {
+          // Même emoji → retire
+          await _supabase
+              .from('message_reactions')
+              .delete()
+              .eq('message_id', messageId)
+              .eq('user_id', uid)
+              .timeout(_kDbTimeout);
+        } else {
+          // ✅ Emoji différent → remplace
+          await _supabase
+              .from('message_reactions')
+              .update({'reaction': reaction})
+              .eq('id', existing['id'])
+              .timeout(_kDbTimeout);
+        }
       } else {
         await _supabase
             .from('message_reactions')
@@ -1483,27 +1609,98 @@ class ChatService {
     unawaited(_warmProfiles(conversationId));
 
     var lastSeen = DateTime.now().toUtc().subtract(const Duration(seconds: 30));
+    var seeded = false;
     var syncing = false;
+    var backoffSec = 0;
     Timer? syncTimer;
+
+    // ✅ #7 : dédup par version (content + flags significatifs, PAS les receipts)
+    final versions = <String, int>{};
+    int versionOf(Map<String, dynamic> m) => Object.hash(
+          m['content'],
+          m['is_edited'],
+          m['is_deleted'],
+          m['is_deleted_for_all'],
+          m['has_been_viewed'],
+          m['media_url'],
+          m['is_pinned'],
+        );
+    bool shouldEmit(Map<String, dynamic> map, ChatMessage msg) {
+      final v = versionOf(map);
+      if (versions[msg.id] == v) return false;
+      versions[msg.id] = v;
+      if (versions.length > 1000) versions.remove(versions.keys.first);
+      return true;
+    }
 
     void track(ChatMessage m) {
       if (m.createdAt.isAfter(lastSeen)) lastSeen = m.createdAt;
     }
 
+    // ✅ #8 : catchup keyset paginé (plus de perte au-delà de 50) + backoff
     Future<void> catchUp() async {
       if (_isDisposed || controller.isClosed || syncing) return;
       syncing = true;
       try {
-        final fresh = await _getMessagesSince(conversationId, lastSeen);
-        if (fresh.isNotEmpty && !controller.isClosed) {
-          for (final m in fresh) {
-            track(m);
-          }
-          controller.add(fresh);
+        if (!seeded) {
+          // Seed lastSeen sur l'horloge DB (pas device)
+          final latest = await _supabase
+              .from('messages')
+              .select('created_at')
+              .eq('conversation_id', conversationId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle()
+              .timeout(_kDbTimeout);
+          final t = DateTime.tryParse(latest?['created_at']?.toString() ?? '');
+          if (t != null) lastSeen = t.toUtc();
+          seeded = true;
         }
+
+        final hidden = await _hiddenMessageIds();
+        var fetched = 0;
+        while (fetched < _kCatchupMaxMessages && !controller.isClosed) {
+          final rows = await _supabase
+              .from('messages')
+              .select('*, profiles!sender_id(display_name, full_name, avatar_url)')
+              .eq('conversation_id', conversationId)
+              .eq('is_deleted_for_all', false)
+              .gt('created_at', lastSeen.toUtc().toIso8601String())
+              .order('created_at', ascending: true)
+              .limit(_kCatchupPageSize)
+              .timeout(_kDbTimeout);
+          final list = rows as List;
+          if (list.isEmpty) break;
+
+          final emit = <ChatMessage>[];
+          for (final r in list) {
+            final map = Map<String, dynamic>.from(r as Map);
+            final msg = _messageFromRow(map);
+            track(msg);
+            if (hidden.contains(msg.id)) continue;
+            if (shouldEmit(map, msg)) emit.add(msg);
+          }
+          if (emit.isNotEmpty && !controller.isClosed) controller.add(emit);
+          fetched += list.length;
+          if (list.length < _kCatchupPageSize) break;
+        }
+        backoffSec = 0;
+      } catch (e) {
+        backoffSec = backoffSec == 0 ? 5 : (backoffSec * 2).clamp(0, _kBackoffMaxSeconds);
+        debugPrint('[ChatService] ⚠️ catchUp (backoff ${backoffSec}s): ${kDebugMode ? e : "error"}');
       } finally {
         syncing = false;
       }
+    }
+
+    void scheduleNext() {
+      syncTimer?.cancel();
+      if (_isDisposed || controller.isClosed) return;
+      final delay = backoffSec > 0 ? Duration(seconds: backoffSec) : _kMessageSyncInterval;
+      syncTimer = Timer(delay, () async {
+        await catchUp();
+        scheduleNext();
+      });
     }
 
     final channel = _supabase.channel('messages:$conversationId');
@@ -1521,9 +1718,12 @@ class ChatService {
           callback: (payload) async {
             if (_isDisposed || controller.isClosed) return;
 
+            // ✅ #7 : DELETE hard ignoré (le soft-delete passe par UPDATE)
+            if (payload.eventType == PostgresChangeEvent.delete) return;
+
             try {
               final raw = payload.newRecord;
-              if (raw != null && raw.isNotEmpty) {
+              if (raw.isNotEmpty) {
                 final map = Map<String, dynamic>.from(raw);
                 final senderId = map['sender_id']?.toString();
 
@@ -1538,9 +1738,10 @@ class ChatService {
 
                 map['content'] = _ChatValidators.sanitizeContent(map['content'] as String?);
 
-                if (!controller.isClosed) {
-                  final msg = ChatMessage.fromJson(map);
-                  track(msg);
+                final msg = ChatMessage.fromJson(map);
+                track(msg);
+                // ✅ #7 : UPDATE de receipts (is_delivered/is_read) → version inchangée → skip
+                if (shouldEmit(map, msg) && !controller.isClosed) {
                   controller.add([msg]);
                 }
                 return;
@@ -1558,10 +1759,16 @@ class ChatService {
         .subscribe((status, [error]) {
           if (status == RealtimeSubscribeStatus.subscribed) {
             unawaited(catchUp());
+            scheduleNext();
+          } else if (status == RealtimeSubscribeStatus.channelError ||
+              status == RealtimeSubscribeStatus.timedOut) {
+            // ✅ #8 : backoff aussi sur erreur channel
+            backoffSec = backoffSec == 0 ? 5 : (backoffSec * 2).clamp(0, _kBackoffMaxSeconds);
+            scheduleNext();
           }
         });
 
-    syncTimer = Timer.periodic(_kMessageSyncInterval, (_) => unawaited(catchUp()));
+    scheduleNext();
 
     controller.onCancel = () {
       syncTimer?.cancel();
@@ -1628,10 +1835,17 @@ class ChatService {
       if (!controller.isClosed) controller.add(list);
     });
 
+    // ✅ #6 : nom = hash du set COMPLET (plus de collision sur 5 premiers UUIDs)
     final sorted = [...validIds]..sort();
-    final channelName = 'presence-${sorted.take(5).join('-')}';
+    final channelName = 'presence:${sorted.length}:${Object.hashAll(sorted)}';
     Timer? debounce;
     final channel = _supabase.channel(channelName);
+
+    void refresh() async {
+      if (_isDisposed || controller.isClosed) return;
+      final list = await getUsersPresence(validIds);
+      if (!controller.isClosed) controller.add(list);
+    }
 
     channel
         .onPostgresChanges(
@@ -1646,14 +1860,13 @@ class ChatService {
           callback: (_) {
             if (_isDisposed || controller.isClosed) return;
             debounce?.cancel();
-            debounce = Timer(_kPresenceDebounce, () async {
-              if (_isDisposed || controller.isClosed) return;
-              final list = await getUsersPresence(validIds);
-              if (!controller.isClosed) controller.add(list);
-            });
+            debounce = Timer(_kPresenceDebounce, refresh);
           },
         )
-        .subscribe();
+        .subscribe((status, [error]) {
+          // ✅ #6 : catchup à la (re)connexion
+          if (status == RealtimeSubscribeStatus.subscribed) refresh();
+        });
 
     controller.onCancel = () {
       debounce?.cancel();
@@ -1711,8 +1924,6 @@ class ChatService {
 
       debugPrint('[ChatService] ✓ File uploaded: $bucket/$path');
 
-      // ✅ URLs signées pour les buckets privés (7 jours)
-      //    Public URL pour les buckets publics (avatars)
       final url = await _resolveMediaUrl(bucket, path);
       if (url == null || url.isEmpty) {
         debugPrint('[ChatService] ❌ Failed to resolve URL for $bucket/$path');
@@ -1729,6 +1940,78 @@ class ChatService {
   // ✅ P2: TYPING BROADCAST + RÔLE + DELIVERED
   // ============================================================
 
+  /// ✅ #3/#4 : un seul channel partagé send+listen, subscribe avant envoi
+  RealtimeChannel _ensureTypingChannel(String conversationId) {
+    final existing = _typingChannels[conversationId];
+    if (existing != null) return existing;
+
+    final channel = _supabase.channel('typing:$conversationId');
+    channel.onBroadcast(
+      event: 'typing',
+      callback: (Map<String, dynamic> payload) {
+        final sid = (payload['senderId'] ?? '').toString();
+        final typing = payload['isTyping'] == true;
+        // ✅ #4 : filtre self
+        if (sid.isEmpty || sid == currentUserId) return;
+        final cb = _typingListeners[conversationId];
+        if (cb == null) return;
+        cb(sid, typing);
+
+        // ✅ #4 : expiration auto (par sender, compatible groupes)
+        final key = '$conversationId:$sid';
+        _typingExpiry[key]?.cancel();
+        if (typing) {
+          _typingExpiry[key] = Timer(_kTypingExpiry, () {
+            final cb2 = _typingListeners[conversationId];
+            if (cb2 != null) cb2(sid, false);
+          });
+        } else {
+          _typingExpiry.remove(key);
+        }
+      },
+    );
+
+    final ready = Completer<void>();
+    _typingReady[conversationId] = ready;
+    channel.subscribe((status, [error]) {
+      if (status == RealtimeSubscribeStatus.subscribed && !ready.isCompleted) {
+        ready.complete();
+      }
+    });
+
+    _typingChannels[conversationId] = channel;
+    return channel;
+  }
+
+  void _removeTypingChannel(String conversationId) {
+    _typingIdleCleanup.remove(conversationId)?.cancel();
+    _typingExpiry.removeWhere((k, t) {
+      if (k.startsWith('$conversationId:')) {
+        t.cancel();
+        return true;
+      }
+      return false;
+    });
+    _typingReady.remove(conversationId);
+    final ch = _typingChannels.remove(conversationId);
+    if (ch != null) {
+      try {
+        _supabase.removeChannel(ch);
+      } catch (_) {}
+    }
+  }
+
+  /// ✅ #4 : cleanup idle des channels send-only (pas de fuite)
+  void _scheduleTypingIdleCleanup(String conversationId) {
+    if (_typingListeners.containsKey(conversationId)) return;
+    _typingIdleCleanup[conversationId]?.cancel();
+    _typingIdleCleanup[conversationId] = Timer(_kTypingIdleCleanup, () {
+      if (!_typingListeners.containsKey(conversationId)) {
+        _removeTypingChannel(conversationId);
+      }
+    });
+  }
+
   /// Envoie le statut "typing" via Realtime broadcast
   Future<void> sendTypingStatus(String conversationId, {required bool isTyping}) async {
     if (_isDisposed) return;
@@ -1736,20 +2019,17 @@ class ChatService {
     if (!_ChatValidators.isValidUuid(uid) || !_ChatValidators.isValidUuid(conversationId)) return;
 
     try {
-      final key = 'send:$conversationId';
-      RealtimeChannel channel;
-
-      if (_typingChannels.containsKey(key)) {
-        channel = _typingChannels[key]!;
-      } else {
-        channel = _supabase.channel('typing:$conversationId');
-        _typingChannels[key] = channel;
+      _ensureTypingChannel(conversationId);
+      // ✅ #3 : attend que le channel soit subscribed avant d'émettre
+      final ready = _typingReady[conversationId];
+      if (ready != null && !ready.isCompleted) {
+        await ready.future.timeout(const Duration(seconds: 5), onTimeout: () {});
       }
-
-      await channel.sendBroadcastMessage(
+      await _typingChannels[conversationId]?.sendBroadcastMessage(
         event: 'typing',
         payload: <String, dynamic>{'senderId': uid, 'isTyping': isTyping},
       );
+      _scheduleTypingIdleCleanup(conversationId);
     } catch (e) {
       debugPrint('[ChatService] ⚠️ sendTypingStatus: $e');
     }
@@ -1761,32 +2041,15 @@ class ChatService {
     void Function(String senderId, bool isTyping) onEvent,
   ) {
     if (_isDisposed || !_ChatValidators.isValidUuid(conversationId)) return;
-
-    stopTypingListener(conversationId);
-
-    final channel = _supabase.channel('typing:$conversationId');
-    _typingChannels['listen:$conversationId'] = channel;
-
-    channel
-        .onBroadcast(
-          event: 'typing',
-          callback: (Map<String, dynamic> payload) {
-            final sid = (payload['senderId'] ?? '').toString();
-            final typing = payload['isTyping'] == true;
-            if (sid.isNotEmpty) onEvent(sid, typing);
-          },
-        )
-        .subscribe();
+    _typingListeners[conversationId] = onEvent;
+    _typingIdleCleanup.remove(conversationId)?.cancel();
+    _ensureTypingChannel(conversationId);
   }
 
   /// Arrête l'écoute des événements typing d'une conversation
   void stopTypingListener(String conversationId) {
-    final channel = _typingChannels.remove('listen:$conversationId');
-    if (channel == null) return;
-
-    try {
-      _supabase.removeChannel(channel);
-    } catch (_) {}
+    _typingListeners.remove(conversationId);
+    _removeTypingChannel(conversationId);
   }
 
   /// Récupère le rôle d'un utilisateur (agent, admin, support, enterprise, user)
@@ -1856,7 +2119,6 @@ class ChatService {
         .uploadBinary(path, audioData, fileOptions: const FileOptions(cacheControl: '3600', upsert: false))
         .timeout(_kStorageTimeout);
 
-    // ✅ URL signée 7 jours (bucket privé)
     final audioUrl = await _resolveMediaUrl('audio_uploads', path);
     if (audioUrl == null) throw StateError('Échec génération URL audio');
 
@@ -1881,7 +2143,17 @@ class ChatService {
     _presenceHeartbeat?.cancel();
     _presenceHeartbeat = null;
 
-    // ✅ Nettoyer tous les channels typing
+    // ✅ #4 : nettoyer channels + timers typing
+    for (final t in _typingExpiry.values) {
+      t.cancel();
+    }
+    _typingExpiry.clear();
+    for (final t in _typingIdleCleanup.values) {
+      t.cancel();
+    }
+    _typingIdleCleanup.clear();
+    _typingListeners.clear();
+    _typingReady.clear();
     for (final channel in _typingChannels.values) {
       try {
         _supabase.removeChannel(channel);
