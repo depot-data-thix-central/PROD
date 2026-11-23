@@ -13,12 +13,12 @@ import 'package:thix_id/presentation/chat/status/create_status_page.dart';
 import 'package:thix_id/presentation/chat/status/status_viewer_page.dart';
 
 // ============================================================================
-// CONSTANTS (Format WhatsApp Cards Ajusté)
+// CONSTANTS (Format Cinematic Gold — unique & premium)
 // ============================================================================
-const double _kCardHeight = 135.0; // Réduit pour être moins imposant
-const double _kCardWidth = 95.0;   // Réduit pour être plus compact
-const double _kCardRadius = 12.0;  // Arrondi plus doux
-const int _kMaxLabelLength = 20;
+const double _kCardHeight = 110.0;   // +cinématique
+const double _kCardWidth  = 155.0;   // plus large = +impact visuel
+const double _kCardRadius = 14.0;
+const int    _kMaxLabelLength = 22;
 
 // ============================================================================
 // VALIDATORS
@@ -55,7 +55,7 @@ class _StoryValidators {
 }
 
 // ============================================================================
-// STATUS STORY ROW (Format WhatsApp)
+// STATUS STORY ROW (Format Cinematic Gold)
 // ============================================================================
 class StatusStoryRow extends ConsumerWidget {
   final String currentUserId;
@@ -96,9 +96,9 @@ class StatusStoryRow extends ConsumerWidget {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           itemCount: ordered.length + (hasMine ? 0 : 1),
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
           itemBuilder: (ctx, i) {
-            // 1. Bouton "Mon statut" (si pas encore de statut)
+            // 1. Bouton « Mon statut » (si pas encore de statut)
             if (!hasMine && i == 0) {
               return _StatusCard(
                 label: l10n.t('status_my_status'),
@@ -138,6 +138,7 @@ class StatusStoryRow extends ConsumerWidget {
               background: first.background,
               hasUnseen: hasUnseen,
               isMine: isMine,
+              storyCount: stories.length, // ✅ Badge « +N »
               onTap: () {
                 HapticFeedback.selectionClick();
                 _openViewer(context, stories);
@@ -165,7 +166,7 @@ class StatusStoryRow extends ConsumerWidget {
 }
 
 // ============================================================================
-// WIDGET CARTE (Style WhatsApp Compact)
+// WIDGET CARTE — Design « Cinematic Gold »
 // ============================================================================
 class _StatusCard extends StatelessWidget {
   final String label;
@@ -176,6 +177,7 @@ class _StatusCard extends StatelessWidget {
   final bool isAdd;
   final bool hasUnseen;
   final bool isMine;
+  final int storyCount; // Nombre de stories pour le badge « +N »
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -188,6 +190,7 @@ class _StatusCard extends StatelessWidget {
     this.isAdd = false,
     this.hasUnseen = false,
     this.isMine = false,
+    this.storyCount = 1,
     required this.onTap,
     this.onLongPress,
   });
@@ -195,9 +198,9 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeLabel = _StoryValidators.sanitize(label, maxLength: _kMaxLabelLength);
-    final borderColor = hasUnseen ? const Color(0xFF25D366) : Colors.transparent;
+    final accent = hasUnseen ? ThixPolicy.gold : Colors.white70;
 
-    Color bgColor = Colors.grey[300]!;
+    Color bgColor = const Color(0xFF1A1A1A);
     if (background != null && background!.startsWith('#') && background!.length >= 7) {
       try {
         bgColor = Color(int.parse('FF${background!.replaceAll('#', '')}', radix: 16));
@@ -206,85 +209,194 @@ class _StatusCard extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: label,
+      label: '$label${hasUnseen ? " (nouveau statut)" : ""}',
       child: GestureDetector(
         onTap: onTap,
         onLongPress: onLongPress,
         child: Container(
           width: _kCardWidth,
+          height: _kCardHeight,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(_kCardRadius),
-            border: Border.all(
-              color: hasUnseen ? borderColor : Colors.black12,
-              width: hasUnseen ? 2.0 : 1.0,
-            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 3,
-                offset: const Offset(0, 1),
+                color: Colors.black.withOpacity(0.18),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
+              if (hasUnseen)
+                BoxShadow(
+                  color: ThixPolicy.gold.withOpacity(0.35),
+                  blurRadius: 10,
+                  spreadRadius: -2,
+                ),
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(_kCardRadius - 2),
+            borderRadius: BorderRadius.circular(_kCardRadius),
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // 1. Fond
+                // ---------- 1. Fond ----------
                 _buildBackground(bgColor),
 
-                // 2. Dégradé noir en bas pour la lisibilité
+                // ---------- 2. Dégradé bas ----------
                 Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: 50,
-                  child: Container(
+                  left: 0, right: 0, bottom: 0, height: 62,
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.75),
+                          Colors.black.withOpacity(0.15),
+                          Colors.black.withOpacity(0.85),
                         ],
+                        stops: const [0.0, 0.55, 1.0],
                       ),
                     ),
                   ),
                 ),
 
-                // 3. Bouton "+" pour Mon Statut
-                if (isAdd)
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      width: 24,
-                      height: 24,
+                // ---------- 3. Border fine intérieure ----------
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF25D366),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.5),
+                        borderRadius: BorderRadius.circular(_kCardRadius),
+                        border: Border.all(
+                          color: hasUnseen
+                              ? ThixPolicy.gold.withOpacity(0.9)
+                              : Colors.white.withOpacity(0.08),
+                          width: hasUnseen ? 1.8 : 1.0,
+                        ),
                       ),
-                      child: const Icon(Icons.add, size: 14, color: Colors.white),
+                    ),
+                  ),
+                ),
+
+                // ---------- 4. Badge « +N » (multi-stories) ----------
+                if (storyCount > 1 && !isAdd)
+                  Positioned(
+                    top: 7, right: 7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.white24, width: 0.6),
+                      ),
+                      child: Text(
+                        '+${storyCount - 1}',
+                        style: const TextStyle(
+                          fontSize: 9, fontWeight: FontWeight.w900,
+                          color: Colors.white, letterSpacing: 0.3,
+                        ),
+                      ),
                     ),
                   ),
 
-                // 4. Nom du contact en bas
+                // ---------- 5. Badge « NEW » doré (accent or) ----------
+                if (hasUnseen && !isMine && storyCount <= 1)
+                  Positioned(
+                    top: 7, right: 7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.gold,
+                        borderRadius: BorderRadius.circular(6),
+                        boxShadow: [
+                          BoxShadow(
+                            color: ThixPolicy.gold.withOpacity(0.6),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                      child: const Text(
+                        'NEW',
+                        style: TextStyle(
+                          fontSize: 8, fontWeight: FontWeight.w900,
+                          color: Colors.black, letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // ---------- 6. Avatar flottant (top-left) ----------
+                if (!isAdd)
+                  Positioned(
+                    top: 7, left: 7,
+                    child: Container(
+                      width: 26, height: 26,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: accent, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.35),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: avatarUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: avatarUrl!,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(color: Colors.grey[800]),
+                                errorWidget: (_, __, ___) => Container(
+                                  color: Colors.grey[800],
+                                  child: const Icon(Icons.person, size: 14, color: Colors.white70),
+                                ),
+                              )
+                            : Container(
+                                color: Colors.grey[800],
+                                child: const Icon(Icons.person, size: 14, color: Colors.white70),
+                              ),
+                      ),
+                    ),
+                  ),
+
+                // ---------- 7. Bouton « + » (Mon Statut / Add) ----------
+                if (isAdd)
+                  Positioned(
+                    top: 8, right: 8,
+                    child: Container(
+                      width: 24, height: 24,
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.gold,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: ThixPolicy.gold.withOpacity(0.6),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.add, size: 14, color: Colors.black),
+                    ),
+                  ),
+
+                // ---------- 8. Label (bas) ----------
                 Positioned(
-                  bottom: 6,
-                  left: 6,
-                  right: 6,
+                  bottom: 7,
+                  left: isAdd ? 8 : 38,
+                  right: 8,
                   child: Text(
                     safeLabel.isEmpty ? 'Statut' : safeLabel,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      height: 1.2,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.1,
+                      shadows: [
+                        Shadow(blurRadius: 6, color: Colors.black87, offset: Offset(0, 1)),
+                      ],
                     ),
                   ),
                 ),
@@ -296,52 +408,69 @@ class _StatusCard extends StatelessWidget {
     );
   }
 
+  // ---------- FOND ----------
   Widget _buildBackground(Color bgColor) {
-    // 1. Bouton "Mon statut" (sans statut actif)
+    // 1) Bouton « Ajouter »
     if (isAdd) {
       return Container(
-        color: const Color(0xFFF0F2F5),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              ThixPolicy.inkDeep,
+              ThixPolicy.inkDeep.withOpacity(0.75),
+              Colors.black,
+            ],
+          ),
+        ),
         alignment: Alignment.center,
-        child: CircleAvatar(
-          radius: 24,
-          backgroundColor: Colors.grey[300],
-          backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl!) : null,
-          child: avatarUrl == null ? const Icon(Icons.person, color: Colors.grey, size: 24) : null,
+        child: Icon(
+          Icons.add_circle_outline_rounded,
+          size: 36,
+          color: Colors.white.withOpacity(0.18),
         ),
       );
     }
 
-    // 2. Statut avec Image
+    // 2) Photo
     if (mediaUrl != null) {
       return CachedNetworkImage(
         imageUrl: mediaUrl!,
         fit: BoxFit.cover,
-        placeholder: (_, __) => Container(color: Colors.grey[300]),
-        errorWidget: (_, __, ___) => Container(color: Colors.grey[400]),
+        placeholder: (_, __) => Container(color: Colors.grey[850]),
+        errorWidget: (_, __, ___) => Container(color: Colors.grey[900]),
       );
     }
 
-    // 3. Statut Texte (Fond coloré + texte au centre)
+    // 3) Texte
     if (textContent != null && textContent!.isNotEmpty) {
       return Container(
-        color: bgColor,
-        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [bgColor, Color.lerp(bgColor, Colors.black, 0.35)!],
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 38, 10, 30),
         alignment: Alignment.center,
         child: Text(
           textContent!,
           textAlign: TextAlign.center,
-          maxLines: 4,
+          maxLines: 3,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            height: 1.3,
+            shadows: [Shadow(blurRadius: 3, color: Colors.black54)],
           ),
         ),
       );
     }
 
-    // Fallback
-    return Container(color: Colors.grey[300]);
+    return Container(color: Colors.grey[850]);
   }
 }
