@@ -2,7 +2,6 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:html/parser.dart' as html_parser;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -117,26 +116,40 @@ Future<bool> chatCheckPermission(BuildContext context, Permission permission, St
 class ChatValidators {
   ChatValidators._();
 
-  static final RegExp _ctrlKeepNl = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');
+  static final RegExp _ctrlKeepNl = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'); // garde \t \n
   static final RegExp _ctrlAll = RegExp(r'[\x00-\x1F\x7F]');
   static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
-  static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
+  // ✅ [^>\n] : un tag ne traverse plus les lignes → ne mange plus les paragraphes
+  static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>\n]*>');
   static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
+  static final RegExp _trailSpaces = RegExp(r'[ \t]+(?=\n)');
+  static final RegExp _manyNl = RegExp(r'\n{4,}');
 
+  /// ✅ Préserve les paragraphes (\n internes), neutralise HTML/scripts/contrôles.
   static String sanitize(String? input, {int maxLength = kChatMaxMessageLength}) {
     if (input == null || input.trim().isEmpty) return '';
     var s = input;
-    if (s.contains('<')) {
-      final doc = html_parser.parse(s);
-      s = doc.body?.text ?? s;
-    }
+
+    // 1) Toutes les fins de ligne → \n (Windows \r\n, vieux Mac \r)
+    s = s.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+    // 2) ❌ SUPPRIMÉ : html_parser.parse() quand s.contains('<')
+    //    « x<y » (tag non fermé) avalait toute la fin du message, paragraphes compris.
+    //    La neutralisation par regex suffit : Flutter n'exécute pas de HTML.
     s = s
-        .replaceAll('\r\n', '\n')
         .replaceAll(_tags, '')
         .replaceAll(_jsScheme, '')
         .replaceAll(_ctrlKeepNl, '')
-        .replaceAll(_bidi, '')
-        .trim();
+        .replaceAll(_bidi, '');
+
+    // 3) Confort : espaces en fin de ligne + max 2 lignes vides d'affilée
+    //    (retire cette ligne si tu veux zéro limite)
+    s = s.replaceAll(_trailSpaces, '').replaceAll(_manyNl, '\n\n\n');
+
+    // 4) Bords uniquement — les \n internes restent
+    s = s.trim();
+
+    // 5) Troncature sans casser un emoji (paire de surrogates)
     if (s.length > maxLength) {
       var end = maxLength;
       final unit = s.codeUnitAt(end - 1);
