@@ -180,6 +180,41 @@ class _LinkTextState extends State<_LinkText> {
 }
 
 // ============================================================================
+// TEXTE AVEC PARAGRAPHES PRÉSERVÉS
+// ============================================================================
+/// Rend le texte en préservant strictement les retours à la ligne,
+/// les espaces multiples ET en séparant visuellement les paragraphes
+/// (2+ retours à la ligne = paragraphe) par un gap de 10px.
+class _MessageText extends StatelessWidget {
+  final String text;
+  final TextStyle style;
+  const _MessageText({required this.text, required this.style});
+
+  static final RegExp _paragraphRe = RegExp(r'\n[ \t]*\n+');
+
+  @override
+  Widget build(BuildContext context) {
+    // Pas de paragraphe → rendu simple (préserve tout)
+    if (!_paragraphRe.hasMatch(text)) {
+      return _LinkText(text: text, style: style);
+    }
+
+    // Découpe sur les doubles retours, en gardant les simples \n internes
+    final parts = text.split(_paragraphRe);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < parts.length; i++) ...[
+          if (i > 0) const SizedBox(height: 10), // gap paragraphe visible
+          _LinkText(text: parts[i], style: style),
+        ],
+      ],
+    );
+  }
+}
+
+// ============================================================================
 // BULLE MESSAGE PRINCIPALE
 // ============================================================================
 /// isFirstInGroup = HAUT visuel du groupe (affiche le nom)
@@ -441,11 +476,19 @@ class ChatMessageBubble extends StatelessWidget {
 
     final url = ChatValidators.sanitizeUrl(m.mediaUrl);
     final name = ChatValidators.sanitize(m.mediaName, maxLength: 60);
-    final caption = m.content.trim();
-    final hasCaption = caption.isNotEmpty && caption != (m.mediaName ?? '') && !caption.startsWith('🎤');
+
+    // ✅ Préserve l'original (espaces + paragraphes) — le trim ne sert qu'à la détection
+    final rawCaption = m.content;
+    final trimmedCaption = rawCaption.trim();
+    final hasCaption = trimmedCaption.isNotEmpty
+        && trimmedCaption != (m.mediaName ?? '')
+        && !trimmedCaption.startsWith('🎤');
 
     Widget? captionWidget() => hasCaption
-        ? Padding(padding: const EdgeInsets.only(top: 6), child: _LinkText(text: caption, style: textStyle))
+        ? Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _MessageText(text: rawCaption, style: textStyle),
+          )
         : null;
 
     switch (type) {
@@ -578,8 +621,12 @@ class ChatMessageBubble extends StatelessWidget {
     }
 
     // Texte
-    if (jumbo) return [Text(m.content.trim(), style: const TextStyle(fontSize: 44))];
-    return [_LinkText(text: m.content, style: textStyle)];
+    if (jumbo) {
+      // Jumbo : c'est un emoji seul → trim OK
+      return [Text(m.content.trim(), style: const TextStyle(fontSize: 44))];
+    }
+    // ✅ _MessageText préserve TOUT (espaces, \n, paragraphes)
+    return [_MessageText(text: m.content, style: textStyle)];
   }
 }
 
@@ -651,7 +698,7 @@ class _ProtectedMessageBoxState extends State<_ProtectedMessageBox> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    if (_plain != null) return _LinkText(text: _plain!, style: widget.textStyle);
+    if (_plain != null) return _MessageText(text: _plain!, style: widget.textStyle);
     return InkWell(
       onTap: _unlocking ? null : _unlock,
       borderRadius: BorderRadius.circular(12),
@@ -1192,7 +1239,7 @@ class _PhotoPagerState extends State<PhotoPager> {
         // Sur Mobile : Téléchargement
         final response = await HttpClient().getUrl(Uri.parse(url)).then((req) => req.close());
         final bytes = await consolidateHttpClientResponseBytes(response);
-        
+
         final dir = await getApplicationDocumentsDirectory();
         final fileName = 'THIX_IMG_${DateTime.now().millisecondsSinceEpoch}.jpg';
         final file = File(p.join(dir.path, fileName));
