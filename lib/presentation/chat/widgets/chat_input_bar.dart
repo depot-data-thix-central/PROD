@@ -230,20 +230,29 @@ class _ChatInputBarState extends State<ChatInputBar> {
   // ENVOI
   // ==========================================================================
   void _submit() {
-    final text = widget.controller.text.trim();
+    final rawText = widget.controller.text;
+
+    // ✅ Vérifie si vide (sans altérer le texte original)
+    if (rawText.trim().isEmpty && _files.isEmpty && _audioBytes == null) return;
+
+    // ✅ Nettoie UNIQUEMENT les espaces et sauts de ligne en fin de message
+    // Cela préserve les paragraphes internes (ex: "Salut,\n\nÇa va ?")
+    final cleanText = rawText.replaceFirst(RegExp(r'[ \t\n]+$'), '');
+
     if (widget.isEditing) {
-      widget.onSubmit(ChatInputPayload(text: text));
+      widget.onSubmit(ChatInputPayload(text: cleanText));
       return;
     }
-    if (text.isEmpty && _files.isEmpty && _audioBytes == null) return;
+
     final payload = ChatInputPayload(
-      text: text,
+      text: cleanText,
       files: List<PlatformFile>.from(_files),
       audioBytes: _audioBytes,
       audioDuration: _recordDuration > 0 ? _recordDuration : 1,
       audioExt: _recordExt,
       viewOnce: _sendViewOnce,
     );
+    
     setState(() {
       _files = [];
       _audioBytes = null;
@@ -251,6 +260,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       _sendViewOnce = false;
       _showStickers = false;
     });
+    
     widget.onSubmit(payload);
   }
 
@@ -688,6 +698,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     minLines: 1,
                     maxLength: kChatMaxMessageLength,
                     textCapitalization: TextCapitalization.sentences,
+                    // ✅ TRÈS IMPORTANT : Force le clavier à afficher la touche Entrée (Nouvelle ligne)
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline, 
                     style: const TextStyle(fontSize: 15.5, color: ThixPolicy.textMain),
                     decoration: InputDecoration(
                       counterText: '',
