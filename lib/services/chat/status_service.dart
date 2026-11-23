@@ -74,7 +74,7 @@ class StatusService {
     }
   }
 
-  /// ✅ NOUVEAU : Créer un statut vidéo.
+  /// ✅ Créer un statut vidéo.
   /// Même logique que [createImageStatus] mais avec media_type = 'video'.
   Future<String?> createVideoStatus({
     required Uint8List bytes,
@@ -127,7 +127,7 @@ class StatusService {
   }
 
   // ============================================================
-  // NOUVELLES MÉTHODES (Réactions, Repost, Vues)
+  // NOUVELLES MÉTHODES (Réactions, Repost, Vues, Réponse)
   // ============================================================
 
   /// Réagir à un statut
@@ -164,6 +164,53 @@ class StatusService {
     } catch (e) {
       debugPrint('❌ getViewers: $e');
       return [];
+    }
+  }
+
+  /// ✅ Réponse à un statut → message privé au propriétaire (façon WhatsApp).
+  Future<void> replyToStatus({required String statusId, required String text}) async {
+    try {
+      final uid = _supabase.auth.currentUser?.id;
+      if (uid == null) throw StateError('Non connecté');
+
+      // 1) Récupération du statut pour trouver le propriétaire
+      final row = await _supabase
+          .from('status_stories')
+          .select('user_id, content, media_type')
+          .eq('id', statusId)
+          .single();
+          
+      final ownerId = row['user_id'] as String;
+      if (ownerId == uid) throw StateError('own_status');
+
+      // 2) Création ou récupération de la conversation 1:1
+      // On utilise la même RPC que dans ChatService pour éviter la duplication
+      final convIdRaw = await _supabase
+          .rpc('create_direct_conversation', params: {'p_other_user_id': ownerId});
+          
+      final convId = convIdRaw?.toString();
+      if (convId == null || convId.isEmpty) {
+        throw StateError('Impossible de créer la conversation');
+      }
+
+      // 3) Construction de la citation (façon WhatsApp)
+      final original = (row['content'] as String?)?.trim() ?? '';
+      final excerpt = original.length > 80 ? '${original.substring(0, 80)}…' : original;
+      final isMedia = row['media_type'] != null && row['media_type'] != 'text';
+      final quote = isMedia ? '↩️ Statut (média)' : '↩️ Statut : « $excerpt »';
+
+      // 4) Envoi du message
+      await _supabase.from('messages').insert({
+        'conversation_id': convId,
+        'sender_id': uid,
+        'content': '$quote\n\n$text',
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      
+      debugPrint('✅ replyToStatus envoyé dans la conv $convId');
+    } catch (e) {
+      debugPrint('❌ replyToStatus: $e');
+      rethrow;
     }
   }
 }
