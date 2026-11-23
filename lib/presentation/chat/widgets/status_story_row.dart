@@ -1,5 +1,8 @@
 // lib/presentation/chat/widgets/status_story_row.dart
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,15 +16,19 @@ import 'package:thix_id/presentation/chat/status/create_status_page.dart';
 import 'package:thix_id/presentation/chat/status/status_viewer_page.dart';
 
 // ============================================================================
-// CONSTANTS (Format Cinematic Gold — unique & premium)
+// DESIGN « THIX HALO »
+// 1 arc = 1 statut · or = non vu · gris = vu · pointillé = ajouter
 // ============================================================================
-const double _kCardHeight = 110.0;   // +cinématique
-const double _kCardWidth  = 155.0;   // plus large = +impact visuel
-const double _kCardRadius = 14.0;
-const int    _kMaxLabelLength = 22;
+const double _kAvatar = 54.0;
+const double _kRing = 68.0;
+const double _kStroke = 2.6;
+const double _kItemWidth = 76.0;
+const double _kRowHeight = 106.0;
+const int _kMaxSegments = 20;
+const int _kMaxLabelLength = 20;
 
 // ============================================================================
-// VALIDATORS
+// VALIDATORS (noms / URLs : mono-ligne volontaire)
 // ============================================================================
 class _StoryValidators {
   _StoryValidators._();
@@ -55,7 +62,7 @@ class _StoryValidators {
 }
 
 // ============================================================================
-// STATUS STORY ROW (Format Cinematic Gold)
+// ROW
 // ============================================================================
 class StatusStoryRow extends ConsumerWidget {
   final String currentUserId;
@@ -74,23 +81,15 @@ class StatusStoryRow extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(statusProvider);
 
-    if (state.isLoading && state.items.isEmpty) {
-      return const SizedBox(
-        height: _kCardHeight,
-        child: Center(
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
+    if (state.isLoading && state.items.isEmpty) return const _HaloSkeleton();
 
     final byUser = state.byUser;
     final ordered = state.orderedUserIds;
     final hasMine = ordered.any((id) => byUser[id]?.any((s) => s.isMine) == true);
-
-    final safeCurrentUserAvatar = _StoryValidators.sanitizeUrl(currentUserAvatar);
+    final safeMeAvatar = _StoryValidators.sanitizeUrl(currentUserAvatar);
 
     return SizedBox(
-      height: _kCardHeight + 16, // +16 pour le padding vertical
+      height: _kRowHeight,
       child: RepaintBoundary(
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
@@ -98,14 +97,13 @@ class StatusStoryRow extends ConsumerWidget {
           itemCount: ordered.length + (hasMine ? 0 : 1),
           separatorBuilder: (_, __) => const SizedBox(width: 10),
           itemBuilder: (ctx, i) {
-            // 1. Bouton « Mon statut » (si pas encore de statut)
+            // « Mon statut » sans statut actif → anneau pointillé + badge +
             if (!hasMine && i == 0) {
-              return _StatusCard(
+              return _HaloItem(
                 label: l10n.t('status_my_status'),
-                avatarUrl: safeCurrentUserAvatar,
+                avatarUrl: safeMeAvatar,
                 isAdd: true,
-                hasUnseen: false,
-                isMine: true,
+                badge: const _PlusBadge(),
                 onTap: () {
                   HapticFeedback.selectionClick();
                   _openCreate(context);
@@ -113,32 +111,62 @@ class StatusStoryRow extends ConsumerWidget {
               );
             }
 
-            // 2. Cartes des contacts
             final idx = hasMine ? i : i - 1;
             final userId = ordered[idx];
-            final stories = byUser[userId] ?? [];
+            final stories = byUser[userId] ?? const <UserStatusStory>[];
             if (stories.isEmpty) return const SizedBox.shrink();
 
             final first = stories.first;
             final isMine = first.isMine;
-            final hasUnseen = stories.any((s) => !s.hasViewed && !s.isMine);
-
-            final displayName = isMine
-                ? l10n.t('status_my_status')
-                : _StoryValidators.safeFirstName(first.displayName, 'User');
-
             final mediaUrl = _StoryValidators.sanitizeUrl(first.mediaUrl);
-            final isVideo = first.mediaType == 'video';
+            final String? txt = first.content;
+            final isText = mediaUrl == null &&
+                first.mediaType != 'video' &&
+                txt != null &&
+                txt.trim().isNotEmpty;
 
-            return _StatusCard(
-              label: displayName,
+            // Monogramme coloré (statut texte sans avatar)
+            Color? mono;
+            if (isText) {
+              final String? bg = first.background;
+              if (bg != null && bg.startsWith('#')) {
+                final hex = bg.replaceAll('#', '');
+                if (hex.length >= 6) {
+                  try {
+                    mono = Color(int.parse('FF${hex.substring(0, 6)}', radix: 16));
+                  } catch (_) {}
+                }
+              }
+              mono ??= ThixPolicy.inkDeep;
+            }
+
+            // Badge : + (moi) / ▶ (vidéo) / Aa (texte)
+            Widget? badge;
+            VoidCallback? onBadgeTap;
+            if (isMine) {
+              badge = const _PlusBadge();
+              onBadgeTap = () {
+                HapticFeedback.selectionClick();
+                _openCreate(context);
+              };
+            } else if (first.mediaType == 'video') {
+              badge = const _TypeBadge(icon: Icons.play_arrow_rounded);
+            } else if (isText) {
+              badge = const _TypeBadge(label: 'Aa');
+            }
+
+            return _HaloItem(
+              label: isMine
+                  ? l10n.t('status_my_status')
+                  : _StoryValidators.safeFirstName(first.displayName, 'User'),
               avatarUrl: _StoryValidators.sanitizeUrl(first.avatarUrl),
-              mediaUrl: isVideo ? null : mediaUrl,
-              textContent: first.content,
-              background: first.background,
-              hasUnseen: hasUnseen,
-              isMine: isMine,
-              storyCount: stories.length, // ✅ Badge « +N »
+              segments: stories
+                  .take(_kMaxSegments)
+                  .map((s) => isMine ? false : s.hasViewed)
+                  .toList(),
+              monogramColor: mono,
+              badge: badge,
+              onBadgeTap: onBadgeTap,
               onTap: () {
                 HapticFeedback.selectionClick();
                 _openViewer(context, stories);
@@ -166,311 +194,280 @@ class StatusStoryRow extends ConsumerWidget {
 }
 
 // ============================================================================
-// WIDGET CARTE — Design « Cinematic Gold »
+// ITEM « HALO »
 // ============================================================================
-class _StatusCard extends StatelessWidget {
+class _HaloItem extends StatelessWidget {
   final String label;
   final String? avatarUrl;
-  final String? mediaUrl;
-  final String? textContent;
-  final String? background;
+  final List<bool> segments; // true = vu (gris), false = non vu (or)
   final bool isAdd;
-  final bool hasUnseen;
-  final bool isMine;
-  final int storyCount; // Nombre de stories pour le badge « +N »
+  final Color? monogramColor;
+  final Widget? badge;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onBadgeTap;
 
-  const _StatusCard({
+  const _HaloItem({
     required this.label,
     this.avatarUrl,
-    this.mediaUrl,
-    this.textContent,
-    this.background,
+    this.segments = const [],
     this.isAdd = false,
-    this.hasUnseen = false,
-    this.isMine = false,
-    this.storyCount = 1,
+    this.monogramColor,
+    this.badge,
     required this.onTap,
     this.onLongPress,
+    this.onBadgeTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final safeLabel = _StoryValidators.sanitize(label, maxLength: _kMaxLabelLength);
-    final accent = hasUnseen ? ThixPolicy.gold : Colors.white70;
+    final letter = safeLabel.isEmpty
+        ? '?'
+        : String.fromCharCode(safeLabel.runes.first).toUpperCase();
 
-    Color bgColor = const Color(0xFF1A1A1A);
-    if (background != null && background!.startsWith('#') && background!.length >= 7) {
-      try {
-        bgColor = Color(int.parse('FF${background!.replaceAll('#', '')}', radix: 16));
-      } catch (_) {}
+    Widget? fallback;
+    if (avatarUrl == null) {
+      fallback = monogramColor != null
+          ? Text(letter,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800))
+          : const Icon(Icons.person_rounded, size: 26, color: ThixPolicy.textSecondary);
     }
 
     return Semantics(
       button: true,
-      label: '$label${hasUnseen ? " (nouveau statut)" : ""}',
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Container(
-          width: _kCardWidth,
-          height: _kCardHeight,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(_kCardRadius),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.18),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+      label: safeLabel,
+      child: SizedBox(
+        width: _kItemWidth,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox(
+            width: _kRing,
+            height: _kRing,
+            child: Stack(clipBehavior: Clip.none, children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: isAdd
+                      ? _DashedRingPainter(color: ThixPolicy.textMuted.withOpacity(0.55))
+                      : _HaloRingPainter(
+                          viewed: segments,
+                          active: ThixPolicy.gold,
+                          activeLight: Color.lerp(ThixPolicy.gold, Colors.white, 0.45)!,
+                          seen: ThixPolicy.border,
+                        ),
+                ),
               ),
-              if (hasUnseen)
-                BoxShadow(
-                  color: ThixPolicy.gold.withOpacity(0.35),
-                  blurRadius: 10,
-                  spreadRadius: -2,
+              Center(
+                child: CircleAvatar(
+                  radius: _kAvatar / 2,
+                  backgroundColor: monogramColor ?? ThixPolicy.tint,
+                  backgroundImage:
+                      avatarUrl != null ? CachedNetworkImageProvider(avatarUrl!) : null,
+                  child: fallback,
                 ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(_kCardRadius),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // ---------- 1. Fond ----------
-                _buildBackground(bgColor),
-
-                // ---------- 2. Dégradé bas ----------
+              ),
+              Positioned.fill(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: onTap,
+                    onLongPress: onLongPress,
+                  ),
+                ),
+              ),
+              if (badge != null)
                 Positioned(
-                  left: 0, right: 0, bottom: 0, height: 62,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.15),
-                          Colors.black.withOpacity(0.85),
-                        ],
-                        stops: const [0.0, 0.55, 1.0],
-                      ),
-                    ),
+                  right: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onBadgeTap,
+                    child: badge!,
                   ),
                 ),
-
-                // ---------- 3. Border fine intérieure ----------
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(_kCardRadius),
-                        border: Border.all(
-                          color: hasUnseen
-                              ? ThixPolicy.gold.withOpacity(0.9)
-                              : Colors.white.withOpacity(0.08),
-                          width: hasUnseen ? 1.8 : 1.0,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // ---------- 4. Badge « +N » (multi-stories) ----------
-                if (storyCount > 1 && !isAdd)
-                  Positioned(
-                    top: 7, right: 7,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.65),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.white24, width: 0.6),
-                      ),
-                      child: Text(
-                        '+${storyCount - 1}',
-                        style: const TextStyle(
-                          fontSize: 9, fontWeight: FontWeight.w900,
-                          color: Colors.white, letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // ---------- 5. Badge « NEW » doré (accent or) ----------
-                if (hasUnseen && !isMine && storyCount <= 1)
-                  Positioned(
-                    top: 7, right: 7,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.gold,
-                        borderRadius: BorderRadius.circular(6),
-                        boxShadow: [
-                          BoxShadow(
-                            color: ThixPolicy.gold.withOpacity(0.6),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                      child: const Text(
-                        'NEW',
-                        style: TextStyle(
-                          fontSize: 8, fontWeight: FontWeight.w900,
-                          color: Colors.black, letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // ---------- 6. Avatar flottant (top-left) ----------
-                if (!isAdd)
-                  Positioned(
-                    top: 7, left: 7,
-                    child: Container(
-                      width: 26, height: 26,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: accent, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.35),
-                            blurRadius: 4,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: avatarUrl != null
-                            ? CachedNetworkImage(
-                                imageUrl: avatarUrl!,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) => Container(color: Colors.grey[800]),
-                                errorWidget: (_, __, ___) => Container(
-                                  color: Colors.grey[800],
-                                  child: const Icon(Icons.person, size: 14, color: Colors.white70),
-                                ),
-                              )
-                            : Container(
-                                color: Colors.grey[800],
-                                child: const Icon(Icons.person, size: 14, color: Colors.white70),
-                              ),
-                      ),
-                    ),
-                  ),
-
-                // ---------- 7. Bouton « + » (Mon Statut / Add) ----------
-                if (isAdd)
-                  Positioned(
-                    top: 8, right: 8,
-                    child: Container(
-                      width: 24, height: 24,
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.gold,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.8),
-                        boxShadow: [
-                          BoxShadow(
-                            color: ThixPolicy.gold.withOpacity(0.6),
-                            blurRadius: 8,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.add, size: 14, color: Colors.black),
-                    ),
-                  ),
-
-                // ---------- 8. Label (bas) ----------
-                Positioned(
-                  bottom: 7,
-                  left: isAdd ? 8 : 38,
-                  right: 8,
-                  child: Text(
-                    safeLabel.isEmpty ? 'Statut' : safeLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.1,
-                      shadows: [
-                        Shadow(blurRadius: 6, color: Colors.black87, offset: Offset(0, 1)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ]),
           ),
-        ),
+          const SizedBox(height: 5),
+          Text(
+            safeLabel.isEmpty ? '—' : safeLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: ThixPolicy.textMain),
+          ),
+        ]),
       ),
     );
   }
+}
 
-  // ---------- FOND ----------
-  Widget _buildBackground(Color bgColor) {
-    // 1) Bouton « Ajouter »
-    if (isAdd) {
-      return Container(
+// ============================================================================
+// BADGES
+// ============================================================================
+class _PlusBadge extends StatelessWidget {
+  const _PlusBadge();
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 22,
+        height: 22,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              ThixPolicy.inkDeep,
-              ThixPolicy.inkDeep.withOpacity(0.75),
-              Colors.black,
-            ],
-          ),
+          color: ThixPolicy.gold,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 1.6),
         ),
-        alignment: Alignment.center,
-        child: Icon(
-          Icons.add_circle_outline_rounded,
-          size: 36,
-          color: Colors.white.withOpacity(0.18),
-        ),
+        child: const Icon(Icons.add_rounded, size: 14, color: ThixPolicy.inkDeep),
       );
-    }
+}
 
-    // 2) Photo
-    if (mediaUrl != null) {
-      return CachedNetworkImage(
-        imageUrl: mediaUrl!,
-        fit: BoxFit.cover,
-        placeholder: (_, __) => Container(color: Colors.grey[850]),
-        errorWidget: (_, __, ___) => Container(color: Colors.grey[900]),
-      );
-    }
-
-    // 3) Texte
-    if (textContent != null && textContent!.isNotEmpty) {
-      return Container(
+class _TypeBadge extends StatelessWidget {
+  final IconData? icon;
+  final String? label;
+  const _TypeBadge({this.icon, this.label});
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 18,
+        height: 18,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [bgColor, Color.lerp(bgColor, Colors.black, 0.35)!],
-          ),
+          color: ThixPolicy.inkDeep,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 1.4),
         ),
-        padding: const EdgeInsets.fromLTRB(10, 38, 10, 30),
-        alignment: Alignment.center,
-        child: Text(
-          textContent!,
-          textAlign: TextAlign.center,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            height: 1.3,
-            shadows: [Shadow(blurRadius: 3, color: Colors.black54)],
-          ),
-        ),
+        child: icon != null
+            ? Icon(icon, size: 11, color: Colors.white)
+            : Center(
+                child: Text(label ?? '',
+                    style: const TextStyle(
+                        fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white, height: 1)),
+              ),
       );
-    }
+}
 
-    return Container(color: Colors.grey[850]);
+// ============================================================================
+// PAINTERS
+// ============================================================================
+class _HaloRingPainter extends CustomPainter {
+  final List<bool> viewed;
+  final Color active;
+  final Color activeLight;
+  final Color seen;
+  final double stroke;
+
+  _HaloRingPainter({
+    required this.viewed,
+    required this.active,
+    required this.activeLight,
+    required this.seen,
+    this.stroke = _kStroke,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final n = viewed.length;
+    if (n == 0) return;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.shortestSide - stroke) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    final gap = n == 1 ? 0.0 : math.min(0.18, 1.1 / n);
+    final sweep = (2 * math.pi - gap * n) / n;
+
+    final shader = SweepGradient(
+      colors: [active, activeLight, active],
+      transform: const GradientRotation(-math.pi / 2),
+    ).createShader(rect);
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+
+    var start = -math.pi / 2;
+    for (var i = 0; i < n; i++) {
+      if (viewed[i]) {
+        paint
+          ..shader = null
+          ..color = seen;
+      } else {
+        paint.shader = shader;
+      }
+      canvas.drawArc(rect, start + gap / 2, sweep, false, paint);
+      start += sweep + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HaloRingPainter old) =>
+      !listEquals(old.viewed, viewed) ||
+      old.active != active ||
+      old.seen != seen ||
+      old.stroke != stroke;
+}
+
+class _DashedRingPainter extends CustomPainter {
+  final Color color;
+  final double stroke;
+  _DashedRingPainter({required this.color, this.stroke = 1.8});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.shortestSide - stroke) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..color = color;
+    const dashes = 16;
+    const step = 2 * math.pi / dashes;
+    for (var i = 0; i < dashes; i++) {
+      canvas.drawArc(rect, -math.pi / 2 + i * step, step * 0.5, false, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRingPainter old) =>
+      old.color != color || old.stroke != stroke;
+}
+
+// ============================================================================
+// SKELETON (chargement)
+// ============================================================================
+class _HaloSkeleton extends StatelessWidget {
+  const _HaloSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _kRowHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: 6,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, __) => SizedBox(
+          width: _kItemWidth,
+          child: Column(children: [
+            Container(
+              width: _kRing,
+              height: _kRing,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: ThixPolicy.border, width: _kStroke),
+              ),
+            ),
+            const SizedBox(height: 7),
+            Container(
+              width: 44,
+              height: 9,
+              decoration:
+                  BoxDecoration(color: ThixPolicy.tint, borderRadius: BorderRadius.circular(4)),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 }
