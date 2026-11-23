@@ -89,6 +89,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   static List<String> _uniq(List<String> l) => l.toSet().toList();
 
+  // ⚠️ Listes INCHANGÉES — identiques à ton fichier (voir note en bas sur les entrées vides)
   static final List<String> _emojis = _uniq(const [
     '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
     '🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚',
@@ -235,9 +236,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
     // ✅ Vérifie si vide (sans altérer le texte original)
     if (rawText.trim().isEmpty && _files.isEmpty && _audioBytes == null) return;
 
-    // ✅ Nettoie UNIQUEMENT les espaces et sauts de ligne en fin de message
-    // Cela préserve les paragraphes internes (ex: "Salut,\n\nÇa va ?")
-    final cleanText = rawText.replaceFirst(RegExp(r'[ \t\n]+$'), '');
+    // ✅ Nettoie UNIQUEMENT les bords (début + fin), \r inclus.
+    // Les paragraphes internes (ex: "Salut,\n\nÇa va ?") sont préservés.
+    final cleanText = rawText
+        .replaceFirst(RegExp(r'^[ \t\r\n]+'), '')
+        .replaceFirst(RegExp(r'[ \t\r\n]+$'), '');
+
+    // 🔎 Sonde debug : rend les \n visibles dans la console (kDebugMode uniquement)
+    chatLog('SEND ${jsonEncode(cleanText)}');
 
     if (widget.isEditing) {
       widget.onSubmit(ChatInputPayload(text: cleanText));
@@ -252,7 +258,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       audioExt: _recordExt,
       viewOnce: _sendViewOnce,
     );
-    
+
     setState(() {
       _files = [];
       _audioBytes = null;
@@ -260,7 +266,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       _sendViewOnce = false;
       _showStickers = false;
     });
-    
+
     widget.onSubmit(payload);
   }
 
@@ -605,7 +611,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 if (widget.isInternalNoteMode) _chip(Icons.note_alt_outlined, chatTr(l10n, 'chat_internal_note', 'Note interne'), widget.onToggleInternalNote),
               ]),
             ),
-          // ✅ Marges externes minimales : le champ gagne ~4 px de chaque côté
           Padding(padding: const EdgeInsets.fromLTRB(6, 6, 6, 8), child: _mainRow(l10n)),
           if (_showStickers) _buildStickerPicker(l10n),
         ]),
@@ -658,14 +663,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
     // 2) Enregistrement en cours
     if (_isRecording) return _buildRecordingBar(l10n);
 
-    // 3) ✅ Saisie normale — champ LARGE : « + » et emoji intégrés, caméra retirée
+    // 3) Saisie normale — champ LARGE : « + » et emoji intégrés
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: widget.controller,
       builder: (context, value, _) {
         final hasText = value.text.trim().isNotEmpty;
         final hasContent = hasText || _files.isNotEmpty;
         return Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          // ✅ Le champ occupe TOUTE la largeur disponible
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -674,7 +678,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 border: Border.all(color: ThixPolicy.border),
               ),
               child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                // ✅ Bouton « + » (ou « ✕ » en édition) DEDANS, en tête
                 Padding(
                   padding: const EdgeInsets.only(left: 2, bottom: 2),
                   child: IconButton(
@@ -698,9 +701,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     minLines: 1,
                     maxLength: kChatMaxMessageLength,
                     textCapitalization: TextCapitalization.sentences,
-                    // ✅ TRÈS IMPORTANT : Force le clavier à afficher la touche Entrée (Nouvelle ligne)
+                    // ✅ Entrée = nouvelle ligne (les paragraphes sont possibles)
                     keyboardType: TextInputType.multiline,
-                    textInputAction: TextInputAction.newline, 
+                    textInputAction: TextInputAction.newline,
                     style: const TextStyle(fontSize: 15.5, color: ThixPolicy.textMain),
                     decoration: InputDecoration(
                       counterText: '',
@@ -714,7 +717,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     ),
                   ),
                 ),
-                // ✅ Emoji DEDANS, en queue (compact)
                 Padding(
                   padding: const EdgeInsets.only(right: 2, bottom: 2),
                   child: IconButton(
@@ -841,11 +843,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
         button: true,
         label: 'Emoji ${items[index]}',
         child: InkWell(
+          // ✅ Insère l'emoji AU CURSEUR (plus à la fin) — préserve le reste du texte
           onTap: () {
             HapticFeedback.selectionClick();
             final c = widget.controller;
-            c.text += items[index];
-            c.selection = TextSelection.fromPosition(TextPosition(offset: c.text.length));
+            final v = c.value;
+            final sel = v.selection.isValid ? v.selection : TextSelection.collapsed(offset: v.text.length);
+            final newText = v.text.replaceRange(sel.start, sel.end, items[index]);
+            c.value = v.copyWith(
+              text: newText,
+              selection: TextSelection.collapsed(offset: sel.start + items[index].length),
+              composing: TextRange.empty,
+            );
           },
           child: Center(child: Text(items[index], style: const TextStyle(fontSize: 24))),
         ),
