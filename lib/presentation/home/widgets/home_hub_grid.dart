@@ -32,7 +32,7 @@ class HomeHubGrid extends StatelessWidget {
   final SectionBadgeCounts counts;
   final HubSettings settings;
 
-  /// Clés : social, chat, pro, business, market, events, sona
+  /// Clés : thidia, chat, pro, sos, market, events, sona
   final ValueChanged<String> onTap;
 
   /// Actions du panneau « More… » (sos, vault, scanQr, thixWed, formations…)
@@ -61,10 +61,13 @@ class HomeHubGrid extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     final items = <_TileData>[
-      _TileData('social', Icons.groups_rounded, 'THIX Social', counts.media),
+      // ✅ Modifié : Social -> Thidia (icône vidéo)
+      _TileData('thidia', Icons.video_library_rounded, 'Thidia', counts.media),
       _TileData('chat', Icons.chat_bubble_rounded, 'THIX Chat', counts.messages),
-      _TileData('pro', Icons.work_rounded, 'THIX Pro', counts.network),
-      _TileData('business', Icons.trending_up_rounded, 'THIX Business', 0),
+      // ✅ Modifié : Icône différente pour Pro (business_center)
+      _TileData('pro', Icons.business_center_rounded, 'THIX Pro', counts.network),
+      // ✅ Modifié : Business -> SOS
+      _TileData('sos', Icons.emergency_rounded, 'THIX SOS', 0),
       _TileData('market', Icons.shopping_cart_rounded, 'THIX Market', counts.market),
       _TileData('events', Icons.calendar_month_rounded, 'THIX Events', counts.events),
       const _TileData('sona', Icons.memory_rounded, 'SONA AI', 0),
