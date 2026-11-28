@@ -1,7 +1,9 @@
 // lib/presentation/home/widgets/home_hub_grid.dart
 //
-// Grille THIX HUB : 3 + 3 + 2 tuiles glass blanches (comme la maquette).
-// ✅ Tailles d'icônes conservées du code d'origine : icône 22, étiquette 10.5.
+// Grille THIX HUB : 3 + 3 + 2 — SANS cadre, juste l'icône + le libellé.
+// Halo dans la couleur du voile pour rester lisible sur la photo.
+// ✅ Taille d'icône conservée du code d'origine (22) : modifie _kTileIconSize
+//    si tu veux la changer.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,10 +15,9 @@ import 'home_hub_settings.dart';
 import 'home_theme.dart';
 
 const double _kTileIconSize = 22.0; // ← taille d'icône du code existant
-const double _kTileCircle = 40.0;
 const double _kTileLabelSize = 10.5;
-const double _kTileHeight = 88.0;
-const double _kGap = 12.0;
+const double _kTileHeight = 70.0;
+const double _kGap = 14.0;
 const int _kMaxBadge = 99;
 
 class _TileData {
@@ -29,8 +30,7 @@ class _TileData {
 
 class HomeHubGrid extends StatelessWidget {
   final SectionBadgeCounts counts;
-  final Color primary;
-  final Color accent;
+  final HubSettings settings;
 
   /// Clés : social, chat, pro, business, market, events, sona
   final ValueChanged<String> onTap;
@@ -41,8 +41,7 @@ class HomeHubGrid extends StatelessWidget {
   const HomeHubGrid({
     super.key,
     required this.counts,
-    required this.primary,
-    required this.accent,
+    required this.settings,
     required this.onTap,
     required this.onMoreAction,
   });
@@ -82,15 +81,14 @@ class HomeHubGrid extends StatelessWidget {
               child: _HubTile(
                 width: w,
                 data: items[i],
-                primary: primary,
-                accent: accent,
+                settings: settings,
                 onTap: () {
                   HapticFeedback.selectionClick();
                   if (items[i].key == 'more') {
                     HubMoreSheet.show(
                       context,
                       counts: counts,
-                      primary: primary,
+                      primary: settings.primary,
                       onAction: onMoreAction,
                     );
                   } else {
@@ -104,27 +102,20 @@ class HomeHubGrid extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(children: [
-                tile(0),
-                const SizedBox(width: _kGap),
-                tile(1),
-                const SizedBox(width: _kGap),
-                tile(2),
-              ]),
+              Row(children: [tile(0), tile(1), tile(2)]
+                  .expand((w) => [w, const SizedBox(width: _kGap)])
+                  .toList()
+                ..removeLast()),
               const SizedBox(height: _kGap),
-              Row(children: [
-                tile(3),
-                const SizedBox(width: _kGap),
-                tile(4),
-                const SizedBox(width: _kGap),
-                tile(5),
-              ]),
+              Row(children: [tile(3), tile(4), tile(5)]
+                  .expand((w) => [w, const SizedBox(width: _kGap)])
+                  .toList()
+                ..removeLast()),
               const SizedBox(height: _kGap),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                tile(6),
-                const SizedBox(width: _kGap),
-                tile(7),
-              ]),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [tile(6), const SizedBox(width: _kGap), tile(7)],
+              ),
             ],
           ),
         );
@@ -156,15 +147,13 @@ class _Reveal extends StatelessWidget {
 class _HubTile extends StatefulWidget {
   final double width;
   final _TileData data;
-  final Color primary;
-  final Color accent;
+  final HubSettings settings;
   final VoidCallback onTap;
 
   const _HubTile({
     required this.width,
     required this.data,
-    required this.primary,
-    required this.accent,
+    required this.settings,
     required this.onTap,
   });
 
@@ -183,8 +172,14 @@ class _HubTileState extends State<_HubTile> {
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
-    final p = widget.primary;
+    final s = widget.settings;
     final badgeText = d.badge > _kMaxBadge ? '$_kMaxBadge+' : '${d.badge}';
+
+    // Halo dans la couleur du voile → lisibilité sur n'importe quelle photo.
+    final halo = <Shadow>[
+      Shadow(color: s.veilColor.withOpacity(0.95), blurRadius: 6),
+      Shadow(color: s.veilColor.withOpacity(0.75), blurRadius: 14),
+    ];
 
     return Semantics(
       button: true,
@@ -194,55 +189,30 @@ class _HubTileState extends State<_HubTile> {
         onTapDown: (_) => _setPressed(true),
         onTapUp: (_) => _setPressed(false),
         onTapCancel: () => _setPressed(false),
+        behavior: HitTestBehavior.opaque,
         child: AnimatedScale(
-          scale: _pressed ? 0.95 : 1.0,
+          scale: _pressed ? 0.92 : 1.0,
           duration: const Duration(milliseconds: 120),
           curve: Curves.easeOut,
-          child: Container(
+          child: SizedBox(
             width: widget.width,
             height: _kTileHeight,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.94),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white, width: 1.4),
-              boxShadow: [
-                BoxShadow(
-                  color: p.withOpacity(0.12),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Container(
-                      width: _kTileCircle,
-                      height: _kTileCircle,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [p.withOpacity(0.07), p.withOpacity(0.15)],
-                        ),
-                        border: Border.all(color: p.withOpacity(0.14), width: 1),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(d.icon, size: _kTileIconSize, color: p),
+                    Icon(
+                      d.icon,
+                      size: _kTileIconSize,
+                      color: s.primary,
+                      shadows: halo,
                     ),
                     if (d.badge > 0)
                       Positioned(
-                        top: -4,
-                        right: -7,
+                        top: -7,
+                        right: -11,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 4, vertical: 1.5),
@@ -267,19 +237,17 @@ class _HubTileState extends State<_HubTile> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    d.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: HomeTheme.ink,
-                      fontSize: _kTileLabelSize,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.2,
-                    ),
+                Text(
+                  d.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: s.textColor,
+                    fontSize: _kTileLabelSize,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                    shadows: halo,
                   ),
                 ),
               ],
