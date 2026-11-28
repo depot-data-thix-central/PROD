@@ -1,8 +1,8 @@
 // lib/presentation/home/widgets/home_hub_background.dart
 //
 // Fond THIX HUB : photos (diversité africaine) en défilement automatique,
-// fondu enchaîné + léger zoom lent, voile blanc dégradé pour la lisibilité.
-// Sans photo : dégradé ciel teinté de la couleur principale.
+// fondu enchaîné + léger zoom lent, voile dégradé dans la couleur choisie
+// par l'admin (blanc par défaut). Sans photo : dégradé teinté.
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -86,7 +86,7 @@ class _HomeHubBackgroundState extends State<HomeHubBackground>
     final s = widget.controller.settings;
     final imgs = s.images;
     final i = imgs.isEmpty ? 0 : _index % imgs.length;
-    const white = Colors.white;
+    final tone = s.veilColor; // ← couleur du voile (modifiable par l'admin)
 
     final a0 = (0.35 + s.veil * 0.60).clamp(0.0, 0.97);
     final a1 = (s.veil * 0.35).clamp(0.0, 1.0);
@@ -103,9 +103,9 @@ class _HomeHubBackgroundState extends State<HomeHubBackground>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color.lerp(white, s.primary, 0.20)!,
-                  Color.lerp(white, s.primary, 0.07)!,
-                  white,
+                  Color.lerp(tone, s.primary, 0.20)!,
+                  Color.lerp(tone, s.primary, 0.07)!,
+                  tone,
                 ],
               ),
             ),
@@ -128,11 +128,11 @@ class _HomeHubBackgroundState extends State<HomeHubBackground>
                   end: Alignment.bottomCenter,
                   stops: const [0.0, 0.30, 0.52, 0.82, 1.0],
                   colors: [
-                    white.withOpacity(a0),
-                    white.withOpacity(a1),
-                    white.withOpacity(a2),
-                    white.withOpacity(a3),
-                    white.withOpacity(0.96),
+                    tone.withOpacity(a0),
+                    tone.withOpacity(a1),
+                    tone.withOpacity(a2),
+                    tone.withOpacity(a3),
+                    tone.withOpacity(0.96),
                   ],
                 ),
               ),
