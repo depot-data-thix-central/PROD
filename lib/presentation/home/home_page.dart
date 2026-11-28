@@ -3,10 +3,8 @@
 // ✅ REFONTE 100 % — design THIX HUB (logo, tagline, grille d'icônes SANS cadre).
 //    • Fond : photos africaines en auto-scroll (réglable par l'admin).
 //    • Couleur du voile (le blanc), couleurs principale/accent : réglables admin.
-//    • Bouton de personnalisation visible UNIQUEMENT pour le rôle admin.
-//    • Ajout du bouton Profil flottant en bas à droite.
-//    • Hero banner / carrousel supprimé.
-//    • « More… » ouvre tous les autres services (+ SOS, coffre, QR, certification).
+//    • Bouton de personnalisation visible UNIQUEMENT pour le rôle admin (flottant droite).
+//    • Bouton Profil flottant en bas au centre.
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
@@ -48,18 +46,13 @@ const Duration _kRequestTimeout = Duration(seconds: 20);
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const int _kMaxRetries = 2;
 
-// Qualité réseau
 const Duration _kQualityInterval = Duration(seconds: 30);
 const Duration _kQualityTimeout = Duration(seconds: 3);
 const int _kWeakLatencyMs = 1500;
 
-/// ⚠️ À ADAPTER : route réelle du module THIX Business (portfolio/studio).
 const String _kBusinessRoute = '/thix-business';
-
-/// 💍 Route du module mariage (THIX WED).
 const String _kWeddingRoute = '/thix-weeding';
 
-/// 🔒 Services temporairement suspendus → « Bientôt à disposition ».
 const Set<String> _kSuspended = {'thixSante', 'thixMoney'};
 
 // ============================================================================
@@ -123,11 +116,9 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   bool _searching = false;
   String? _adminUid;
 
-  // ✅ Stream des badges créé UNE seule fois, en broadcast.
   Stream<SectionBadgeCounts>? _badgeStream;
   String? _badgeStreamUid;
 
-  // ✅ Qualité réseau
   StreamSubscription<List<ConnectivityResult>>? _connSub;
   Timer? _qualityTimer;
   bool _weakNetwork = false;
@@ -149,7 +140,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     super.dispose();
   }
 
-  // ── QUALITÉ RÉSEAU ──
   void _initNetworkQuality() {
     unawaited(_checkNetworkQuality());
     _connSub = Connectivity().onConnectivityChanged.listen((_) {
@@ -167,7 +157,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       final results = await Connectivity().checkConnectivity();
       final offline = results.isEmpty || results.every((r) => r == ConnectivityResult.none);
 
-      // Hors ligne : géré par le routeur (page "Pas de connexion").
       if (offline) {
         _setWeak(false);
         return;
@@ -193,7 +182,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     setState(() => _weakNetwork = value);
   }
 
-  // ── STREAM BADGES (cache + broadcast) ──
   Stream<SectionBadgeCounts> _badgeStreamFor(String? uid) {
     if (_badgeStream != null && _badgeStreamUid == uid) {
       return _badgeStream!;
@@ -207,7 +195,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     return _badgeStream!;
   }
 
-  // ── ADMIN (re-vérifié quand l'utilisateur change) ──
   void _syncAdminFor(String? uid) {
     if (uid == _adminUid) return;
     _adminUid = uid;
@@ -221,7 +208,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     await HubCustomizeSheet.show(context, _hub);
   }
 
-  // ── RECHERCHE / VÉRIFICATION ──
   Future<void> _handleHomeSearchVerify() async {
     final l10n = AppLocalizations.of(context);
     final raw = _searchController.text.trim();
@@ -290,7 +276,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     }
   }
 
-  // ── NAVIGATION ──
   void _onProfileTap() {
     HapticFeedback.mediumImpact();
     final user = Supabase.instance.client.auth.currentUser;
@@ -307,7 +292,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     context.push(auth.isAuthenticated ? '/thix-ia' : AppRoutes.login);
   }
 
-  /// ✅ Chat : le badge « messages » est remis à zéro à l'ouverture.
   Future<void> _openThixChat() async {
     HapticFeedback.selectionClick();
     final auth = context.read<AuthController>();
@@ -343,11 +327,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     ThixIdentitySheets.showQrScanSheet(context);
   }
 
-  void _openBusiness() {
-    HapticFeedback.selectionClick();
-    context.push(_kBusinessRoute);
-  }
-
   Future<void> _handleRequestAccount() async {
     HapticFeedback.mediumImpact();
     final auth = context.read<AuthController>();
@@ -368,10 +347,9 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     }
   }
 
-  // ── TUILES DE LA GRILLE ──
   void _onHubTile(String key) {
     switch (key) {
-      case 'thidia': // ✅ Modifié
+      case 'thidia': 
         _handleServiceTap('thixMedia');
         break;
       case 'chat':
@@ -380,7 +358,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       case 'pro':
         _handleServiceTap('reseauPro');
         break;
-      case 'sos': // ✅ Modifié
+      case 'sos': 
         _openEmergency();
         break;
       case 'market':
@@ -395,7 +373,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     }
   }
 
-  // ── ACTIONS DU PANNEAU « MORE… » ──
   void _handleMoreAction(String key) {
     switch (key) {
       case 'sos':
@@ -503,7 +480,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     }
   }
 
-  // ── FEEDBACK ──
   void _showSoon() {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
@@ -535,7 +511,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       );
   }
 
-  // ── BUILD ──
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthController>();
@@ -573,11 +548,12 @@ class _HomePagePremiumState extends State<HomePagePremium> {
             onTileTap: _onHubTile,
             onMoreAction: _handleMoreAction,
           ),
-          // ✅ Pastille qualité réseau
+          
+          // ✅ Pastille qualité réseau (laisser juste au-dessus du bouton profil)
           Positioned(
             left: 20,
             right: 20,
-            bottom: 96,
+            bottom: 110, 
             child: IgnorePointer(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
@@ -587,76 +563,76 @@ class _HomePagePremiumState extends State<HomePagePremium> {
               ),
             ),
           ),
-          // 🎨 Bouton Admin & 👤 Bouton Profil
-          Positioned(
-            right: 16,
-            bottom: 120, // Remonté pour laisser la place au bouton profil en dessous
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 🎨 BOUTON ADMIN (Palette) - Visible uniquement par l'admin
-                AnimatedBuilder(
-                  animation: _hub,
-                  builder: (context, _) {
-                    if (!_hub.isAdmin) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _AdminCustomizeButton(
-                        primary: _hub.settings.primary,
-                        onTap: _openCustomize,
-                      ),
-                    );
-                  },
-                ),
 
-                // 👤 BOUTON PROFIL - Visible pour tous
-                Semantics(
-                  button: true,
-                  label: 'Profil utilisateur',
-                  child: GestureDetector(
-                    onTap: _onProfileTap,
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        border: Border.all(
-                          color: _hub.settings.primary.withOpacity(0.35),
-                          width: 1.4,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+          // 🎨 BOUTON ADMIN (reste flottant à droite)
+          AnimatedBuilder(
+            animation: _hub,
+            builder: (context, _) {
+              if (!_hub.isAdmin) return const SizedBox.shrink();
+              return Positioned(
+                right: 16,
+                bottom: 150,
+                child: _AdminCustomizeButton(
+                  primary: _hub.settings.primary,
+                  onTap: _openCustomize,
+                ),
+              );
+            },
+          ),
+
+          // 👤 BOUTON PROFIL (Déplacé tout en bas au centre)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 30, // Ajustez cette valeur si le bouton est trop bas/haut
+            child: Center(
+              child: Semantics(
+                button: true,
+                label: 'Profil utilisateur',
+                child: GestureDetector(
+                  onTap: _onProfileTap,
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      border: Border.all(
+                        color: _hub.settings.primary.withOpacity(0.35),
+                        width: 2,
                       ),
-                      child: ClipOval(
-                        child: (photoUrl != null && photoUrl!.isNotEmpty)
-                            ? CachedNetworkImage(
-                                imageUrl: photoUrl!,
-                                fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => Icon(
-                                  Icons.person_rounded,
-                                  color: _hub.settings.primary,
-                                  size: 24,
-                                ),
-                              )
-                            : Icon(
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 12,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: (photoUrl != null && photoUrl!.isNotEmpty)
+                          ? CachedNetworkImage(
+                              imageUrl: photoUrl!,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Icon(
                                 Icons.person_rounded,
                                 color: _hub.settings.primary,
-                                size: 24,
+                                size: 30,
                               ),
-                      ),
+                            )
+                          : Icon(
+                              Icons.person_rounded,
+                              color: _hub.settings.primary,
+                              size: 30,
+                            ),
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
+          
           if (_searching) const _SearchingOverlay(),
           const NoConnectionOverlay(),
         ],
@@ -703,7 +679,6 @@ class _HomeContent extends StatelessWidget {
   Widget build(BuildContext context) {
     const hPad = EdgeInsets.symmetric(horizontal: ThixPolicy.s20);
     final h = MediaQuery.sizeOf(context).height;
-    // Espace qui laisse respirer la photo entre la tagline et la grille.
     final photoGap = (h * 0.20).clamp(90.0, 220.0).toDouble();
 
     return CustomScrollView(
