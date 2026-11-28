@@ -1,8 +1,8 @@
 // lib/presentation/home/widgets/home_hub_settings.dart
 //
-// THIX HUB — réglages globaux de l'accueil (photos de fond, couleurs, vitesse).
-// Table : home_hub_settings (1 ligne, id = 1) · Bucket : hub_backgrounds
-// Lecture : tout le monde · Écriture : rôle admin uniquement (RLS serveur).
+// THIX HUB — réglages globaux de l'accueil (photos de fond, couleurs, vitesse,
+// couleur du voile). Table : home_hub_settings (1 ligne, id = 1)
+// Bucket : hub_backgrounds · Lecture : tout le monde · Écriture : admin (RLS).
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/l10n/app_localizations.dart';
+
+import 'home_theme.dart';
 
 const String kHubBucket = 'hub_backgrounds';
 const String kHubTable = 'home_hub_settings';
@@ -39,14 +41,16 @@ class HubSettings {
   final List<String> images;
   final Color primary;
   final Color accent;
+  final Color veilColor; // couleur du voile (blanc par défaut)
   final int intervalSeconds;
-  final double veil; // 0..1 : intensité du voile blanc sur la photo
+  final double veil; // 0..1 : intensité du voile sur la photo
   final bool autoScroll;
 
   const HubSettings({
     required this.images,
     required this.primary,
     required this.accent,
+    required this.veilColor,
     required this.intervalSeconds,
     required this.veil,
     required this.autoScroll,
@@ -56,15 +60,23 @@ class HubSettings {
     images: <String>[],
     primary: Color(0xFF1746A2),
     accent: Color(0xFFFFB800),
+    veilColor: Color(0xFFFFFFFF),
     intervalSeconds: 6,
     veil: 0.55,
     autoScroll: true,
   );
 
+  /// Voile sombre → les textes passent en blanc automatiquement.
+  bool get darkVeil => veilColor.computeLuminance() < 0.45;
+
+  /// Couleur des libellés et textes posés sur le voile.
+  Color get textColor => darkVeil ? Colors.white : HomeTheme.ink;
+
   HubSettings copyWith({
     List<String>? images,
     Color? primary,
     Color? accent,
+    Color? veilColor,
     int? intervalSeconds,
     double? veil,
     bool? autoScroll,
@@ -73,6 +85,7 @@ class HubSettings {
       images: images ?? this.images,
       primary: primary ?? this.primary,
       accent: accent ?? this.accent,
+      veilColor: veilColor ?? this.veilColor,
       intervalSeconds: intervalSeconds ?? this.intervalSeconds,
       veil: veil ?? this.veil,
       autoScroll: autoScroll ?? this.autoScroll,
@@ -99,6 +112,7 @@ class HubSettings {
       images: images,
       primary: _parseHex(m['primary_color'] as String?, defaults.primary),
       accent: _parseHex(m['accent_color'] as String?, defaults.accent),
+      veilColor: _parseHex(m['veil_color'] as String?, defaults.veilColor),
       intervalSeconds: interval,
       veil: veil,
       autoScroll: (m['auto_scroll'] as bool?) ?? true,
@@ -110,6 +124,7 @@ class HubSettings {
         'images': images,
         'primary_color': _hex(primary),
         'accent_color': _hex(accent),
+        'veil_color': _hex(veilColor),
         'interval_seconds': intervalSeconds,
         'veil': double.parse(veil.toStringAsFixed(2)),
         'auto_scroll': autoScroll,
