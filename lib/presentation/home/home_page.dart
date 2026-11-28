@@ -4,12 +4,14 @@
 //    • Fond : photos africaines en auto-scroll (réglable par l'admin).
 //    • Couleur du voile (le blanc), couleurs principale/accent : réglables admin.
 //    • Bouton de personnalisation visible UNIQUEMENT pour le rôle admin.
+//    • Ajout du bouton Profil flottant en bas à droite.
 //    • Hero banner / carrousel supprimé.
 //    • « More… » ouvre tous les autres services (+ SOS, coffre, QR, certification).
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -369,7 +371,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   // ── TUILES DE LA GRILLE ──
   void _onHubTile(String key) {
     switch (key) {
-      case 'social':
+      case 'thidia': // ✅ Modifié
         _handleServiceTap('thixMedia');
         break;
       case 'chat':
@@ -378,8 +380,8 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       case 'pro':
         _handleServiceTap('reseauPro');
         break;
-      case 'business':
-        _openBusiness();
+      case 'sos': // ✅ Modifié
+        _openEmergency();
         break;
       case 'market':
         _handleServiceTap('thixMarket');
@@ -585,20 +587,75 @@ class _HomePagePremiumState extends State<HomePagePremium> {
               ),
             ),
           ),
-          // 🎨 Bouton de personnalisation — ADMIN uniquement
-          AnimatedBuilder(
-            animation: _hub,
-            builder: (context, _) {
-              if (!_hub.isAdmin) return const SizedBox.shrink();
-              return Positioned(
-                right: 16,
-                bottom: 150,
-                child: _AdminCustomizeButton(
-                  primary: _hub.settings.primary,
-                  onTap: _openCustomize,
+          // 🎨 Bouton Admin & 👤 Bouton Profil
+          Positioned(
+            right: 16,
+            bottom: 120, // Remonté pour laisser la place au bouton profil en dessous
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 🎨 BOUTON ADMIN (Palette) - Visible uniquement par l'admin
+                AnimatedBuilder(
+                  animation: _hub,
+                  builder: (context, _) {
+                    if (!_hub.isAdmin) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _AdminCustomizeButton(
+                        primary: _hub.settings.primary,
+                        onTap: _openCustomize,
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+
+                // 👤 BOUTON PROFIL - Visible pour tous
+                Semantics(
+                  button: true,
+                  label: 'Profil utilisateur',
+                  child: GestureDetector(
+                    onTap: _onProfileTap,
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                        border: Border.all(
+                          color: _hub.settings.primary.withOpacity(0.35),
+                          width: 1.4,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: (photoUrl != null && photoUrl!.isNotEmpty)
+                            ? CachedNetworkImage(
+                                imageUrl: photoUrl!,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => Icon(
+                                  Icons.person_rounded,
+                                  color: _hub.settings.primary,
+                                  size: 24,
+                                ),
+                              )
+                            : Icon(
+                                Icons.person_rounded,
+                                color: _hub.settings.primary,
+                                size: 24,
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           if (_searching) const _SearchingOverlay(),
           const NoConnectionOverlay(),
