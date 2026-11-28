@@ -1,8 +1,9 @@
 // lib/presentation/home/widgets/home_hub_background.dart
 //
-// Fond THIX HUB : photos (diversité africaine) en défilement automatique,
-// fondu enchaîné + léger zoom lent, voile dégradé dans la couleur choisie
-// par l'admin (blanc par défaut). Sans photo : dégradé teinté.
+// Fond THIX HUB : photos en défilement automatique, fondu enchaîné NET
+// (aucun zoom / rééchantillonnage → qualité d'origine conservée),
+// voile dégradé dans la couleur choisie par l'admin (blanc par défaut).
+// Sans photo : dégradé teinté.
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -86,7 +87,7 @@ class _HomeHubBackgroundState extends State<HomeHubBackground>
     final s = widget.controller.settings;
     final imgs = s.images;
     final i = imgs.isEmpty ? 0 : _index % imgs.length;
-    final tone = s.veilColor; // ← couleur du voile (modifiable par l'admin)
+    final tone = s.veilColor; // couleur du voile (modifiable par l'admin)
 
     final a0 = (0.35 + s.veil * 0.60).clamp(0.0, 0.97);
     final a1 = (s.veil * 0.35).clamp(0.0, 1.0);
@@ -117,7 +118,6 @@ class _HomeHubBackgroundState extends State<HomeHubBackground>
               child: _Slide(
                 key: ValueKey<String>('${i}_${imgs[i]}'),
                 url: imgs[i],
-                hold: Duration(seconds: s.intervalSeconds + 2),
               ),
             ),
           IgnorePointer(
@@ -144,26 +144,23 @@ class _HomeHubBackgroundState extends State<HomeHubBackground>
   }
 }
 
+/// Photo affichée à sa résolution d'origine (aucun redimensionnement mémoire,
+/// aucun zoom) avec le meilleur filtre de rendu.
 class _Slide extends StatelessWidget {
   final String url;
-  final Duration hold;
-  const _Slide({super.key, required this.url, required this.hold});
+  const _Slide({super.key, required this.url});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox.expand(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 1.0, end: 1.08),
-        duration: hold,
-        curve: Curves.linear,
-        builder: (_, v, child) => Transform.scale(scale: v, child: child),
-        child: CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          fadeInDuration: const Duration(milliseconds: 350),
-          placeholder: (_, __) => const SizedBox.shrink(),
-          errorWidget: (_, __, ___) => const SizedBox.shrink(),
-        ),
+      child: CachedNetworkImage(
+        imageUrl: url,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        filterQuality: FilterQuality.high,
+        fadeInDuration: const Duration(milliseconds: 350),
+        placeholder: (_, __) => const SizedBox.shrink(),
+        errorWidget: (_, __, ___) => const SizedBox.shrink(),
       ),
     );
   }
