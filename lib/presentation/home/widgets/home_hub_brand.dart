@@ -1,25 +1,29 @@
 // lib/presentation/home/widgets/home_hub_brand.dart
 //
 // Logo THIX HUB + "Your Hub, Your Universe" + tagline + swoosh.
-// Les couleurs suivent les réglages (couleur principale / accent).
+// Les couleurs suivent les réglages (principale, accent, couleur du voile).
 import 'package:flutter/material.dart';
 
 import 'package:thix_id/l10n/app_localizations.dart';
 
 import 'home_hub_settings.dart';
-import 'home_theme.dart';
 
 class HubBrand extends StatelessWidget {
-  final Color primary;
-  final Color accent;
-  const HubBrand({super.key, required this.primary, required this.accent});
+  final HubSettings settings;
+  const HubBrand({super.key, required this.settings});
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final dark = Color.lerp(primary, Colors.black, 0.35)!;
+    final primary = settings.primary;
+    final accent = settings.accent;
+    final onDark = settings.darkVeil;
+
+    final strong =
+        onDark ? Colors.white : Color.lerp(primary, Colors.black, 0.35)!;
+    final soft = onDark ? Color.lerp(primary, Colors.white, 0.45)! : primary;
     final glow = [
-      Shadow(color: Colors.white.withOpacity(0.85), blurRadius: 10),
+      Shadow(color: settings.veilColor.withOpacity(0.85), blurRadius: 10),
     ];
 
     return Column(
@@ -27,7 +31,11 @@ class HubBrand extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            HubLogoMark(size: 56, primary: primary, accent: accent),
+            HubLogoMark(
+              size: 56,
+              primary: onDark ? Color.lerp(primary, Colors.white, 0.25)! : primary,
+              accent: accent,
+            ),
             const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -39,14 +47,14 @@ class HubBrand extends StatelessWidget {
                       TextSpan(
                         text: 'THIX ',
                         style: TextStyle(
-                          color: dark,
+                          color: strong,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                       TextSpan(
                         text: 'HUB',
                         style: TextStyle(
-                          color: primary,
+                          color: soft,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -66,7 +74,7 @@ class HubBrand extends StatelessWidget {
                     fontSize: 11.5,
                     fontStyle: FontStyle.italic,
                     fontWeight: FontWeight.w600,
-                    color: HomeTheme.ink,
+                    color: settings.textColor,
                     shadows: glow,
                   ),
                 ),
@@ -82,7 +90,7 @@ class HubBrand extends StatelessWidget {
             fontSize: 16,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.2,
-            color: dark,
+            color: strong,
             shadows: glow,
           ),
         ),
