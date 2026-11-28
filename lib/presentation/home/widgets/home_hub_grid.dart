@@ -2,8 +2,6 @@
 //
 // Grille THIX HUB : 3 + 3 + 2 — SANS cadre, juste l'icône + le libellé.
 // Halo dans la couleur du voile pour rester lisible sur la photo.
-// ✅ Taille d'icône conservée du code d'origine (22) : modifie _kTileIconSize
-//    si tu veux la changer.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -14,7 +12,7 @@ import 'home_hub_more_sheet.dart';
 import 'home_hub_settings.dart';
 import 'home_theme.dart';
 
-const double _kTileIconSize = 22.0; // ← taille d'icône du code existant
+const double _kTileIconSize = 22.0;
 const double _kTileLabelSize = 10.5;
 const double _kTileHeight = 70.0;
 const double _kGap = 14.0;
@@ -32,10 +30,9 @@ class HomeHubGrid extends StatelessWidget {
   final SectionBadgeCounts counts;
   final HubSettings settings;
 
-  /// Clés : thidia, chat, pro, sos, market, events, sona
+  /// Clés : pro, chat, thidia, sos, market, events, sona
   final ValueChanged<String> onTap;
 
-  /// Actions du panneau « More… » (sos, vault, scanQr, thixWed, formations…)
   final ValueChanged<String> onMoreAction;
 
   const HomeHubGrid({
@@ -61,12 +58,15 @@ class HomeHubGrid extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     final items = <_TileData>[
-      // ✅ Modifié : Social -> Thidia (icône vidéo)
-      _TileData('thidia', Icons.video_library_rounded, 'Thidia', counts.media),
+      // ✅ MODIFIÉ : THIX Pro prend la place n°1 et l'icône "groups_rounded" (ancien social)
+      _TileData('pro', Icons.groups_rounded, 'THIX Pro', counts.network),
+      
       _TileData('chat', Icons.chat_bubble_rounded, 'THIX Chat', counts.messages),
-      // ✅ Modifié : Icône différente pour Pro (business_center)
-      _TileData('pro', Icons.business_center_rounded, 'THIX Pro', counts.network),
-      // ✅ Modifié : Business -> SOS
+      
+      // ✅ MODIFIÉ : Thidia prend la place n°3 (à droite) et garde son icône vidéo
+      _TileData('thidia', Icons.video_library_rounded, 'Thidia', counts.media),
+      
+      // Reste inchangé
       _TileData('sos', Icons.emergency_rounded, 'THIX SOS', 0),
       _TileData('market', Icons.shopping_cart_rounded, 'THIX Market', counts.market),
       _TileData('events', Icons.calendar_month_rounded, 'THIX Events', counts.events),
@@ -178,7 +178,6 @@ class _HubTileState extends State<_HubTile> {
     final s = widget.settings;
     final badgeText = d.badge > _kMaxBadge ? '$_kMaxBadge+' : '${d.badge}';
 
-    // Halo dans la couleur du voile → lisibilité sur n'importe quelle photo.
     final halo = <Shadow>[
       Shadow(color: s.veilColor.withOpacity(0.95), blurRadius: 6),
       Shadow(color: s.veilColor.withOpacity(0.75), blurRadius: 14),
