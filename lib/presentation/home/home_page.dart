@@ -1,7 +1,8 @@
 // lib/presentation/home/home_page.dart
 //
-// ✅ REFONTE 100 % — design THIX HUB (logo, tagline, grille de tuiles).
+// ✅ REFONTE 100 % — design THIX HUB (logo, tagline, grille d'icônes SANS cadre).
 //    • Fond : photos africaines en auto-scroll (réglable par l'admin).
+//    • Couleur du voile (le blanc), couleurs principale/accent : réglables admin.
 //    • Bouton de personnalisation visible UNIQUEMENT pour le rôle admin.
 //    • Hero banner / carrousel supprimé.
 //    • « More… » ouvre tous les autres services (+ SOS, coffre, QR, certification).
@@ -672,10 +673,7 @@ class _HomeContent extends StatelessWidget {
             padding: hPad,
             child: AnimatedBuilder(
               animation: hub,
-              builder: (context, _) {
-                final s = hub.settings;
-                return HubBrand(primary: s.primary, accent: s.accent);
-              },
+              builder: (context, _) => HubBrand(settings: hub.settings),
             ),
           ),
         ),
@@ -694,8 +692,7 @@ class _HomeContent extends StatelessWidget {
                     final counts = snap.data ?? SectionBadgeCounts.zero;
                     return HomeHubGrid(
                       counts: counts,
-                      primary: s.primary,
-                      accent: s.accent,
+                      settings: s,
                       onTap: onTileTap,
                       onMoreAction: onMoreAction,
                     );
