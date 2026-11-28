@@ -1,9 +1,9 @@
 // lib/presentation/home/widgets/home_hub_customize_sheet.dart
 //
 // Panneau de personnalisation (ADMIN uniquement) :
-// photos de fond (upload / suppression), défilement auto, vitesse,
-// intensité du voile, couleur principale et couleur d'accent.
-// Aperçu en direct sur l'accueil ; rien n'est publié avant « Enregistrer ».
+// photos de fond, défilement auto, vitesse, intensité du voile,
+// COULEUR DU VOILE (le blanc), couleur principale et couleur d'accent.
+// Aperçu en direct ; rien n'est publié avant « Enregistrer ».
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -56,6 +56,16 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
     Color(0xFF38BDF8), // Ciel
     Color(0xFFEC4899), // Rose
     Color(0xFFEF4444), // Rouge
+  ];
+
+  static const List<Color> _veilPresets = [
+    Color(0xFFFFFFFF), // Blanc
+    Color(0xFFFFF8E7), // Crème
+    Color(0xFFE8F4FF), // Ciel clair
+    Color(0xFFF1F5F9), // Gris clair
+    Color(0xFF0B1F44), // Bleu nuit
+    Color(0xFF111111), // Noir
+    Color(0xFF0F2D1E), // Vert forêt
   ];
 
   late HubSettings _draft = widget.controller.saved;
@@ -168,7 +178,7 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
         setState(() {
           _saving = false;
           _error =
-              'Enregistrement refusé. Vérifie le rôle admin et le SQL home_hub_settings.';
+              'Enregistrement refusé. Vérifie le rôle admin et le SQL home_hub_settings (colonne veil_color).';
         });
       }
     }
@@ -285,7 +295,7 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
                     ),
                   ),
                   _sliderRow(
-                    label: 'Voile blanc',
+                    label: 'Voile',
                     valueText: '${(_draft.veil * 100).round()} %',
                     slider: Slider(
                       value: _draft.veil,
@@ -296,6 +306,28 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
                     ),
                   ),
                   const SizedBox(height: 12),
+
+                  // ── COULEUR DU VOILE (le blanc) ──
+                  _title('Couleur du voile (le blanc)'),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Sur un voile sombre, les textes passent en blanc automatiquement.',
+                    style: TextStyle(color: HomeTheme.inkSoft, fontSize: 11.5, height: 1.35),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final c in _veilPresets)
+                        _Swatch(
+                          color: c,
+                          selected: c.value == _draft.veilColor.value,
+                          onTap: () => _apply(_draft.copyWith(veilColor: c)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
 
                   // ── COULEURS ──
                   _title('Couleur principale'),
@@ -530,6 +562,10 @@ class _Swatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Check lisible aussi sur les couleurs claires (blanc, crème…).
+    final checkColor =
+        color.computeLuminance() > 0.6 ? HomeTheme.ink : Colors.white;
+
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
@@ -543,8 +579,8 @@ class _Swatch extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(
-            color: selected ? HomeTheme.ink : Colors.white,
-            width: selected ? 2.4 : 2,
+            color: selected ? HomeTheme.ink : Colors.black12,
+            width: selected ? 2.4 : 1.2,
           ),
           boxShadow: [
             BoxShadow(
@@ -555,7 +591,7 @@ class _Swatch extends StatelessWidget {
           ],
         ),
         child: selected
-            ? const Icon(Icons.check_rounded, size: 18, color: Colors.white)
+            ? Icon(Icons.check_rounded, size: 18, color: checkColor)
             : null,
       ),
     );
