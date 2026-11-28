@@ -1,10 +1,12 @@
 // lib/presentation/home/widgets/home_hub_customize_sheet.dart
 //
 // Panneau de personnalisation (ADMIN uniquement) :
-// photos de fond, défilement auto, vitesse, intensité du voile,
-// COULEUR DU VOILE (le blanc), couleur principale et couleur d'accent.
+// photos de fond (ORIGINAUX, sans compression), défilement auto, vitesse,
+// intensité + couleur du voile, couleur principale et couleur d'accent.
 // Aperçu en direct ; rien n'est publié avant « Enregistrer ».
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -13,6 +15,12 @@ import 'package:flutter/services.dart';
 
 import 'home_hub_settings.dart';
 import 'home_theme.dart';
+
+/// Taille max d'un fichier original (les photos de téléphone font 4–12 Mo).
+const int _kMaxUploadBytes = 20 * 1024 * 1024;
+
+/// Sous cette hauteur (px), une photo risque d'être floue en plein écran.
+const int _kMinRecommendedHeight = 1600;
 
 class HubCustomizeSheet extends StatefulWidget {
   final HomeHubController controller;
@@ -72,11 +80,26 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
   bool _uploading = false;
   bool _saving = false;
   String? _error;
+  String? _warning;
 
   void _apply(HubSettings s) {
     if (!mounted) return;
     setState(() => _draft = s);
     widget.controller.setPreview(s);
+  }
+
+  /// Lit les dimensions sans décoder toute l'image.
+  Future<Size?> _readSize(Uint8List bytes) async {
+    try {
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final desc = await ui.ImageDescriptor.encoded(buffer);
+      final size = Size(desc.width.toDouble(), desc.height.toDouble());
+      desc.dispose();
+      buffer.dispose();
+      return size;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _pickImages() async {
@@ -91,16 +114,20 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
         type: FileType.image,
         allowMultiple: true,
         withData: true,
+        // ✅ 0 = AUCUNE compression : le fichier original est envoyé tel quel.
+        compressionQuality: 0,
       );
       if (result == null || result.files.isEmpty) return;
 
       setState(() {
         _uploading = true;
         _error = null;
+        _warning = null;
       });
 
       final urls = <String>[];
       final errors = <String>[];
+      final warnings = <String>[];
 
       for (final f in result.files.take(room)) {
         final ext = (f.extension ?? '').toLowerCase();
@@ -114,10 +141,19 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
           errors.add('${f.name} : lecture impossible');
           continue;
         }
-        if (bytes.length > kHubMaxImageBytes) {
-          errors.add('${f.name} : plus de 6 Mo');
+        if (bytes.length > _kMaxUploadBytes) {
+          errors.add('${f.name} : plus de 20 Mo');
           continue;
         }
+
+        final size = await _readSize(bytes);
+        if (size != null && size.height < _kMinRecommendedHeight) {
+          warnings.add(
+            '${f.name} : ${size.width.toInt()}×${size.height.toInt()} px '
+            '— risque de flou en plein écran (idéal 1080×2400, portrait).',
+          );
+        }
+
         try {
           urls.add(await widget.controller.uploadImage(bytes, ext));
         } catch (e) {
@@ -129,8 +165,11 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
       if (urls.isNotEmpty) {
         _apply(_draft.copyWith(images: [..._draft.images, ...urls]));
       }
-      if (errors.isNotEmpty && mounted) {
-        setState(() => _error = errors.join('\n'));
+      if (mounted) {
+        setState(() {
+          _error = errors.isEmpty ? null : errors.join('\n');
+          _warning = warnings.isEmpty ? null : warnings.join('\n');
+        });
       }
     } catch (e) {
       debugPrint('[HubCustomize] pick error: $e');
@@ -242,8 +281,9 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
                   _title('Photos de fond (${_draft.images.length}/$kHubMaxImages)'),
                   const SizedBox(height: 4),
                   const Text(
-                    'Diversité africaine : villes, paysages, jeunes entrepreneurs, culture… '
-                    'Format paysage, JPG / PNG / WebP, 6 Mo max.',
+                    'Les photos sont envoyées en qualité d\'origine, sans compression. '
+                    'Idéal : portrait 1080 × 2400 px (plein écran téléphone), '
+                    'JPG / PNG / WebP, 20 Mo max.',
                     style: TextStyle(color: HomeTheme.inkSoft, fontSize: 11.5, height: 1.35),
                   ),
                   const SizedBox(height: 10),
@@ -257,6 +297,18 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
                       ],
                     ),
                   ),
+                  if (_warning != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _warning!,
+                      style: const TextStyle(
+                        color: Color(0xFFB45309),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   // ── DÉFILEMENT ──
@@ -311,6 +363,7 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
                   _title('Couleur du voile (le blanc)'),
                   const SizedBox(height: 4),
                   const Text(
+                    'Un voile plus léger laisse voir la photo plus nette. '
                     'Sur un voile sombre, les textes passent en blanc automatiquement.',
                     style: TextStyle(color: HomeTheme.inkSoft, fontSize: 11.5, height: 1.35),
                   ),
@@ -519,6 +572,7 @@ class _HubCustomizeSheetState extends State<HubCustomizeSheet> {
             child: CachedNetworkImage(
               imageUrl: url,
               fit: BoxFit.cover,
+              memCacheWidth: 300, // miniature seulement (le fond reste en pleine qualité)
               placeholder: (_, __) => Container(color: HomeTheme.skyMist),
               errorWidget: (_, __, ___) => Container(
                 color: HomeTheme.skyMist,
